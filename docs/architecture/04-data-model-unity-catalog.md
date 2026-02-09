@@ -62,7 +62,7 @@
 - `sec_role_permission`
 
 ## Full DDL Reference
-- Canonical local logical DDL: `app/local_db/sql/schema/001_schema.sql`
+- Canonical local logical DDL: `setup/local_db/sql/schema/001_schema.sql`
 - Databricks bootstrap DDL: `docs/architecture/sql/01_uc_bootstrap.sql` and `docs/architecture/sql/02_core_tables.sql`
 
 ## Modeling Standards

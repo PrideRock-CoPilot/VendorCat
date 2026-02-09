@@ -3,7 +3,7 @@ setlocal
 
 cd /d "%~dp0"
 
-if "%TVENDOR_ENV_FILE%"=="" set "TVENDOR_ENV_FILE=app\config\tvendor.env"
+if "%TVENDOR_ENV_FILE%"=="" set "TVENDOR_ENV_FILE=setup\config\tvendor.env"
 if exist "%TVENDOR_ENV_FILE%" (
   echo Loading environment from %TVENDOR_ENV_FILE%
   for /f "usebackq tokens=1* delims==" %%A in (`findstr /R /V "^[ ]*# ^[ ]*$" "%TVENDOR_ENV_FILE%"`) do (
@@ -13,7 +13,7 @@ if exist "%TVENDOR_ENV_FILE%" (
 
 if "%TVENDOR_USE_MOCK%"=="" set "TVENDOR_USE_MOCK=false"
 if "%TVENDOR_USE_LOCAL_DB%"=="" set "TVENDOR_USE_LOCAL_DB=true"
-if "%TVENDOR_LOCAL_DB_PATH%"=="" set "TVENDOR_LOCAL_DB_PATH=app\local_db\twvendor_local.db"
+if "%TVENDOR_LOCAL_DB_PATH%"=="" set "TVENDOR_LOCAL_DB_PATH=setup\local_db\twvendor_local.db"
 if "%TVENDOR_CATALOG%"=="" set "TVENDOR_CATALOG=vendor_dev"
 if "%TVENDOR_SCHEMA%"=="" set "TVENDOR_SCHEMA=twvendor"
 if "%TVENDOR_LOCKED_MODE%"=="" set "TVENDOR_LOCKED_MODE=false"
@@ -38,7 +38,7 @@ echo.
 if /I "%TVENDOR_USE_LOCAL_DB%"=="true" (
   if not exist "%TVENDOR_LOCAL_DB_PATH%" (
     echo Local DB not found. Initializing...
-    %PYTHON_EXE% app\local_db\init_local_db.py --reset
+    %PYTHON_EXE% setup\local_db\init_local_db.py --reset
     if errorlevel 1 (
       echo.
       echo Failed to initialize local database.

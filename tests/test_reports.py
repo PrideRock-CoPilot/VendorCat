@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-APP_ROOT = Path(__file__).resolve().parents[1]
+APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 

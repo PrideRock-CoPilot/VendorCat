@@ -7,4 +7,4 @@ __pycache__/
 .venv/
 venv/
 .streamlit/secrets.toml
-app/local_db/*.db
+setup/local_db/*.db

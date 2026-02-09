@@ -62,8 +62,8 @@
 - Added a dedicated database documentation section:
   - `docs/database/README.md`
   - `docs/database/schema-reference.md`
-- Added local SQL schema inventory query: `app/local_db/sql/queries/040_schema_inventory.sql`.
-- Updated local query docs (`app/local_db/sql/queries/README.md`) and local DB runtime notes (`app/local_db/README.md`).
+- Added local SQL schema inventory query: `setup/local_db/sql/queries/040_schema_inventory.sql`.
+- Updated local query docs (`setup/local_db/sql/queries/README.md`) and local DB runtime notes (`setup/local_db/README.md`).
 - Updated architecture model docs to include project/document app tables and reports module:
   - `docs/architecture/04-data-model-unity-catalog.md`
   - `docs/architecture/07-application-architecture.md`
@@ -143,23 +143,23 @@
 - Updated repository table resolution and runtime setup logic so local DB mode uses local table names and skips Databricks runtime DDL bootstrap.
 - Updated repository current-user resolution for local DB mode to use `TVENDOR_TEST_USER` fallback.
 - Updated `launch_app.bat` defaults to run against the local DB (`TVENDOR_USE_MOCK=false`, `TVENDOR_USE_LOCAL_DB=true`) and auto-initialize DB if missing.
-- Added local DB runtime env guidance to `app/local_db/README.md`.
+- Added local DB runtime env guidance to `setup/local_db/README.md`.
 
 ## 2026-02-09T19:12:05Z | VC-20260209-191205-7412
-- Refactored local DB bootstrap to file-based SQL folders under `app/local_db/sql` with `schema/`, `seed/`, and `queries/`.
-- Updated `app/local_db/init_local_db.py` to execute ordered SQL scripts from folders (or optional explicit schema/seed files), with default seeded initialization and `--skip-seed` support.
-- Added `app/local_db/sql/seed/001_seed_mock_data.sql` to seed a complete mock-aligned dataset across vendor, offering, contracts, demos, projects, docs, security, and audit workflow tables.
-- Added reusable query files in `app/local_db/sql/queries/` including broad Vendor 360 search and projects-by-owner lookups to keep SQL out of Python.
-- Converted `app/local_db/schema_sqlite.sql` into a compatibility stub and documented canonical SQL locations.
+- Refactored local DB bootstrap to file-based SQL folders under `setup/local_db/sql` with `schema/`, `seed/`, and `queries/`.
+- Updated `setup/local_db/init_local_db.py` to execute ordered SQL scripts from folders (or optional explicit schema/seed files), with default seeded initialization and `--skip-seed` support.
+- Added `setup/local_db/sql/seed/001_seed_mock_data.sql` to seed a complete mock-aligned dataset across vendor, offering, contracts, demos, projects, docs, security, and audit workflow tables.
+- Added reusable query files in `setup/local_db/sql/queries/` including broad Vendor 360 search and projects-by-owner lookups to keep SQL out of Python.
+- Converted `setup/local_db/schema_sqlite.sql` into a compatibility stub and documented canonical SQL locations.
 - Updated local DB docs and bootstrap batch messaging to reflect schema + seed initialization.
 
 ## 2026-02-09T19:04:51Z | VC-20260209-190451-3025
 - Added a full local SQLite schema bootstrap for the complete `twvendor` logical model (source, core, history, audit, app, security, and reporting views).
-- Added `app/local_db/schema_sqlite.sql` with complete local DDL and indexes for key access paths.
-- Added `app/local_db/init_local_db.py` to initialize/reset the local DB and report created table/view counts.
+- Added `setup/local_db/schema_sqlite.sql` with complete local DDL and indexes for key access paths.
+- Added `setup/local_db/init_local_db.py` to initialize/reset the local DB and report created table/view counts.
 - Added `init_local_db.bat` for one-command local database creation from repo root.
-- Added local DB usage documentation in `app/local_db/README.md`.
-- Updated `.gitignore` to exclude generated local SQLite database files (`app/local_db/*.db`).
+- Added local DB usage documentation in `setup/local_db/README.md`.
+- Updated `.gitignore` to exclude generated local SQLite database files (`setup/local_db/*.db`).
 
 ## 2026-02-09T19:00:42Z | VC-20260209-190042-8569
 - Added explicit add-object quick actions on standalone project pages for users with edit permissions (`+ Add Demo`, `+ Add Document`, `+ Add Note`).

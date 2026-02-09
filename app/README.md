@@ -2,6 +2,8 @@
 
 Databricks-compatible web application for enterprise vendor management in a single logical schema (`twvendor`).
 
+Setup assets (manual Databricks schema bootstrap, env templates, local DB bootstrap) are kept outside app runtime code under `setup/`.
+
 ## Runtime Architecture
 - FastAPI web server
 - Server-rendered Jinja2 templates
@@ -33,7 +35,7 @@ set TVENDOR_USE_MOCK=true
 ```bat
 set TVENDOR_USE_MOCK=false
 set TVENDOR_USE_LOCAL_DB=true
-set TVENDOR_LOCAL_DB_PATH=app\local_db\twvendor_local.db
+set TVENDOR_LOCAL_DB_PATH=setup\local_db\twvendor_local.db
 ```
 - Databricks mode:
 ```bat
@@ -51,11 +53,11 @@ For security, schema bootstrap is a manual step. The app does not create schemas
 ## Databricks Schema Bootstrap (Manual)
 1. Configure environment values in:
 ```text
-app/config/tvendor.env
+setup/config/tvendor.env
 ```
 2. Run this SQL manually in Databricks SQL editor (or approved deployment pipeline):
 ```text
-app/vendor_catalog_app/sql/bootstrap/001_create_databricks_schema.sql
+setup/databricks/001_create_databricks_schema.sql
 ```
 3. Start the app after bootstrap is complete.
 
@@ -68,7 +70,7 @@ pip install -r app/requirements.txt
 ```
 2. Initialize local DB (optional but recommended):
 ```bat
-python app\local_db\init_local_db.py --reset
+python setup\local_db\init_local_db.py --reset
 ```
 3. Launch:
 ```bat
@@ -81,7 +83,7 @@ http://localhost:8000/dashboard
 
 ## Testing
 ```bash
-python -m pytest -q app/tests
+python -m pytest -q tests
 ```
 
 ## Entry Points

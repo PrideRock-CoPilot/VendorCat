@@ -34,7 +34,7 @@ class DatabricksSQLClient:
             db_path = Path(self.config.local_db_path).resolve()
             if not db_path.exists():
                 raise RuntimeError(
-                    f"Local DB not found: {db_path}. Run `python app/local_db/init_local_db.py --reset` first."
+                    f"Local DB not found: {db_path}. Run `python setup/local_db/init_local_db.py --reset` first."
                 )
             conn = sqlite3.connect(str(db_path))
         else:

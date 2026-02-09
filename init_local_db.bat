@@ -13,7 +13,7 @@ echo Initializing local SQLite database for twvendor schema and seed data...
 echo Using Python: %PYTHON_EXE%
 echo.
 
-%PYTHON_EXE% app\local_db\init_local_db.py --reset
+%PYTHON_EXE% setup\local_db\init_local_db.py --reset
 
 if errorlevel 1 (
   echo.
@@ -24,5 +24,5 @@ if errorlevel 1 (
 )
 
 echo.
-echo Done. Local DB created at app\local_db\twvendor_local.db
+echo Done. Local DB created at setup\local_db\twvendor_local.db
 endlocal

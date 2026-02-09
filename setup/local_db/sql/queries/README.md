@@ -12,5 +12,5 @@ This folder stores reusable SQL for local SQLite analysis.
 ## Run example
 
 ```bat
-sqlite3 app/local_db/twvendor_local.db ".read app/local_db/sql/queries/010_vendor_overview.sql"
+sqlite3 setup/local_db/twvendor_local.db ".read setup/local_db/sql/queries/010_vendor_overview.sql"
 ```

@@ -3,7 +3,7 @@
 This folder documents the full Vendor Catalog data model and how to evolve it safely.
 
 ## Canonical Schema Sources
-- Local full logical schema: `app/local_db/sql/schema/001_schema.sql`
+- Local full logical schema: `setup/local_db/sql/schema/001_schema.sql`
 - Databricks bootstrap SQL: `docs/architecture/sql/`
 
 ## Scope
@@ -20,12 +20,12 @@ This folder documents the full Vendor Catalog data model and how to evolve it sa
 ## Quick Local Validation
 Initialize local DB:
 ```bat
-python app\local_db\init_local_db.py --reset
+python setup\local_db\init_local_db.py --reset
 ```
 
 Inspect schema inventory:
 ```sql
--- app/local_db/sql/queries/040_schema_inventory.sql
+-- setup/local_db/sql/queries/040_schema_inventory.sql
 SELECT type, name
 FROM sqlite_master
 WHERE type IN ('table', 'view')
