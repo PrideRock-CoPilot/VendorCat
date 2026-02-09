@@ -138,6 +138,7 @@ CREATE TABLE IF NOT EXISTS vendor_prod.twvendor.core_contract (
   start_date DATE,
   end_date DATE,
   cancelled_flag BOOLEAN NOT NULL,
+  annual_value DECIMAL(18,2),
   updated_at TIMESTAMP NOT NULL,
   updated_by STRING NOT NULL
 ) USING DELTA;
@@ -333,6 +334,98 @@ CREATE TABLE IF NOT EXISTS vendor_prod.twvendor.app_usage_log (
   event_type STRING NOT NULL,
   event_ts TIMESTAMP NOT NULL,
   payload_json STRING NOT NULL
+) USING DELTA;
+
+-- Project and document workflow tables
+CREATE TABLE IF NOT EXISTS vendor_prod.twvendor.app_project (
+  project_id STRING NOT NULL,
+  vendor_id STRING,
+  project_name STRING NOT NULL,
+  project_type STRING,
+  status STRING NOT NULL,
+  start_date DATE,
+  target_date DATE,
+  owner_principal STRING,
+  description STRING,
+  active_flag BOOLEAN NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  created_by STRING NOT NULL,
+  updated_at TIMESTAMP NOT NULL,
+  updated_by STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS vendor_prod.twvendor.app_project_vendor_map (
+  project_vendor_map_id STRING NOT NULL,
+  project_id STRING NOT NULL,
+  vendor_id STRING NOT NULL,
+  active_flag BOOLEAN NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  created_by STRING NOT NULL,
+  updated_at TIMESTAMP NOT NULL,
+  updated_by STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS vendor_prod.twvendor.app_project_offering_map (
+  project_offering_map_id STRING NOT NULL,
+  project_id STRING NOT NULL,
+  vendor_id STRING NOT NULL,
+  offering_id STRING NOT NULL,
+  active_flag BOOLEAN NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  created_by STRING NOT NULL,
+  updated_at TIMESTAMP NOT NULL,
+  updated_by STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS vendor_prod.twvendor.app_project_demo (
+  project_demo_id STRING NOT NULL,
+  project_id STRING NOT NULL,
+  vendor_id STRING NOT NULL,
+  demo_name STRING NOT NULL,
+  demo_datetime_start TIMESTAMP,
+  demo_datetime_end TIMESTAMP,
+  demo_type STRING,
+  outcome STRING,
+  score DOUBLE,
+  attendees_internal STRING,
+  attendees_vendor STRING,
+  notes STRING,
+  followups STRING,
+  linked_offering_id STRING,
+  linked_vendor_demo_id STRING,
+  active_flag BOOLEAN NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  created_by STRING NOT NULL,
+  updated_at TIMESTAMP NOT NULL,
+  updated_by STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS vendor_prod.twvendor.app_project_note (
+  project_note_id STRING NOT NULL,
+  project_id STRING NOT NULL,
+  vendor_id STRING NOT NULL,
+  note_text STRING NOT NULL,
+  active_flag BOOLEAN NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  created_by STRING NOT NULL,
+  updated_at TIMESTAMP NOT NULL,
+  updated_by STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS vendor_prod.twvendor.app_document_link (
+  doc_id STRING NOT NULL,
+  entity_type STRING NOT NULL,
+  entity_id STRING NOT NULL,
+  doc_title STRING NOT NULL,
+  doc_url STRING NOT NULL,
+  doc_type STRING NOT NULL,
+  tags STRING,
+  owner STRING,
+  active_flag BOOLEAN NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  created_by STRING NOT NULL,
+  updated_at TIMESTAMP NOT NULL,
+  updated_by STRING NOT NULL
 ) USING DELTA;
 
 -- Security tables

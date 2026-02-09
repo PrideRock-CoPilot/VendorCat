@@ -20,6 +20,8 @@
 - Onboarding and Edit Requests: create, validate, submit, and track changes.
 - Demo Evaluation: score vendors, capture non-selection reasons and notes.
 - Contract Lifecycle: contract status, cancellation reasons, and notes.
+- Projects Workspace: standalone project lifecycle, linked vendors/offerings, demos, docs, and notes.
+- Reports Workspace: custom filtered reports, CSV extracts, and queued email extract requests.
 - Admin Permissions: assign role and org scope mappings.
 - Audit Explorer: read-only timeline for entity and access events.
 

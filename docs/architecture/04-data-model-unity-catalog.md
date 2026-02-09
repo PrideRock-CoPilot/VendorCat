@@ -49,9 +49,21 @@
 - `app_vendor_change_request`
 - `app_access_request`
 - `app_note`
+- `app_user_settings`
+- `app_usage_log`
+- `app_project`
+- `app_project_vendor_map`
+- `app_project_offering_map`
+- `app_project_demo`
+- `app_project_note`
+- `app_document_link`
 - `sec_user_role_map`
 - `sec_user_org_scope`
 - `sec_role_permission`
+
+## Full DDL Reference
+- Canonical local logical DDL: `app/local_db/sql/schema/001_schema.sql`
+- Databricks bootstrap DDL: `docs/architecture/sql/01_uc_bootstrap.sql` and `docs/architecture/sql/02_core_tables.sql`
 
 ## Modeling Standards
 - Use Delta for all persisted tables.

@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-02-09T20:53:54Z | VC-20260209-205354-3900
+- Added a new root `README.md` with complete project overview, run modes, schema references, and validation commands.
+- Expanded `app/README.md` to reflect current modules (including Projects and Reports), runtime modes, and operational startup paths.
+- Added a dedicated database documentation section:
+  - `docs/database/README.md`
+  - `docs/database/schema-reference.md`
+- Added local SQL schema inventory query: `app/local_db/sql/queries/040_schema_inventory.sql`.
+- Updated local query docs (`app/local_db/sql/queries/README.md`) and local DB runtime notes (`app/local_db/README.md`).
+- Updated architecture model docs to include project/document app tables and reports module:
+  - `docs/architecture/04-data-model-unity-catalog.md`
+  - `docs/architecture/07-application-architecture.md`
+- Added SQL bootstrap guide `docs/architecture/sql/README.md`.
+- Updated Databricks bootstrap DDL (`docs/architecture/sql/02_core_tables.sql`) with:
+  - `core_contract.annual_value`
+  - full project/document workflow tables (`app_project*`, `app_document_link`)
+
 ## 2026-02-09T20:35:27Z | VC-20260209-203527-2688
 - Added a new permission-gated Reports workspace at `/reports` for report-capable users.
 - Added custom report builder flows with filters and row limits for:

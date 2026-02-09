@@ -40,8 +40,9 @@ python app\local_db\init_local_db.py --reset --sql-root app\local_db\sql
 ## Notes
 - SQLite does not support Unity Catalog schemas, so table names are created directly (e.g., `core_vendor`, `app_project`).
 - This is for local design/prototyping and schema validation.
-- The running app still uses Databricks SQL or mock mode unless you add a dedicated local DB runtime mode.
+- The app supports dedicated local DB runtime mode via `TVENDOR_USE_LOCAL_DB=true`.
 - SQL is now file-based so DDL/DML/query changes can be made in `app/local_db/sql` without editing Python code.
+- Full schema inventory query: `app/local_db/sql/queries/040_schema_inventory.sql`.
 
 ## Run App Against Local DB
 Set these environment variables (the `launch_app.bat` defaults now do this):

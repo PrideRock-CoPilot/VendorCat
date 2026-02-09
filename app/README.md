@@ -1,46 +1,72 @@
 # Vendor Catalog App
 
-Databricks-compatible Vendor Catalog web application built with FastAPI and Jinja templates.
+Databricks-compatible web application for enterprise vendor management in a single logical schema (`twvendor`).
 
-## Stack
+## Runtime Architecture
 - FastAPI web server
-- Server-rendered HTML templates (Jinja2)
-- Modular route handlers (`dashboard`, `vendors`, `demos`, `contracts`, `admin`)
-- Python repository layer + Databricks SQL connector
-- Unity Catalog schema: `vendor_<env>.twvendor`
+- Server-rendered Jinja2 templates
+- Modular routers under `app/vendor_catalog_app/web/routers`
+- Repository/service layer in `app/vendor_catalog_app/repository.py`
+- Databricks SQL connector with mock and local SQLite fallback modes
 
-## Why This Structure
-- No Streamlit dependency.
-- Split into focused modules instead of monolithic UI files.
-- Works in locked-down environments with standard Python web runtime.
+## Feature Modules
+- `dashboard`: executive KPIs and trends
+- `vendors`: Vendor 360, offerings, ownership, docs, and audit
+- `projects`: standalone project workflows, demos, notes, and mappings
+- `reports`: custom reports with preview, CSV, and queued email requests
+- `demos`: vendor demo outcomes
+- `contracts`: contract lifecycle and cancellations
+- `admin`: role grants and governance controls
 
-## App Modules
-- Dashboard: executive insights and spend/risk/renewal summaries.
-- Vendor 360: filtered list, row-click detail navigation, settings-driven field matrix.
-- Vendor detail: ownership, portfolio, contracts, demos, lineage, change requests, audit timeline.
-- Demos: outcome capture.
-- Contracts: cancellation capture.
-- Admin: role/scope grants.
+## Security And Governance
+- Role-aware UX (`vendor_admin`, `vendor_steward`, `vendor_editor`, `vendor_viewer`, `vendor_auditor`)
+- Automatic baseline access provisioning for first-time users
+- Usage telemetry events for page and action auditability
+- Direct-apply vs change-request write behavior by role
 
-## Governance Features
-- Auto-provision first-time users with `vendor_viewer` rights.
-- Persist per-user Vendor 360 field settings.
-- Usage telemetry (`session_start`, `page_view`, and key interactions).
-- Audited direct profile updates for admin/steward roles.
+## Run Modes
+- Mock mode:
+```bat
+set TVENDOR_USE_MOCK=true
+```
+- Local DB mode:
+```bat
+set TVENDOR_USE_MOCK=false
+set TVENDOR_USE_LOCAL_DB=true
+set TVENDOR_LOCAL_DB_PATH=app\local_db\twvendor_local.db
+```
+- Databricks mode:
+```bat
+set TVENDOR_USE_MOCK=false
+set TVENDOR_USE_LOCAL_DB=false
+set DATABRICKS_SERVER_HOSTNAME=<workspace-host>
+set DATABRICKS_HTTP_PATH=<sql-warehouse-http-path>
+set DATABRICKS_TOKEN=<pat>
+```
 
-## Run Locally
+## Local Start
 1. Install dependencies:
 ```bash
 pip install -r app/requirements.txt
 ```
-2. Set env vars using `app/.env.example`.
-3. Start:
-```bash
-python -m uvicorn --app-dir app main:app --host 0.0.0.0 --port 8000
+2. Initialize local DB (optional but recommended):
+```bat
+python app\local_db\init_local_db.py --reset
 ```
-4. Open `http://localhost:8000/dashboard`.
+3. Launch:
+```bat
+launch_app.bat
+```
+4. Open:
+```text
+http://localhost:8000/dashboard
+```
+
+## Testing
+```bash
+python -m pytest -q app/tests
+```
 
 ## Entry Points
-- App server: `app/main.py`
-- FastAPI factory: `app/vendor_catalog_app/web/app.py`
-- Routers: `app/vendor_catalog_app/web/routers/`
+- `app/main.py`
+- `app/vendor_catalog_app/web/app.py`
