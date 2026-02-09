@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Contract Cancellations</h1>
+
+<section class="card">
+  <table>
+    <thead><tr><th>Contract</th><th>Vendor</th><th>Offering</th><th>Cancelled At</th><th>Reason</th><th>Notes</th></tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.contract_id }}</td>
+        <td>{{ row.vendor_id }}</td>
+        <td>{{ row.offering_id }}</td>
+        <td>{{ row.cancelled_at }}</td>
+        <td>{{ row.reason_code }}</td>
+        <td>{{ row.notes }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">No contract cancellations</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if can_edit %}
+<section class="card">
+  <h2>Record Contract Cancellation</h2>
+  <form method="post" action="/contracts/cancel" class="grid grid-2">
+    <label>Contract ID<input type="text" name="contract_id" required></label>
+    <label>Reason Code<input type="text" name="reason_code" required></label>
+    <label class="full">Notes<textarea name="notes" rows="2"></textarea></label>
+    <div><button type="submit">Record Cancellation</button></div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}
+

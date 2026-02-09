@@ -1,0 +1,4 @@
+-- Deprecated compatibility stub.
+-- Canonical local DB SQL now lives under app/local_db/sql/.
+-- Schema: app/local_db/sql/schema/001_schema.sql
+-- Seed: app/local_db/sql/seed/001_seed_mock_data.sql

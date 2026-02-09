@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="section-header">
+  <div>
+    <h1>{{ vendor_display_name }} Offerings</h1>
+    <p>Offering-level details, mappings, and editable controls.</p>
+  </div>
+  <div class="button-group">
+    {% if can_edit and not locked_mode %}
+    <a class="button-link" href="/vendors/{{ vendor_id }}/offerings/new?return_to={{ return_to|urlencode }}">+ New Offering</a>
+    {% endif %}
+    <a class="button-link subtle" href="/vendors/{{ vendor_id }}/summary?return_to={{ return_to|urlencode }}">Vendor Summary</a>
+    <a class="button-link" href="{{ return_to }}">Back To List</a>
+  </div>
+</div>
+
+<section class="metrics">
+  <div class="metric"><span>Lifecycle</span><strong>{{ summary.lifecycle_state }}</strong></div>
+  <div class="metric"><span>Risk Tier</span><strong>{{ summary.risk_tier }}</strong></div>
+  <div class="metric"><span>Offerings</span><strong>{{ summary.offering_count|int }}</strong></div>
+  <div class="metric"><span>Active Contracts</span><strong>{{ summary.active_contract_count|int }}</strong></div>
+  <div class="metric"><span>Demos Selected</span><strong>{{ summary.demos_selected|int }}</strong></div>
+  <div class="metric"><span>Demos Not Selected</span><strong>{{ summary.demos_not_selected|int }}</strong></div>
+</section>
+
+<section class="card section-nav-card">
+  <div class="section-nav-links">
+    {% for item in vendor_nav %}
+    <a class="{% if item.active %}active{% endif %}" href="{{ item.url }}">{{ item.label }}</a>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="card section-divider">
+  <h2>Offerings</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Offering</th>
+        <th>Type</th>
+        <th>Lifecycle</th>
+        <th>Criticality</th>
+        <th>Owners</th>
+        <th>Contacts</th>
+        <th>Contracts</th>
+        <th>Demos</th>
+        <th>Docs</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in offerings %}
+    <tr>
+      <td>{{ row.offering_name }}</td>
+      <td>{{ row.offering_type }}</td>
+      <td>{{ row.lifecycle_state }}</td>
+      <td>{{ row.criticality_tier }}</td>
+      <td>{{ row.owner_count }}</td>
+      <td>{{ row.contact_count }}</td>
+      <td>{{ row.contract_count }}</td>
+      <td>{{ row.demo_count }}</td>
+      <td>{{ row.doc_count }}</td>
+      <td class="button-group">
+        <a class="button-link subtle" href="{{ row._open_link }}">Open</a>
+        {% if can_edit and not locked_mode %}
+        <a class="button-link subtle" href="{{ row._edit_link }}">Edit</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="10">No offerings found.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card section-divider">
+  <h2>Unassigned Records</h2>
+  <p>Map unassigned records to an offering.</p>
+</section>
+
+<div class="grid grid-2">
+  <section class="card">
+    <h3>Unassigned Contracts</h3>
+    <table>
+      <thead><tr><th>Contract</th><th>Status</th><th>Start</th><th>End</th><th>Map</th></tr></thead>
+      <tbody>
+      {% for row in unassigned_contracts %}
+      <tr>
+        <td>{{ row.contract_number or row.contract_id }}</td>
+        <td>{{ row.contract_status }}</td>
+        <td>{{ row.start_date }}</td>
+        <td>{{ row.end_date }}</td>
+        <td>
+          {% if can_edit and not locked_mode %}
+          <form method="post" action="/vendors/{{ vendor_id }}/map-contract" class="inline-form">
+            <input type="hidden" name="return_to" value="{{ offerings_return_to }}">
+            <input type="hidden" name="contract_id" value="{{ row.contract_id }}">
+            <select name="offering_id">
+              {% for option in offering_options %}
+              <option value="{{ option.offering_id }}">{{ option.label }}</option>
+              {% endfor %}
+            </select>
+            <input type="text" name="reason" placeholder="Reason" required>
+            <button type="submit">Map</button>
+          </form>
+          {% else %}
+          <span class="muted">view-only</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No unassigned contracts.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h3>Unassigned Demos</h3>
+    <table>
+      <thead><tr><th>Demo</th><th>Date</th><th>Outcome</th><th>Score</th><th>Map</th></tr></thead>
+      <tbody>
+      {% for row in unassigned_demos %}
+      <tr>
+        <td>{{ row.demo_id }}</td>
+        <td>{{ row.demo_date }}</td>
+        <td>{{ row.selection_outcome }}</td>
+        <td>{{ row.overall_score }}</td>
+        <td>
+          {% if can_edit and not locked_mode %}
+          <form method="post" action="/vendors/{{ vendor_id }}/map-demo" class="inline-form">
+            <input type="hidden" name="return_to" value="{{ offerings_return_to }}">
+            <input type="hidden" name="demo_id" value="{{ row.demo_id }}">
+            <select name="offering_id">
+              {% for option in offering_options %}
+              <option value="{{ option.offering_id }}">{{ option.label }}</option>
+              {% endfor %}
+            </select>
+            <input type="text" name="reason" placeholder="Reason" required>
+            <button type="submit">Map</button>
+          </form>
+          {% else %}
+          <span class="muted">view-only</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No unassigned demos.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<section class="card section-divider">
+  <h2>Offering Documents</h2>
+  <p>Links only. We auto-detect document type from URL.</p>
+  <table>
+    <thead><tr><th>Offering</th><th>Recent Links</th><th>Add Link</th></tr></thead>
+    <tbody>
+    {% for row in offerings %}
+    <tr>
+      <td>{{ row.offering_name }}</td>
+      <td><a class="button-link subtle" href="{{ row._open_link }}#offering-docs">View Docs</a></td>
+      <td>
+        {% if can_edit and not locked_mode %}
+        <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ row.offering_id }}/docs/link" class="grid grid-3" data-doc-link-form>
+          <input type="hidden" name="return_to" value="{{ offerings_return_to }}">
+          <label>URL
+            <input type="url" name="doc_url" placeholder="https://..." required data-doc-url>
+            <small class="muted">We'll auto-detect the link type from the URL. You can change it.</small>
+          </label>
+          <label>Type
+            <select name="doc_type" data-doc-type>
+              <option value="">auto</option>
+              {% for type in doc_types %}
+              <option value="{{ type }}">{{ type }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>Title
+            <input type="text" name="doc_title" maxlength="120" placeholder="Optional">
+          </label>
+          <label>Tags<input type="text" name="tags"></label>
+          <label>Owner<input type="text" name="owner"></label>
+          <div><button type="submit">Add Link</button></div>
+        </form>
+        {% else %}
+        <span class="muted">view-only</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3">No offerings.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll("[data-doc-link-form]").forEach((form) => {
+  const urlInput = form.querySelector("[data-doc-url]");
+  const typeSelect = form.querySelector("[data-doc-type]");
+  if (!urlInput || !typeSelect) return;
+  const suggestType = (url) => {
+    const v = (url || "").toLowerCase();
+    if (v.includes("sharepoint.com") || v.includes("/sites/") || v.includes("/teams/")) return "sharepoint";
+    if (v.includes("onedrive.live.com") || v.includes("1drv.ms")) return "onedrive";
+    if (v.includes("atlassian.net/wiki") || v.includes("/confluence")) return "confluence";
+    if (v.includes("docs.google.com") || v.includes("drive.google.com")) return "google_drive";
+    if (v.includes("box.com")) return "box";
+    if (v.includes("dropbox.com")) return "dropbox";
+    if (v.includes("github.com")) return "github";
+    return "other";
+  };
+  urlInput.addEventListener("input", () => {
+    if (!typeSelect.value || typeSelect.value === "other") {
+      typeSelect.value = suggestType(urlInput.value);
+    }
+  });
+});
+</script>
+{% endblock %}

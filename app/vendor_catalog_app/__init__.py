@@ -1,0 +1,2 @@
+"""Vendor Catalog app package."""
+

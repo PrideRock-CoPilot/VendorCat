@@ -1,0 +1,472 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="section-header">
+  <div>
+    <h1>{{ vendor_display_name }}</h1>
+    <p>Vendor 360 high-level profile, governance, and audit.</p>
+  </div>
+  <div class="button-group">
+    <a class="button-link subtle" href="/vendors/{{ vendor_id }}/offerings?return_to={{ return_to|urlencode }}">Offerings</a>
+    <a class="button-link" href="{{ return_to }}">Back To List</a>
+  </div>
+</div>
+
+<section class="metrics">
+  <div class="metric"><span>Lifecycle</span><strong>{{ summary.lifecycle_state }}</strong></div>
+  <div class="metric"><span>Risk Tier</span><strong>{{ summary.risk_tier }}</strong></div>
+  <div class="metric"><span>Offerings</span><strong>{{ summary.offering_count|int }}</strong></div>
+  <div class="metric"><span>Active Contracts</span><strong>{{ summary.active_contract_count|int }}</strong></div>
+  <div class="metric"><span>Demos Selected</span><strong>{{ summary.demos_selected|int }}</strong></div>
+  <div class="metric"><span>Demos Not Selected</span><strong>{{ summary.demos_not_selected|int }}</strong></div>
+</section>
+
+<section class="card section-nav-card">
+  <div class="section-nav-links">
+    {% for item in vendor_nav %}
+    <a class="{% if item.active %}active{% endif %}" href="{{ item.url }}">{{ item.label }}</a>
+    {% endfor %}
+  </div>
+</section>
+
+{% if section == "summary" %}
+<div class="grid grid-2">
+  <section class="card section-divider">
+    <h2>Key Facts</h2>
+    <table>
+      <thead><tr><th>Field</th><th>Value</th></tr></thead>
+      <tbody>
+      {% for key, value in key_facts.items() %}
+      <tr><td>{{ key }}</td><td>{{ value }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  <section class="card section-divider">
+    <h2>Primary Contacts</h2>
+    <table>
+      <thead><tr><th>Name</th><th>Type</th><th>Email</th></tr></thead>
+      <tbody>
+      {% for row in top_contacts %}
+      <tr><td>{{ row.full_name }}</td><td>{{ row.contact_type }}</td><td>{{ row.email }}</td></tr>
+      {% else %}
+      <tr><td colspan="3">None</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<section class="card section-divider">
+  <div class="section-header">
+    <div>
+      <h2>Top Offerings</h2>
+      <p>Preview of the most relevant offerings for this vendor.</p>
+    </div>
+    <div>
+      <a class="button-link subtle" href="{{ offerings_page_link }}">View All Offerings</a>
+    </div>
+  </div>
+  <table>
+    <thead><tr><th>Offering</th><th>Lifecycle</th><th>Criticality</th></tr></thead>
+    <tbody>
+    {% for row in top_offerings %}
+    <tr>
+      <td><a href="{{ row._offering_link }}">{{ row.offering_name }}</a></td>
+      <td>{{ row.lifecycle_state }}</td>
+      <td>{{ row.criticality_tier }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3">No offerings</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<div class="grid grid-2">
+  <section class="card section-divider">
+    <div class="section-header">
+      <div>
+        <h2>Projects</h2>
+        <p>Top active projects for this vendor.</p>
+      </div>
+      <div>
+        <a class="button-link subtle" href="{{ projects_page_link }}">View All Projects</a>
+      </div>
+    </div>
+    <table>
+      <thead><tr><th>Project</th><th>Status</th><th>Target Date</th><th>Owner</th></tr></thead>
+      <tbody>
+      {% for row in projects_preview %}
+      <tr>
+        <td><a href="{{ row._project_link }}">{{ row.project_name }}</a></td>
+        <td>{{ row.status }}</td>
+        <td>{{ row.target_date }}</td>
+        <td>{{ row.owner_principal }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No projects yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card section-divider">
+    <h2>Documents</h2>
+    <table>
+      <thead><tr><th>Title</th><th>Type</th><th>Owner</th><th>Link</th></tr></thead>
+      <tbody>
+      {% for row in docs_preview %}
+      <tr>
+        <td>{{ row.doc_title }}</td>
+        <td>{{ row.doc_type }}</td>
+        <td>{{ row.owner }}</td>
+        <td><a href="{{ row.doc_url }}" target="_blank" rel="noopener">Open</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No vendor documents linked.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if can_edit and not locked_mode %}
+    <h3>Add Link</h3>
+    <form method="post" action="/vendors/{{ vendor_id }}/docs/link" class="grid grid-3" data-doc-link-form>
+      <input type="hidden" name="return_to" value="{{ return_to }}">
+      <label>URL
+        <input type="url" name="doc_url" placeholder="https://..." required data-doc-url>
+        <small class="muted">We'll auto-detect the link type from the URL. You can change it.</small>
+      </label>
+      <label>Type
+        <select name="doc_type" data-doc-type>
+          <option value="">auto</option>
+          {% for type in doc_types %}
+          <option value="{{ type }}">{{ type }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Title<input type="text" name="doc_title" maxlength="120" placeholder="Optional"></label>
+      <label>Tags<input type="text" name="tags"></label>
+      <label>Owner<input type="text" name="owner"></label>
+      <div><button type="submit">Add Link</button></div>
+    </form>
+    {% endif %}
+  </section>
+</div>
+
+<section class="card section-divider">
+  <details>
+    <summary><strong>Spend (Last 12 Months)</strong></summary>
+    <div class="grid grid-2" style="margin-top:10px;">
+      <div>
+        <h3>Spend By Category</h3>
+        {% if spend_category %}
+        <div class="graph-block">
+          {% for row in spend_category %}
+          <div class="bar-row">
+            <div class="bar-label">{{ row.category }}</div>
+            <div class="bar-track">
+              <div class="bar-fill" style="width: {{ row.bar_pct }}%"></div>
+            </div>
+            <div class="bar-value">${{ "{:,.0f}".format(row.total_spend or 0) }}</div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p>No spend category data.</p>
+        {% endif %}
+      </div>
+      <div>
+        <h3>Monthly Spend Trend</h3>
+        {% if spend_trend_points %}
+        <svg class="line-chart" viewBox="0 0 560 180" preserveAspectRatio="none">
+          <line x1="20" y1="160" x2="540" y2="160" class="axis-line"></line>
+          <polyline class="trend-line" points="{{ spend_trend_points }}"></polyline>
+          {% for p in spend_trend_plot_rows %}
+          <circle class="trend-point" cx="{{ '%.1f'|format(p.plot_x) }}" cy="{{ '%.1f'|format(p.plot_y) }}" r="3"></circle>
+          {% endfor %}
+        </svg>
+        {% else %}
+        <p>No monthly trend data.</p>
+        {% endif %}
+      </div>
+    </div>
+  </details>
+</section>
+
+<section class="card section-divider">
+  <details>
+    <summary><strong>Show Raw Fields</strong></summary>
+    <table style="margin-top:10px;">
+      <thead><tr><th>Field</th><th>Value</th></tr></thead>
+      <tbody>
+      {% for row in raw_fields %}
+      <tr><td>{{ row.field }}</td><td>{{ row.value }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </details>
+</section>
+{% endif %}
+
+{% if section == "ownership" %}
+<div class="grid grid-3">
+  <section class="card section-divider">
+    <h2>Vendor Owners</h2>
+    <table>
+      <thead><tr><th>Owner</th><th>Role</th><th>Active</th></tr></thead>
+      <tbody>
+      {% for row in owners %}
+      <tr><td>{{ row.owner_user_principal }}</td><td>{{ row.owner_role }}</td><td>{{ row.active_flag }}</td></tr>
+      {% else %}
+      <tr><td colspan="3">No owners</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  <section class="card section-divider">
+    <h2>Org Assignments</h2>
+    <table>
+      <thead><tr><th>Org</th><th>Type</th><th>Active</th></tr></thead>
+      <tbody>
+      {% for row in org_assignments %}
+      <tr><td>{{ row.org_id }}</td><td>{{ row.assignment_type }}</td><td>{{ row.active_flag }}</td></tr>
+      {% else %}
+      <tr><td colspan="3">No assignments</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  <section class="card section-divider">
+    <h2>Vendor Contacts</h2>
+    <table>
+      <thead><tr><th>Name</th><th>Type</th><th>Email</th><th>Phone</th></tr></thead>
+      <tbody>
+      {% for row in contacts %}
+      <tr><td>{{ row.full_name }}</td><td>{{ row.contact_type }}</td><td>{{ row.email }}</td><td>{{ row.phone }}</td></tr>
+      {% else %}
+      <tr><td colspan="4">No contacts</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+{% endif %}
+
+{% if section == "contracts" %}
+<div class="grid grid-2">
+  <section class="card section-divider">
+    <h2>Contracts</h2>
+    <table>
+      <thead><tr><th>Contract</th><th>Offering</th><th>Status</th><th>Start</th><th>End</th><th>Cancelled</th></tr></thead>
+      <tbody>
+      {% for row in contracts %}
+      <tr><td>{{ row.contract_number or row.contract_id }}</td><td>{{ row.offering_id }}</td><td>{{ row.contract_status }}</td><td>{{ row.start_date }}</td><td>{{ row.end_date }}</td><td>{{ row.cancelled_flag }}</td></tr>
+      {% else %}
+      <tr><td colspan="6">No contracts</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  <section class="card section-divider">
+    <h2>Contract Events</h2>
+    <table>
+      <thead><tr><th>Event</th><th>Contract</th><th>Date</th><th>Reason</th></tr></thead>
+      <tbody>
+      {% for row in contract_events %}
+      <tr><td>{{ row.event_type }}</td><td>{{ row.contract_id }}</td><td>{{ row.event_ts }}</td><td>{{ row.reason_code }}</td></tr>
+      {% else %}
+      <tr><td colspan="4">No events</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+{% endif %}
+
+{% if section == "demos" %}
+<div class="grid grid-2">
+  <section class="card section-divider">
+    <h2>Demo Outcomes</h2>
+    <table>
+      <thead><tr><th>Demo</th><th>Offering</th><th>Date</th><th>Outcome</th><th>Score</th><th>Reason</th></tr></thead>
+      <tbody>
+      {% for row in demos %}
+      <tr><td>{{ row.demo_id }}</td><td>{{ row.offering_id }}</td><td>{{ row.demo_date }}</td><td>{{ row.selection_outcome }}</td><td>{{ row.overall_score }}</td><td>{{ row.non_selection_reason_code }}</td></tr>
+      {% else %}
+      <tr><td colspan="6">No demos</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  <section class="card section-divider">
+    <h2>Demo Notes</h2>
+    <table>
+      <thead><tr><th>Demo</th><th>Type</th><th>Note</th></tr></thead>
+      <tbody>
+      {% for row in demo_notes %}
+      <tr><td>{{ row.demo_id }}</td><td>{{ row.note_type }}</td><td>{{ row.note_text }}</td></tr>
+      {% else %}
+      <tr><td colspan="3">No notes</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<section class="card section-divider">
+  <h2>Demo Score Breakdown</h2>
+  <table>
+    <thead><tr><th>Demo</th><th>Category</th><th>Score</th><th>Weight</th><th>Comments</th></tr></thead>
+    <tbody>
+    {% for row in demo_scores %}
+    <tr><td>{{ row.demo_id }}</td><td>{{ row.score_category }}</td><td>{{ row.score_value }}</td><td>{{ row.weight }}</td><td>{{ row.comments }}</td></tr>
+    {% else %}
+    <tr><td colspan="5">No demo score details</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if section == "lineage" %}
+<div class="grid grid-3">
+  <section class="card section-divider">
+    <h2>Source Lineage</h2>
+    <table>
+      <thead><tr><th>Source</th><th>Record</th><th>Batch</th><th>Extract TS</th></tr></thead>
+      <tbody>
+      {% for row in source_lineage %}
+      <tr><td>{{ row.source_system }}</td><td>{{ row.source_record_id }}</td><td>{{ row.source_batch_id }}</td><td>{{ row.source_extract_ts }}</td></tr>
+      {% else %}
+      <tr><td colspan="4">No lineage data</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  <section class="card section-divider">
+    <h2>Change Requests</h2>
+    <table>
+      <thead><tr><th>ID</th><th>Type</th><th>Status</th><th>Submitted</th></tr></thead>
+      <tbody>
+      {% for row in change_requests %}
+      <tr><td>{{ row.change_request_id }}</td><td>{{ row.change_type }}</td><td>{{ row.status }}</td><td>{{ row.submitted_at }}</td></tr>
+      {% else %}
+      <tr><td colspan="4">No change requests</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  <section class="card section-divider">
+    <h2>Audit Events</h2>
+    <table>
+      <thead><tr><th>When</th><th>Entity</th><th>Action</th><th>Actor</th></tr></thead>
+      <tbody>
+      {% for row in audit_events %}
+      <tr><td>{{ row.event_ts }}</td><td>{{ row.entity_name }}</td><td>{{ row.action_type }}</td><td>{{ row.actor_user_principal }}</td></tr>
+      {% else %}
+      <tr><td colspan="4">No audit events</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+{% endif %}
+
+{% if section == "changes" %}
+{% set current = profile[0] if profile else {} %}
+{% if can_edit and not locked_mode %}
+<section class="card section-divider">
+  <h2>Change Actions</h2>
+
+  {% if can_direct_apply %}
+  <h3>Direct Vendor Profile Update (Audited)</h3>
+  <form method="post" action="/vendors/{{ vendor_id }}/direct-update" class="grid grid-3">
+    <input type="hidden" name="return_to" value="{{ return_to }}">
+    <label>Legal Name<input type="text" name="legal_name" value="{{ current.legal_name or '' }}"></label>
+    <label>Display Name<input type="text" name="display_name" value="{{ current.display_name or '' }}"></label>
+    <label>Lifecycle State
+      <select name="lifecycle_state">
+        {% for state in lifecycle_states %}
+        <option value="{{ state }}" {% if state == current.lifecycle_state %}selected{% endif %}>{{ state }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Owner Org ID<input type="text" name="owner_org_id" value="{{ current.owner_org_id or '' }}"></label>
+    <label>Risk Tier
+      <select name="risk_tier">
+        {% for tier in risk_tiers %}
+        <option value="{{ tier }}" {% if tier == current.risk_tier %}selected{% endif %}>{{ tier }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="full">Reason For Change (required)
+      <textarea name="reason" rows="2" required placeholder="Explain why this change is needed."></textarea>
+    </label>
+    <div><button type="submit">Apply Audited Update</button></div>
+  </form>
+  {% endif %}
+
+  <h3>Request-Based Change</h3>
+  <form method="post" action="/vendors/{{ vendor_id }}/change-request" class="grid grid-2">
+    <input type="hidden" name="return_to" value="{{ return_to }}">
+    <label>Change Type
+      <select name="change_type">
+        <option value="update_vendor_profile">update_vendor_profile</option>
+        <option value="update_contact">update_contact</option>
+        <option value="update_offering">update_offering</option>
+        <option value="request_lifecycle_change">request_lifecycle_change</option>
+      </select>
+    </label>
+    <label class="full">Notes
+      <textarea name="change_notes" rows="2" placeholder="Describe the requested update."></textarea>
+    </label>
+    <div><button type="submit">Submit Change Request</button></div>
+  </form>
+</section>
+{% else %}
+<section class="card section-divider">
+  <h2>Change Actions</h2>
+  <p>{% if locked_mode %}Locked mode is enabled. Write actions are disabled.{% else %}You have view-only access.{% endif %}</p>
+</section>
+{% endif %}
+
+<section class="card section-divider">
+  <h2>Recent Audited Changes (Last 5)</h2>
+  <table>
+    <thead><tr><th>When</th><th>Entity</th><th>Action</th><th>Actor</th><th>Request</th></tr></thead>
+    <tbody>
+    {% for row in recent_audit %}
+    <tr><td>{{ row.event_ts }}</td><td>{{ row.entity_name }}</td><td>{{ row.action_type }}</td><td>{{ row.actor_user_principal }}</td><td>{{ row.request_id }}</td></tr>
+    {% else %}
+    <tr><td colspan="5">No recent changes</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll("[data-doc-link-form]").forEach((form) => {
+  const urlInput = form.querySelector("[data-doc-url]");
+  const typeSelect = form.querySelector("[data-doc-type]");
+  if (!urlInput || !typeSelect) return;
+  const suggestType = (url) => {
+    const v = (url || "").toLowerCase();
+    if (v.includes("sharepoint.com") || v.includes("/sites/") || v.includes("/teams/")) return "sharepoint";
+    if (v.includes("onedrive.live.com") || v.includes("1drv.ms")) return "onedrive";
+    if (v.includes("atlassian.net/wiki") || v.includes("/confluence")) return "confluence";
+    if (v.includes("docs.google.com") || v.includes("drive.google.com")) return "google_drive";
+    if (v.includes("box.com")) return "box";
+    if (v.includes("dropbox.com")) return "dropbox";
+    if (v.includes("github.com")) return "github";
+    return "other";
+  };
+  urlInput.addEventListener("input", () => {
+    if (!typeSelect.value || typeSelect.value === "other") {
+      typeSelect.value = suggestType(urlInput.value);
+    }
+  });
+});
+</script>
+{% endblock %}

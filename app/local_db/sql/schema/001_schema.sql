@@ -1,0 +1,530 @@
+PRAGMA foreign_keys = ON;
+
+-- Source immutable tables
+CREATE TABLE IF NOT EXISTS src_ingest_batch (
+  batch_id TEXT PRIMARY KEY,
+  source_system TEXT NOT NULL,
+  source_object TEXT NOT NULL,
+  extract_ts TEXT NOT NULL,
+  loaded_ts TEXT NOT NULL,
+  row_count INTEGER,
+  status TEXT
+);
+
+CREATE TABLE IF NOT EXISTS src_peoplesoft_vendor_raw (
+  batch_id TEXT NOT NULL,
+  source_record_id TEXT NOT NULL,
+  source_extract_ts TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  ingested_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS src_zycus_vendor_raw (
+  batch_id TEXT NOT NULL,
+  source_record_id TEXT NOT NULL,
+  source_extract_ts TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  ingested_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS src_spreadsheet_vendor_raw (
+  batch_id TEXT NOT NULL,
+  source_record_id TEXT NOT NULL,
+  source_extract_ts TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  ingested_at TEXT NOT NULL
+);
+
+-- Canonical current-state tables
+CREATE TABLE IF NOT EXISTS core_vendor (
+  vendor_id TEXT PRIMARY KEY,
+  legal_name TEXT NOT NULL,
+  display_name TEXT,
+  lifecycle_state TEXT NOT NULL,
+  owner_org_id TEXT NOT NULL,
+  risk_tier TEXT,
+  source_system TEXT,
+  source_record_id TEXT,
+  source_batch_id TEXT,
+  source_extract_ts TEXT,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS core_vendor_identifier (
+  vendor_identifier_id TEXT PRIMARY KEY,
+  vendor_id TEXT NOT NULL,
+  identifier_type TEXT NOT NULL,
+  identifier_value TEXT NOT NULL,
+  is_primary INTEGER NOT NULL DEFAULT 0 CHECK (is_primary IN (0, 1)),
+  country_code TEXT,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  FOREIGN KEY (vendor_id) REFERENCES core_vendor(vendor_id)
+);
+
+CREATE TABLE IF NOT EXISTS core_vendor_contact (
+  vendor_contact_id TEXT PRIMARY KEY,
+  vendor_id TEXT NOT NULL,
+  contact_type TEXT NOT NULL,
+  full_name TEXT NOT NULL,
+  email TEXT,
+  phone TEXT,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  FOREIGN KEY (vendor_id) REFERENCES core_vendor(vendor_id)
+);
+
+CREATE TABLE IF NOT EXISTS core_vendor_org_assignment (
+  vendor_org_assignment_id TEXT PRIMARY KEY,
+  vendor_id TEXT NOT NULL,
+  org_id TEXT NOT NULL,
+  assignment_type TEXT NOT NULL,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  FOREIGN KEY (vendor_id) REFERENCES core_vendor(vendor_id)
+);
+
+CREATE TABLE IF NOT EXISTS core_vendor_business_owner (
+  vendor_owner_id TEXT PRIMARY KEY,
+  vendor_id TEXT NOT NULL,
+  owner_user_principal TEXT NOT NULL,
+  owner_role TEXT NOT NULL,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  FOREIGN KEY (vendor_id) REFERENCES core_vendor(vendor_id)
+);
+
+CREATE TABLE IF NOT EXISTS core_vendor_offering (
+  offering_id TEXT PRIMARY KEY,
+  vendor_id TEXT NOT NULL,
+  offering_name TEXT NOT NULL,
+  offering_type TEXT,
+  lifecycle_state TEXT NOT NULL,
+  criticality_tier TEXT,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  FOREIGN KEY (vendor_id) REFERENCES core_vendor(vendor_id)
+);
+
+CREATE TABLE IF NOT EXISTS core_offering_business_owner (
+  offering_owner_id TEXT PRIMARY KEY,
+  offering_id TEXT NOT NULL,
+  owner_user_principal TEXT NOT NULL,
+  owner_role TEXT NOT NULL,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  FOREIGN KEY (offering_id) REFERENCES core_vendor_offering(offering_id)
+);
+
+CREATE TABLE IF NOT EXISTS core_offering_contact (
+  offering_contact_id TEXT PRIMARY KEY,
+  offering_id TEXT NOT NULL,
+  contact_type TEXT NOT NULL,
+  full_name TEXT NOT NULL,
+  email TEXT,
+  phone TEXT,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  FOREIGN KEY (offering_id) REFERENCES core_vendor_offering(offering_id)
+);
+
+CREATE TABLE IF NOT EXISTS core_contract (
+  contract_id TEXT PRIMARY KEY,
+  vendor_id TEXT NOT NULL,
+  offering_id TEXT,
+  contract_number TEXT,
+  contract_status TEXT NOT NULL,
+  start_date TEXT,
+  end_date TEXT,
+  cancelled_flag INTEGER NOT NULL DEFAULT 0 CHECK (cancelled_flag IN (0, 1)),
+  annual_value REAL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  FOREIGN KEY (vendor_id) REFERENCES core_vendor(vendor_id),
+  FOREIGN KEY (offering_id) REFERENCES core_vendor_offering(offering_id)
+);
+
+CREATE TABLE IF NOT EXISTS core_contract_event (
+  contract_event_id TEXT PRIMARY KEY,
+  contract_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  event_ts TEXT NOT NULL,
+  reason_code TEXT,
+  notes TEXT,
+  actor_user_principal TEXT NOT NULL,
+  FOREIGN KEY (contract_id) REFERENCES core_contract(contract_id)
+);
+
+CREATE TABLE IF NOT EXISTS core_vendor_demo (
+  demo_id TEXT PRIMARY KEY,
+  vendor_id TEXT NOT NULL,
+  offering_id TEXT,
+  demo_date TEXT NOT NULL,
+  overall_score REAL,
+  selection_outcome TEXT NOT NULL,
+  non_selection_reason_code TEXT,
+  notes TEXT,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  FOREIGN KEY (vendor_id) REFERENCES core_vendor(vendor_id),
+  FOREIGN KEY (offering_id) REFERENCES core_vendor_offering(offering_id)
+);
+
+CREATE TABLE IF NOT EXISTS core_vendor_demo_score (
+  demo_score_id TEXT PRIMARY KEY,
+  demo_id TEXT NOT NULL,
+  score_category TEXT NOT NULL,
+  score_value REAL NOT NULL,
+  weight REAL,
+  comments TEXT,
+  FOREIGN KEY (demo_id) REFERENCES core_vendor_demo(demo_id)
+);
+
+CREATE TABLE IF NOT EXISTS core_vendor_demo_note (
+  demo_note_id TEXT PRIMARY KEY,
+  demo_id TEXT NOT NULL,
+  note_type TEXT NOT NULL,
+  note_text TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  FOREIGN KEY (demo_id) REFERENCES core_vendor_demo(demo_id)
+);
+
+-- History and audit
+CREATE TABLE IF NOT EXISTS hist_vendor (
+  vendor_hist_id TEXT PRIMARY KEY,
+  vendor_id TEXT NOT NULL,
+  version_no INTEGER NOT NULL,
+  valid_from_ts TEXT NOT NULL,
+  valid_to_ts TEXT,
+  is_current INTEGER NOT NULL DEFAULT 1 CHECK (is_current IN (0, 1)),
+  snapshot_json TEXT NOT NULL,
+  changed_by TEXT NOT NULL,
+  change_reason TEXT
+);
+
+CREATE TABLE IF NOT EXISTS hist_vendor_offering (
+  vendor_offering_hist_id TEXT PRIMARY KEY,
+  offering_id TEXT NOT NULL,
+  version_no INTEGER NOT NULL,
+  valid_from_ts TEXT NOT NULL,
+  valid_to_ts TEXT,
+  is_current INTEGER NOT NULL DEFAULT 1 CHECK (is_current IN (0, 1)),
+  snapshot_json TEXT NOT NULL,
+  changed_by TEXT NOT NULL,
+  change_reason TEXT
+);
+
+CREATE TABLE IF NOT EXISTS hist_contract (
+  contract_hist_id TEXT PRIMARY KEY,
+  contract_id TEXT NOT NULL,
+  version_no INTEGER NOT NULL,
+  valid_from_ts TEXT NOT NULL,
+  valid_to_ts TEXT,
+  is_current INTEGER NOT NULL DEFAULT 1 CHECK (is_current IN (0, 1)),
+  snapshot_json TEXT NOT NULL,
+  changed_by TEXT NOT NULL,
+  change_reason TEXT
+);
+
+CREATE TABLE IF NOT EXISTS audit_entity_change (
+  change_event_id TEXT PRIMARY KEY,
+  entity_name TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  action_type TEXT NOT NULL,
+  before_json TEXT,
+  after_json TEXT,
+  actor_user_principal TEXT NOT NULL,
+  event_ts TEXT NOT NULL,
+  request_id TEXT
+);
+
+CREATE TABLE IF NOT EXISTS audit_workflow_event (
+  workflow_event_id TEXT PRIMARY KEY,
+  workflow_type TEXT NOT NULL,
+  workflow_id TEXT NOT NULL,
+  old_status TEXT,
+  new_status TEXT,
+  actor_user_principal TEXT NOT NULL,
+  event_ts TEXT NOT NULL,
+  notes TEXT
+);
+
+CREATE TABLE IF NOT EXISTS audit_access_event (
+  access_event_id TEXT PRIMARY KEY,
+  actor_user_principal TEXT NOT NULL,
+  action_type TEXT NOT NULL,
+  target_user_principal TEXT,
+  target_role TEXT,
+  event_ts TEXT NOT NULL,
+  notes TEXT
+);
+
+-- App workflow tables
+CREATE TABLE IF NOT EXISTS app_onboarding_request (
+  request_id TEXT PRIMARY KEY,
+  requestor_user_principal TEXT NOT NULL,
+  vendor_name_raw TEXT NOT NULL,
+  priority TEXT,
+  status TEXT NOT NULL,
+  submitted_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS app_vendor_change_request (
+  change_request_id TEXT PRIMARY KEY,
+  vendor_id TEXT NOT NULL,
+  requestor_user_principal TEXT NOT NULL,
+  change_type TEXT NOT NULL,
+  requested_payload_json TEXT NOT NULL,
+  status TEXT NOT NULL,
+  submitted_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS app_onboarding_task (
+  task_id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL,
+  task_type TEXT NOT NULL,
+  assignee_group TEXT,
+  due_at TEXT,
+  status TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS app_onboarding_approval (
+  approval_id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL,
+  stage_name TEXT NOT NULL,
+  approver_user_principal TEXT,
+  decision TEXT,
+  decided_at TEXT,
+  comments TEXT,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS app_access_request (
+  access_request_id TEXT PRIMARY KEY,
+  requester_user_principal TEXT NOT NULL,
+  requested_role TEXT NOT NULL,
+  justification TEXT,
+  status TEXT NOT NULL,
+  submitted_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS app_note (
+  note_id TEXT PRIMARY KEY,
+  entity_name TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  note_type TEXT NOT NULL,
+  note_text TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  created_by TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS app_user_settings (
+  setting_id TEXT PRIMARY KEY,
+  user_principal TEXT NOT NULL,
+  setting_key TEXT NOT NULL,
+  setting_value_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS app_usage_log (
+  usage_event_id TEXT PRIMARY KEY,
+  user_principal TEXT NOT NULL,
+  page_name TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  event_ts TEXT NOT NULL,
+  payload_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS app_project (
+  project_id TEXT PRIMARY KEY,
+  vendor_id TEXT,
+  project_name TEXT NOT NULL,
+  project_type TEXT,
+  status TEXT NOT NULL,
+  start_date TEXT,
+  target_date TEXT,
+  owner_principal TEXT,
+  description TEXT,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  created_at TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  FOREIGN KEY (vendor_id) REFERENCES core_vendor(vendor_id)
+);
+
+CREATE TABLE IF NOT EXISTS app_project_vendor_map (
+  project_vendor_map_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  vendor_id TEXT NOT NULL,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  created_at TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES app_project(project_id),
+  FOREIGN KEY (vendor_id) REFERENCES core_vendor(vendor_id)
+);
+
+CREATE TABLE IF NOT EXISTS app_project_offering_map (
+  project_offering_map_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  vendor_id TEXT NOT NULL,
+  offering_id TEXT NOT NULL,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  created_at TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES app_project(project_id),
+  FOREIGN KEY (offering_id) REFERENCES core_vendor_offering(offering_id)
+);
+
+CREATE TABLE IF NOT EXISTS app_project_demo (
+  project_demo_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  vendor_id TEXT NOT NULL,
+  demo_name TEXT NOT NULL,
+  demo_datetime_start TEXT,
+  demo_datetime_end TEXT,
+  demo_type TEXT,
+  outcome TEXT,
+  score REAL,
+  attendees_internal TEXT,
+  attendees_vendor TEXT,
+  notes TEXT,
+  followups TEXT,
+  linked_offering_id TEXT,
+  linked_vendor_demo_id TEXT,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  created_at TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES app_project(project_id),
+  FOREIGN KEY (linked_offering_id) REFERENCES core_vendor_offering(offering_id)
+);
+
+CREATE TABLE IF NOT EXISTS app_project_note (
+  project_note_id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  vendor_id TEXT NOT NULL,
+  note_text TEXT NOT NULL,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  created_at TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES app_project(project_id)
+);
+
+CREATE TABLE IF NOT EXISTS app_document_link (
+  doc_id TEXT PRIMARY KEY,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  doc_title TEXT NOT NULL,
+  doc_url TEXT NOT NULL,
+  doc_type TEXT NOT NULL,
+  tags TEXT,
+  owner TEXT,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  created_at TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL
+);
+
+-- Security tables
+CREATE TABLE IF NOT EXISTS sec_user_role_map (
+  user_principal TEXT NOT NULL,
+  role_code TEXT NOT NULL,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  granted_by TEXT NOT NULL,
+  granted_at TEXT NOT NULL,
+  revoked_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS sec_user_org_scope (
+  user_principal TEXT NOT NULL,
+  org_id TEXT NOT NULL,
+  scope_level TEXT NOT NULL,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  granted_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sec_role_permission (
+  role_code TEXT NOT NULL,
+  object_name TEXT NOT NULL,
+  action_code TEXT NOT NULL,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  updated_at TEXT NOT NULL
+);
+
+-- Reporting views (local/dev unsecured variants)
+CREATE VIEW IF NOT EXISTS rpt_vendor_360 AS
+SELECT
+  vendor_id,
+  legal_name,
+  display_name,
+  lifecycle_state,
+  owner_org_id,
+  risk_tier,
+  updated_at
+FROM core_vendor;
+
+CREATE VIEW IF NOT EXISTS rpt_vendor_demo_outcomes AS
+SELECT
+  demo_id,
+  vendor_id,
+  offering_id,
+  demo_date,
+  overall_score,
+  selection_outcome,
+  non_selection_reason_code,
+  notes
+FROM core_vendor_demo;
+
+CREATE VIEW IF NOT EXISTS rpt_contract_cancellations AS
+SELECT
+  c.contract_id,
+  c.vendor_id,
+  c.offering_id,
+  e.event_ts AS cancelled_at,
+  e.reason_code,
+  e.notes
+FROM core_contract c
+INNER JOIN core_contract_event e
+  ON c.contract_id = e.contract_id
+WHERE e.event_type = 'contract_cancelled';
+
+-- Performance indexes
+CREATE INDEX IF NOT EXISTS idx_core_vendor_owner_org ON core_vendor(owner_org_id);
+CREATE INDEX IF NOT EXISTS idx_core_vendor_display ON core_vendor(display_name);
+CREATE INDEX IF NOT EXISTS idx_core_offering_vendor ON core_vendor_offering(vendor_id);
+CREATE INDEX IF NOT EXISTS idx_core_contract_vendor ON core_contract(vendor_id);
+CREATE INDEX IF NOT EXISTS idx_core_contract_offering ON core_contract(offering_id);
+CREATE INDEX IF NOT EXISTS idx_core_demo_vendor ON core_vendor_demo(vendor_id);
+CREATE INDEX IF NOT EXISTS idx_core_demo_offering ON core_vendor_demo(offering_id);
+CREATE INDEX IF NOT EXISTS idx_app_project_vendor ON app_project(vendor_id);
+CREATE INDEX IF NOT EXISTS idx_app_project_vendor_map_vendor ON app_project_vendor_map(vendor_id);
+CREATE INDEX IF NOT EXISTS idx_app_project_vendor_map_project ON app_project_vendor_map(project_id);
+CREATE INDEX IF NOT EXISTS idx_app_project_status ON app_project(status);
+CREATE INDEX IF NOT EXISTS idx_app_project_demo_project ON app_project_demo(project_id);
+CREATE INDEX IF NOT EXISTS idx_app_project_note_project ON app_project_note(project_id);
+CREATE INDEX IF NOT EXISTS idx_app_doc_entity ON app_document_link(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_usage_user_ts ON app_usage_log(user_principal, event_ts);
+CREATE INDEX IF NOT EXISTS idx_change_req_vendor ON app_vendor_change_request(vendor_id);

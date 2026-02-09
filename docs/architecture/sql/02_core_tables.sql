@@ -317,6 +317,24 @@ CREATE TABLE IF NOT EXISTS vendor_prod.twvendor.app_note (
   created_by STRING NOT NULL
 ) USING DELTA;
 
+CREATE TABLE IF NOT EXISTS vendor_prod.twvendor.app_user_settings (
+  setting_id STRING NOT NULL,
+  user_principal STRING NOT NULL,
+  setting_key STRING NOT NULL,
+  setting_value_json STRING NOT NULL,
+  updated_at TIMESTAMP NOT NULL,
+  updated_by STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS vendor_prod.twvendor.app_usage_log (
+  usage_event_id STRING NOT NULL,
+  user_principal STRING NOT NULL,
+  page_name STRING NOT NULL,
+  event_type STRING NOT NULL,
+  event_ts TIMESTAMP NOT NULL,
+  payload_json STRING NOT NULL
+) USING DELTA;
+
 -- Security tables
 CREATE TABLE IF NOT EXISTS vendor_prod.twvendor.sec_user_role_map (
   user_principal STRING NOT NULL,

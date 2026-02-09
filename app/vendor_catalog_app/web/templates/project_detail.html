@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="section-header">
+  <div>
+    <h1>{{ project.project_name }}</h1>
+    <p>{{ vendor_display_name }} project workflow, demos, and document links.</p>
+  </div>
+  <div class="button-group">
+    {% if can_edit and not locked_mode %}
+    <a class="button-link subtle" href="/vendors/{{ vendor_id }}/projects/{{ project.project_id }}/edit?return_to={{ return_to|urlencode }}">Edit Project</a>
+    {% endif %}
+    <a class="button-link subtle" href="/vendors/{{ vendor_id }}/projects?return_to={{ return_to|urlencode }}">Back To Projects</a>
+    <a class="button-link" href="{{ return_to }}">Back To List</a>
+  </div>
+</div>
+
+<section class="metrics">
+  <div class="metric"><span>Status</span><strong>{{ project.status }}</strong></div>
+  <div class="metric"><span>Type</span><strong>{{ project.project_type }}</strong></div>
+  <div class="metric"><span>Start</span><strong>{{ project.start_date or '-' }}</strong></div>
+  <div class="metric"><span>Target</span><strong>{{ project.target_date or '-' }}</strong></div>
+  <div class="metric"><span>Owner</span><strong>{{ project.owner_principal or '-' }}</strong></div>
+  <div class="metric"><span>Linked Offerings</span><strong>{{ project_offerings|length }}</strong></div>
+</section>
+
+<section class="card section-nav-card">
+  <div class="section-nav-links">
+    {% for item in vendor_nav %}
+    <a class="{% if item.active %}active{% endif %}" href="{{ item.url }}">{{ item.label }}</a>
+    {% endfor %}
+  </div>
+</section>
+
+<div class="grid grid-2">
+  <section class="card section-divider">
+    <h2>Project Summary</h2>
+    <table>
+      <tbody>
+      <tr><th>Project ID</th><td>{{ project.project_id }}</td></tr>
+      <tr><th>Status</th><td>{{ project.status }}</td></tr>
+      <tr><th>Type</th><td>{{ project.project_type }}</td></tr>
+      <tr><th>Owner</th><td>{{ project.owner_principal }}</td></tr>
+      <tr><th>Start Date</th><td>{{ project.start_date }}</td></tr>
+      <tr><th>Target Date</th><td>{{ project.target_date }}</td></tr>
+      <tr><th>Description</th><td>{{ project.description }}</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card section-divider">
+    <h2>Linked Offerings</h2>
+    <table>
+      <thead><tr><th>Offering</th><th>Lifecycle</th><th>Criticality</th></tr></thead>
+      <tbody>
+      {% for row in project_offerings %}
+      <tr>
+        <td><a href="/vendors/{{ vendor_id }}/offerings/{{ row.offering_id }}?return_to={{ return_to|urlencode }}">{{ row.offering_name }}</a></td>
+        <td>{{ row.lifecycle_state }}</td>
+        <td>{{ row.criticality_tier }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3">No linked offerings.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<section class="card section-divider">
+  <div class="section-header">
+    <div>
+      <h2>Demos For This Project</h2>
+      <p>Create new demos or map existing vendor demos to this project.</p>
+    </div>
+    <div class="button-group">
+      {% if can_edit and not locked_mode %}
+      <a class="button-link" href="/vendors/{{ vendor_id }}/projects/{{ project.project_id }}/demos/new?return_to={{ return_to|urlencode }}">+ Add Demo</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if can_edit and not locked_mode %}
+  <form method="post" action="/vendors/{{ vendor_id }}/projects/{{ project.project_id }}/demos/map" class="inline-form" style="margin-bottom:10px;">
+    <input type="hidden" name="return_to" value="{{ return_to }}">
+    <select name="vendor_demo_id" required>
+      {% for option in demo_map_options %}
+      <option value="{{ option.demo_id }}">{{ option.label }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">Map Existing Vendor Demo</button>
+  </form>
+  {% endif %}
+
+  <table>
+    <thead>
+      <tr>
+        <th>Demo</th>
+        <th>Type</th>
+        <th>Outcome</th>
+        <th>Score</th>
+        <th>Start</th>
+        <th>Offering</th>
+        <th>Notes</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in project_demos %}
+    <tr>
+      <td>{{ row.demo_name }}</td>
+      <td>{{ row.demo_type }}</td>
+      <td>{{ row.outcome }}</td>
+      <td>{{ row.score }}</td>
+      <td>{{ row.demo_datetime_start }}</td>
+      <td>{{ row.linked_offering_id }}</td>
+      <td>{{ row.notes }}</td>
+      <td>
+        {% if can_edit and not locked_mode %}
+        <form method="post" action="{{ row._update_action }}" class="inline-form">
+          <input type="hidden" name="return_to" value="{{ return_to }}">
+          <input type="hidden" name="demo_name" value="{{ row.demo_name }}">
+          <input type="hidden" name="demo_type" value="{{ row.demo_type }}">
+          <input type="hidden" name="outcome" value="{{ row.outcome }}">
+          <input type="hidden" name="score" value="{{ row.score }}">
+          <input type="hidden" name="demo_datetime_start" value="{{ row.demo_datetime_start }}">
+          <input type="hidden" name="linked_offering_id" value="{{ row.linked_offering_id }}">
+          <input type="hidden" name="notes" value="{{ row.notes }}">
+          <input type="text" name="reason" placeholder="Reason" required>
+          <button type="submit">Re-Audit</button>
+        </form>
+        <form method="post" action="{{ row._remove_action }}" class="inline-form">
+          <input type="hidden" name="return_to" value="{{ return_to }}">
+          <button type="submit">Remove</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    <tr>
+      <td colspan="8">
+        <strong>Demo Documents</strong>
+        <table class="compact-table">
+          <thead><tr><th>Title</th><th>Type</th><th>Owner</th><th>Link</th></tr></thead>
+          <tbody>
+          {% for doc in row._docs %}
+          <tr>
+            <td>{{ doc.doc_title }}</td>
+            <td>{{ doc.doc_type }}</td>
+            <td>{{ doc.owner }}</td>
+            <td><a href="{{ doc.doc_url }}" target="_blank" rel="noopener">Open</a></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4">No demo documents.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        {% if can_edit and not locked_mode %}
+        <form method="post" action="{{ row._demo_doc_link_action }}" class="grid grid-3" data-doc-link-form>
+          <input type="hidden" name="return_to" value="{{ return_to }}">
+          <label>URL
+            <input type="url" name="doc_url" placeholder="https://..." required data-doc-url>
+            <small class="muted">We'll auto-detect the link type from the URL. You can change it.</small>
+          </label>
+          <label>Type
+            <select name="doc_type" data-doc-type>
+              <option value="">auto</option>
+              {% for type in doc_types %}
+              <option value="{{ type }}">{{ type }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>Title<input type="text" name="doc_title" maxlength="120" placeholder="Optional"></label>
+          <label>Tags<input type="text" name="tags"></label>
+          <label>Owner<input type="text" name="owner"></label>
+          <div><button type="submit">Add Demo Link</button></div>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8">No demos yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card section-divider">
+  <h2>Documents For This Project</h2>
+  <table>
+    <thead><tr><th>Title</th><th>Type</th><th>Owner</th><th>Tags</th><th>Link</th><th>Action</th></tr></thead>
+    <tbody>
+    {% for row in project_docs %}
+    <tr>
+      <td>{{ row.doc_title }}</td>
+      <td>{{ row.doc_type }}</td>
+      <td>{{ row.owner }}</td>
+      <td>{{ row.tags }}</td>
+      <td><a href="{{ row.doc_url }}" target="_blank" rel="noopener">Open</a></td>
+      <td>
+        {% if can_edit and not locked_mode %}
+        <form method="post" action="/vendors/docs/{{ row.doc_id }}/remove" class="inline-form">
+          <input type="hidden" name="return_to" value="{{ return_to }}">
+          <input type="hidden" name="vendor_id" value="{{ vendor_id }}">
+          <button type="submit">Remove</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6">No project documents linked.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if can_edit and not locked_mode %}
+  <h3>Add Link</h3>
+  <form method="post" action="/vendors/{{ vendor_id }}/projects/{{ project.project_id }}/docs/link" class="grid grid-3" data-doc-link-form>
+    <input type="hidden" name="return_to" value="{{ return_to }}">
+    <label>URL
+      <input type="url" name="doc_url" placeholder="https://..." required data-doc-url>
+      <small class="muted">We'll auto-detect the link type from the URL. You can change it.</small>
+    </label>
+    <label>Type
+      <select name="doc_type" data-doc-type>
+        <option value="">auto</option>
+        {% for type in doc_types %}
+        <option value="{{ type }}">{{ type }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Title<input type="text" name="doc_title" maxlength="120" placeholder="Optional"></label>
+    <label>Tags<input type="text" name="tags"></label>
+    <label>Owner<input type="text" name="owner"></label>
+    <div><button type="submit">Add Link</button></div>
+  </form>
+  {% endif %}
+</section>
+
+<section class="card section-divider">
+  <h2>Activity / Changes</h2>
+  <table>
+    <thead><tr><th>When</th><th>Entity</th><th>Action</th><th>Actor</th></tr></thead>
+    <tbody>
+    {% for row in project_activity %}
+    <tr>
+      <td>{{ row.event_ts }}</td>
+      <td>{{ row.entity_name }}</td>
+      <td>{{ row.action_type }}</td>
+      <td>{{ row.actor_user_principal }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">No activity yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll("[data-doc-link-form]").forEach((form) => {
+  const urlInput = form.querySelector("[data-doc-url]");
+  const typeSelect = form.querySelector("[data-doc-type]");
+  if (!urlInput || !typeSelect) return;
+  const suggestType = (url) => {
+    const v = (url || "").toLowerCase();
+    if (v.includes("sharepoint.com") || v.includes("/sites/") || v.includes("/teams/")) return "sharepoint";
+    if (v.includes("onedrive.live.com") || v.includes("1drv.ms")) return "onedrive";
+    if (v.includes("atlassian.net/wiki") || v.includes("/confluence")) return "confluence";
+    if (v.includes("docs.google.com") || v.includes("drive.google.com")) return "google_drive";
+    if (v.includes("box.com")) return "box";
+    if (v.includes("dropbox.com")) return "dropbox";
+    if (v.includes("github.com")) return "github";
+    return "other";
+  };
+  urlInput.addEventListener("input", () => {
+    if (!typeSelect.value || typeSelect.value === "other") {
+      typeSelect.value = suggestType(urlInput.value);
+    }
+  });
+});
+</script>
+{% endblock %}
+

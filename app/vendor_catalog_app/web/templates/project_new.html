@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="section-header">
+  <div>
+    <h1>New Project</h1>
+    <p>Create a standalone project, then attach one or many vendors and offerings.</p>
+  </div>
+  <div class="button-group">
+    {% if vendor_id %}
+    <a class="button-link subtle" href="/vendors/{{ vendor_id }}/projects?return_to={{ return_to|urlencode }}">Back To Vendor Projects</a>
+    {% else %}
+    <a class="button-link subtle" href="/projects">Back To Projects</a>
+    {% endif %}
+    <a class="button-link" href="{{ return_to }}">Back To List</a>
+  </div>
+</div>
+
+<section class="card section-divider">
+  <form method="post" action="{{ form_action }}" class="grid grid-3">
+    <input type="hidden" name="return_to" value="{{ return_to }}">
+    <label>Project Name
+      <input type="text" name="project_name" required>
+    </label>
+    <label>Project Type
+      <select name="project_type">
+        {% for value in project_types %}
+        <option value="{{ value }}">{{ value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Status
+      <select name="status">
+        {% for value in project_statuses %}
+        <option value="{{ value }}" {% if value == "draft" %}selected{% endif %}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Start Date<input type="date" name="start_date"></label>
+    <label>Target Date<input type="date" name="target_date"></label>
+    <label>Owner Principal<input type="text" name="owner_principal"></label>
+    <label class="full">Description
+      <textarea name="description" rows="4"></textarea>
+    </label>
+    <label class="full">Linked Vendors (optional)
+      <select name="linked_vendors" multiple size="6">
+        {% for vendor in vendor_options %}
+        <option value="{{ vendor.vendor_id }}" {% if vendor.vendor_id in selected_vendor_ids %}selected{% endif %}>
+          {{ vendor.label }} ({{ vendor.vendor_id }})
+        </option>
+        {% endfor %}
+      </select>
+      <small class="muted">You can leave this empty and attach vendors later.</small>
+    </label>
+    <label class="full">Linked Offerings (optional)
+      <select name="linked_offerings" multiple size="6" data-filtered-offerings>
+        {% for offering in offerings %}
+        <option value="{{ offering.offering_id }}" data-vendor-id="{{ offering.vendor_id }}">{{ offering.offering_name }} ({{ offering.offering_id }}) - {{ offering.vendor_display_name }}</option>
+        {% endfor %}
+      </select>
+      <small class="muted">Selecting offerings auto-attaches their vendor(s).</small>
+    </label>
+    <div><button type="submit">Create Project</button></div>
+  </form>
+</section>
+<script>
+(() => {
+  const vendorSelect = document.querySelector('select[name="linked_vendors"]');
+  const offeringSelect = document.querySelector('[data-filtered-offerings]');
+  if (!vendorSelect || !offeringSelect) return;
+
+  const applyFilter = () => {
+    const selectedVendors = new Set(Array.from(vendorSelect.selectedOptions).map((opt) => opt.value));
+    const filterActive = selectedVendors.size > 0;
+    Array.from(offeringSelect.options).forEach((opt) => {
+      const vendorId = opt.getAttribute("data-vendor-id") || "";
+      const keep = !filterActive || selectedVendors.has(vendorId);
+      opt.hidden = !keep;
+      if (!keep) {
+        opt.selected = false;
+      }
+    });
+  };
+  vendorSelect.addEventListener("change", applyFilter);
+  applyFilter();
+})();
+</script>
+{% endblock %}

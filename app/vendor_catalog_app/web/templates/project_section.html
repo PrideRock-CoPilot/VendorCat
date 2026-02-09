@@ -1,0 +1,450 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="section-header">
+  <div>
+    <h1>{{ project.project_name }}</h1>
+    <p>Standalone project workspace.</p>
+  </div>
+  <div class="button-group">
+    {% if can_edit and not locked_mode %}
+    <a class="button-link subtle" href="/projects/{{ project_id }}/edit?return_to={{ return_to|urlencode }}">Edit Project</a>
+    {% endif %}
+    {% if vendor_id %}
+    <a class="button-link subtle" href="/vendors/{{ vendor_id }}/summary?return_to={{ return_to|urlencode }}">Open Vendor</a>
+    {% endif %}
+    <a class="button-link" href="{{ return_to }}">Back</a>
+  </div>
+</div>
+
+<section class="metrics">
+  <div class="metric"><span>Status</span><strong>{{ summary.status }}</strong></div>
+  <div class="metric"><span>Type</span><strong>{{ summary.project_type }}</strong></div>
+  <div class="metric"><span>Owner</span><strong>{{ project.owner_principal or "-" }}</strong></div>
+  <div class="metric"><span>Vendors</span><strong>{{ summary.vendor_count }}</strong></div>
+  <div class="metric"><span>Offerings</span><strong>{{ summary.offering_count }}</strong></div>
+  <div class="metric"><span>Demos</span><strong>{{ summary.demo_count }}</strong></div>
+  <div class="metric"><span>Notes</span><strong>{{ summary.note_count }}</strong></div>
+  <div class="metric"><span>Docs</span><strong>{{ summary.doc_count }}</strong></div>
+</section>
+
+<section class="card section-nav-card">
+  <div class="section-nav-links">
+    {% for item in project_nav %}
+    <a class="{% if item.active %}active{% endif %}" href="{{ item.url }}">{{ item.label }}</a>
+    {% endfor %}
+  </div>
+</section>
+
+{% if section == "summary" %}
+{% if can_edit and not locked_mode %}
+<section class="card section-divider">
+  <h2>Quick Actions</h2>
+  <div class="button-group">
+    {% if vendor_id %}
+    <a class="button-link" href="/vendors/{{ vendor_id }}/projects/{{ project_id }}/demos/new?return_to=/projects/{{ project_id }}/demos">+ Add Demo</a>
+    {% endif %}
+    <a class="button-link subtle" href="/projects/{{ project_id }}/docs?return_to={{ return_to|urlencode }}">+ Add Document</a>
+    <a class="button-link subtle" href="/projects/{{ project_id }}/notes?return_to={{ return_to|urlencode }}#add-note">+ Add Note</a>
+  </div>
+</section>
+{% endif %}
+<div class="grid grid-2">
+  <section class="card section-divider">
+    <h2>Project Summary</h2>
+    <table>
+      <tbody>
+      <tr><th>Project ID</th><td>{{ project.project_id }}</td></tr>
+      <tr>
+        <th>Vendors</th>
+        <td>
+          {% for row in project_vendors %}
+            <a href="/vendors/{{ row.vendor_id }}/summary?return_to={{ return_to|urlencode }}">{{ row.vendor_display_name }}</a>{% if not loop.last %}, {% endif %}
+          {% else %}
+            <span class="muted">No vendors attached</span>
+          {% endfor %}
+        </td>
+      </tr>
+      <tr><th>Status</th><td>{{ project.status }}</td></tr>
+      <tr><th>Type</th><td>{{ project.project_type }}</td></tr>
+      <tr><th>Start Date</th><td>{{ project.start_date }}</td></tr>
+      <tr><th>Target Date</th><td>{{ project.target_date }}</td></tr>
+      <tr><th>Owner</th><td>{{ project.owner_principal }}</td></tr>
+      <tr><th>Description</th><td>{{ project.description }}</td></tr>
+      </tbody>
+    </table>
+  </section>
+  <section class="card section-divider">
+    <h2>Quick Health</h2>
+    <table>
+      <tbody>
+      <tr><th>Linked Offerings</th><td>{{ summary.offering_count }}</td></tr>
+      <tr><th>Project Demos</th><td>{{ summary.demo_count }}</td></tr>
+      <tr><th>Document Links</th><td>{{ summary.doc_count }}</td></tr>
+      <tr><th>Owners</th><td>{{ summary.owner_count }}</td></tr>
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<section class="card section-divider">
+  <h2>Recent Notes</h2>
+  <table>
+    <thead><tr><th>When</th><th>Author</th><th>Note</th></tr></thead>
+    <tbody>
+    {% for row in project_notes[:5] %}
+    <tr><td>{{ row.created_at }}</td><td>{{ row.created_by }}</td><td>{{ row.note_text }}</td></tr>
+    {% else %}
+    <tr><td colspan="3">No notes yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if section == "ownership" %}
+<div class="grid grid-2">
+  <section class="card section-divider">
+    <h2>Project Ownership</h2>
+    {% if can_edit and not locked_mode %}
+    <form method="post" action="{{ owner_update_action }}" class="grid grid-2" style="margin-bottom:10px;">
+      <input type="hidden" name="return_to" value="/projects/{{ project_id }}/ownership">
+      <label>Owner Principal
+        <input type="text" name="owner_principal" value="{{ project.owner_principal or '' }}" placeholder="user@company.com">
+      </label>
+      <label>Reason
+        <input type="text" name="reason" placeholder="Reason for owner change" required>
+      </label>
+      <div><button type="submit">Save Owner</button></div>
+    </form>
+    {% endif %}
+    <table>
+      <thead><tr><th>Role</th><th>Principal</th></tr></thead>
+      <tbody>
+      <tr><td>project_owner</td><td>{{ project.owner_principal or "not assigned" }}</td></tr>
+      </tbody>
+    </table>
+  </section>
+  <section class="card section-divider">
+    <h2>Linked Offering Owners</h2>
+    <table>
+      <thead><tr><th>Offering</th><th>Owner</th><th>Role</th><th>Active</th></tr></thead>
+      <tbody>
+      {% for row in project_offering_owners %}
+      <tr><td>{{ row.offering_name }}</td><td>{{ row.owner_user_principal }}</td><td>{{ row.owner_role }}</td><td>{{ row.active_flag }}</td></tr>
+      {% else %}
+      <tr><td colspan="4">No linked offering owners.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+<section class="card section-divider">
+  <h2>Linked Offering Contacts</h2>
+  <table>
+    <thead><tr><th>Offering</th><th>Name</th><th>Type</th><th>Email</th><th>Phone</th></tr></thead>
+    <tbody>
+    {% for row in project_offering_contacts %}
+    <tr><td>{{ row.offering_name }}</td><td>{{ row.full_name }}</td><td>{{ row.contact_type }}</td><td>{{ row.email }}</td><td>{{ row.phone }}</td></tr>
+    {% else %}
+    <tr><td colspan="5">No linked offering contacts.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if section == "offerings" %}
+<section class="card section-divider">
+  <h2>Linked Offerings</h2>
+  {% if can_edit and not locked_mode %}
+  <form method="post" action="{{ add_offering_action }}" class="grid grid-5" style="margin-bottom:10px;" data-attach-offering-form>
+    <input type="hidden" name="return_to" value="/projects/{{ project_id }}/offerings">
+    <label>Vendor
+      <select name="offering_vendor_id" data-offering-vendor-filter>
+        <option value="">Select vendor</option>
+        {% for row in all_vendor_options %}
+        <option value="{{ row.vendor_id }}" data-linked="{{ row.linked }}" {% if row.vendor_id == vendor_id %}selected{% endif %}>{{ row.label }} ({{ row.vendor_id }})</option>
+        {% endfor %}
+      </select>
+      <div style="margin-top:6px;">
+        <a class="button-link subtle" href="/vendors/new?return_to=%2Fprojects%2F{{ project_id }}%2Fofferings">Add Vendor</a>
+      </div>
+    </label>
+    <label>Offering
+      <select name="offering_id" required data-offering-select>
+        <option value="">Select offering to attach</option>
+        {% for row in attachable_offering_options %}
+        <option value="{{ row.offering_id }}" data-vendor-id="{{ row.vendor_id }}">{{ row.offering_name }} ({{ row.offering_id }}) - {{ row.vendor_display_name }}</option>
+        {% endfor %}
+      </select>
+      <div style="margin-top:6px;">
+        <a class="button-link subtle" href="#" data-create-offering-link>Add Offering</a>
+      </div>
+    </label>
+    <label>Reason
+      <input type="text" name="reason" placeholder="Reason (optional)">
+    </label>
+    <div style="display:flex; align-items:flex-end;">
+      <button type="submit">Attach Offering</button>
+    </div>
+  </form>
+  <form method="post" action="{{ add_vendor_action }}" data-auto-attach-vendor>
+    <input type="hidden" name="return_to" value="/projects/{{ project_id }}/offerings">
+    <input type="hidden" name="vendor_id" data-auto-vendor-id>
+    <input type="hidden" name="reason" value="Auto attach from vendor selection">
+  </form>
+  <div class="muted">When you select a vendor, it is attached automatically and offerings are filtered to that vendor.</div>
+  {% endif %}
+  <table>
+    <thead><tr><th>Vendor</th><th>Offering</th><th>Type</th><th>Lifecycle</th><th>Criticality</th><th>Open</th></tr></thead>
+    <tbody>
+    {% for row in project_offerings %}
+    <tr>
+      <td>{{ row.vendor_id }}</td>
+      <td>{{ row.offering_name }}</td>
+      <td>{{ row.offering_type }}</td>
+      <td>{{ row.lifecycle_state }}</td>
+      <td>{{ row.criticality_tier }}</td>
+      <td><a class="button-link subtle" href="/vendors/{{ row.vendor_id }}/offerings/{{ row.offering_id }}?return_to={{ return_to|urlencode }}">Offering</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6">No linked offerings.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if section == "demos" %}
+<section class="card section-divider">
+  <div class="section-header">
+    <div>
+      <h2>Project Demos</h2>
+      <p>All project demo sessions with links back to vendor demo records.</p>
+    </div>
+    <div class="button-group">
+      {% if can_edit and not locked_mode and vendor_id %}
+      <a class="button-link" href="/vendors/{{ vendor_id }}/projects/{{ project_id }}/demos/new?return_to=/projects/{{ project_id }}/demos">+ Add Demo</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if can_edit and not locked_mode and vendor_id %}
+  <form method="post" action="/vendors/{{ vendor_id }}/projects/{{ project_id }}/demos/map" class="inline-form" style="margin-bottom:10px;">
+    <input type="hidden" name="return_to" value="/projects/{{ project_id }}/demos">
+    <select name="vendor_demo_id" required>
+      {% for option in demo_map_options if option.demo_id %}
+      <option value="{{ option.demo_id }}">{{ option.label }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">Map Existing Vendor Demo</button>
+  </form>
+  {% elif not vendor_id %}
+  <p class="muted">Attach at least one vendor to this project before adding or mapping demos.</p>
+  {% endif %}
+
+  <table>
+    <thead><tr><th>Vendor</th><th>Demo</th><th>Type</th><th>Outcome</th><th>Score</th><th>Start</th><th>Vendor Demo</th><th>Actions</th></tr></thead>
+    <tbody>
+    {% for row in project_demos %}
+    <tr>
+      <td>{{ row.vendor_id }}</td>
+      <td>{{ row.demo_name }}</td>
+      <td>{{ row.demo_type }}</td>
+      <td>{{ row.outcome }}</td>
+      <td>{{ row.score }}</td>
+      <td>{{ row.demo_datetime_start }}</td>
+      <td>
+        {% if row.linked_vendor_demo_id and row._linked_vendor_demo_link %}
+        <a href="{{ row._linked_vendor_demo_link }}">{{ row.linked_vendor_demo_id }}</a>
+        {% elif row.linked_vendor_demo_id %}
+        {{ row.linked_vendor_demo_id }}
+        {% else %}
+        <span class="muted">none</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if can_edit and not locked_mode and vendor_id %}
+        <form method="post" action="{{ row._remove_action }}" class="inline-form">
+          <input type="hidden" name="return_to" value="/projects/{{ project_id }}/demos">
+          <button type="submit">Remove</button>
+        </form>
+        {% else %}
+        <span class="muted">-</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8">No project demos.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if section == "docs" %}
+<section class="card section-divider">
+  <h2>Project Documents</h2>
+  <table>
+    <thead><tr><th>Title</th><th>Type</th><th>Owner</th><th>Tags</th><th>Link</th><th>Action</th></tr></thead>
+    <tbody>
+    {% for row in project_docs %}
+    <tr>
+      <td>{{ row.doc_title }}</td>
+      <td>{{ row.doc_type }}</td>
+      <td>{{ row.owner }}</td>
+      <td>{{ row.tags }}</td>
+      <td><a href="{{ row.doc_url }}" target="_blank" rel="noopener">Open</a></td>
+      <td>
+        {% if can_edit and not locked_mode %}
+        <form method="post" action="/vendors/docs/{{ row.doc_id }}/remove" class="inline-form">
+          <input type="hidden" name="return_to" value="/projects/{{ project_id }}/docs">
+          <input type="hidden" name="vendor_id" value="{{ vendor_id }}">
+          <button type="submit">Remove</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6">No project documents.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  {% if can_edit and not locked_mode %}
+  <h3>Add Link</h3>
+  <form method="post" action="/projects/{{ project_id }}/docs/link" class="grid grid-3" data-doc-link-form>
+    <input type="hidden" name="return_to" value="/projects/{{ project_id }}/docs">
+    <label>URL
+      <input type="url" name="doc_url" placeholder="https://..." required data-doc-url>
+      <small class="muted">We'll auto-detect the link type from the URL. You can change it.</small>
+    </label>
+    <label>Type
+      <select name="doc_type" data-doc-type>
+        <option value="">auto</option>
+        {% for type in doc_types %}
+        <option value="{{ type }}">{{ type }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Title<input type="text" name="doc_title" maxlength="120" placeholder="Optional"></label>
+    <label>Tags<input type="text" name="tags"></label>
+    <label>Owner<input type="text" name="owner"></label>
+    <div><button type="submit">Add Link</button></div>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if section == "notes" %}
+<section class="card section-divider" id="add-note">
+  <h2>Project Notes</h2>
+  {% if can_edit and not locked_mode %}
+  <form method="post" action="/projects/{{ project_id }}/notes/add" class="grid grid-2">
+    <input type="hidden" name="return_to" value="/projects/{{ project_id }}/notes">
+    <label class="full">Add Note
+      <textarea name="note_text" rows="3" required></textarea>
+    </label>
+    <div><button type="submit">Save Note</button></div>
+  </form>
+  {% endif %}
+  <table style="margin-top:10px;">
+    <thead><tr><th>When</th><th>Author</th><th>Note</th></tr></thead>
+    <tbody>
+    {% for row in project_notes %}
+    <tr><td>{{ row.created_at }}</td><td>{{ row.created_by }}</td><td>{{ row.note_text }}</td></tr>
+    {% else %}
+    <tr><td colspan="3">No notes yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card section-divider">
+  <h2>Project Activity</h2>
+  <table>
+    <thead><tr><th>When</th><th>Entity</th><th>Action</th><th>Actor</th></tr></thead>
+    <tbody>
+    {% for row in project_activity %}
+    <tr><td>{{ row.event_ts }}</td><td>{{ row.entity_name }}</td><td>{{ row.action_type }}</td><td>{{ row.actor_user_principal }}</td></tr>
+    {% else %}
+    <tr><td colspan="4">No project activity yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll("[data-doc-link-form]").forEach((form) => {
+  const urlInput = form.querySelector("[data-doc-url]");
+  const typeSelect = form.querySelector("[data-doc-type]");
+  if (!urlInput || !typeSelect) return;
+  const suggestType = (url) => {
+    const v = (url || "").toLowerCase();
+    if (v.includes("sharepoint.com") || v.includes("/sites/") || v.includes("/teams/")) return "sharepoint";
+    if (v.includes("onedrive.live.com") || v.includes("1drv.ms")) return "onedrive";
+    if (v.includes("atlassian.net/wiki") || v.includes("/confluence")) return "confluence";
+    if (v.includes("docs.google.com") || v.includes("drive.google.com")) return "google_drive";
+    if (v.includes("box.com")) return "box";
+    if (v.includes("dropbox.com")) return "dropbox";
+    if (v.includes("github.com")) return "github";
+    return "other";
+  };
+  urlInput.addEventListener("input", () => {
+    if (!typeSelect.value || typeSelect.value === "other") {
+      typeSelect.value = suggestType(urlInput.value);
+    }
+  });
+});
+
+const attachOfferingForm = document.querySelector("[data-attach-offering-form]");
+if (attachOfferingForm) {
+  const vendorFilter = attachOfferingForm.querySelector("[data-offering-vendor-filter]");
+  const offeringSelect = attachOfferingForm.querySelector("[data-offering-select]");
+  const createLink = attachOfferingForm.querySelector("[data-create-offering-link]");
+  const autoVendorForm = document.querySelector("[data-auto-attach-vendor]");
+  const autoVendorInput = autoVendorForm ? autoVendorForm.querySelector("[data-auto-vendor-id]") : null;
+  const projectId = "{{ project_id }}";
+
+  const updateOfferingFilter = () => {
+    if (!vendorFilter || !offeringSelect) return;
+    const selectedVendor = vendorFilter.value || "";
+    Array.from(offeringSelect.options).forEach((opt, idx) => {
+      if (idx === 0) return;
+      const vendorId = opt.getAttribute("data-vendor-id") || "";
+      const keep = !selectedVendor || vendorId === selectedVendor;
+      opt.hidden = !keep;
+      if (!keep) {
+        opt.selected = false;
+      }
+    });
+    if (createLink) {
+      if (selectedVendor) {
+        createLink.href = `/projects/${projectId}/offerings/new?vendor_id=${encodeURIComponent(selectedVendor)}&return_to=/projects/${projectId}/offerings`;
+        createLink.classList.remove("disabled");
+      } else {
+        createLink.href = "#";
+        createLink.classList.add("disabled");
+      }
+    }
+  };
+
+  if (vendorFilter) {
+    vendorFilter.addEventListener("change", () => {
+      updateOfferingFilter();
+      const selectedVendor = vendorFilter.value || "";
+      const selectedOption = vendorFilter.options[vendorFilter.selectedIndex];
+      const alreadyLinked = selectedOption ? (selectedOption.getAttribute("data-linked") === "true") : false;
+      if (selectedVendor && autoVendorForm && autoVendorInput && !alreadyLinked) {
+        autoVendorInput.value = selectedVendor;
+        autoVendorForm.submit();
+      }
+    });
+  }
+  updateOfferingFilter();
+}
+</script>
+{% endblock %}

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="section-header">
+  <div>
+    <h1>New Vendor</h1>
+    <p>Create a vendor record in the catalog.</p>
+  </div>
+  <div>
+    <a class="button-link" href="{{ return_to }}">Back</a>
+  </div>
+</div>
+
+<section class="card">
+  {% if form_error %}
+  <p class="field-error">{{ form_error }}</p>
+  {% endif %}
+  <form method="post" action="/vendors/new" class="grid grid-3">
+    <input type="hidden" name="return_to" value="{{ return_to }}">
+    <label>Legal Name
+      <input type="text" name="legal_name" required value="{{ form_values.legal_name }}" class="{% if field_errors.get('legal_name') %}input-error{% endif %}">
+      {% if field_errors.get('legal_name') %}<span class="field-error">{{ field_errors.get('legal_name') }}</span>{% endif %}
+    </label>
+    <label>Display Name
+      <input type="text" name="display_name" placeholder="Defaults to legal name" value="{{ form_values.display_name }}">
+    </label>
+    <label>Lifecycle State
+      <select name="lifecycle_state" class="{% if field_errors.get('lifecycle_state') %}input-error{% endif %}">
+        {% for state in lifecycle_states %}
+        <option value="{{ state }}" {% if state == form_values.lifecycle_state %}selected{% endif %}>{{ state }}</option>
+        {% endfor %}
+      </select>
+      {% if field_errors.get('lifecycle_state') %}<span class="field-error">{{ field_errors.get('lifecycle_state') }}</span>{% endif %}
+    </label>
+    <label>Owner Org ID (Owning Organization)
+      <select id="owner_org_choice" name="owner_org_choice" class="{% if field_errors.get('owner_org_choice') %}input-error{% endif %}">
+        <option value="">Select owner org...</option>
+        {% for org in owner_org_options %}
+        <option value="{{ org }}" {% if org == form_values.owner_org_choice %}selected{% endif %}>{{ org }}</option>
+        {% endfor %}
+        <option value="__new__" {% if form_values.owner_org_choice == "__new__" %}selected{% endif %}>+ Add new org</option>
+      </select>
+      <small class="muted">This is the internal org that owns the vendor relationship.</small>
+      {% if field_errors.get('owner_org_choice') %}<span class="field-error">{{ field_errors.get('owner_org_choice') }}</span>{% endif %}
+    </label>
+    <label id="new_owner_org_wrap" class="{% if form_values.owner_org_choice != '__new__' %}hidden{% endif %}">New Owner Org ID
+      <input type="text" id="new_owner_org_id" name="new_owner_org_id" value="{{ form_values.new_owner_org_id }}" class="{% if field_errors.get('new_owner_org_id') %}input-error{% endif %}" placeholder="Example: HR-OPS">
+      {% if field_errors.get('new_owner_org_id') %}<span class="field-error">{{ field_errors.get('new_owner_org_id') }}</span>{% endif %}
+    </label>
+    <label>Risk Tier
+      <select name="risk_tier">
+        <option value="">none</option>
+        {% for tier in risk_tiers %}
+        <option value="{{ tier }}" {% if tier == form_values.risk_tier %}selected{% endif %}>{{ tier }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Source System
+      <input type="text" name="source_system" value="{{ form_values.source_system }}">
+    </label>
+    <div><button type="submit">Create Vendor</button></div>
+  </form>
+</section>
+<script>
+(() => {
+  const select = document.getElementById("owner_org_choice");
+  const wrap = document.getElementById("new_owner_org_wrap");
+  if (!select || !wrap) return;
+  const toggle = () => {
+    if (select.value === "__new__") {
+      wrap.classList.remove("hidden");
+    } else {
+      wrap.classList.add("hidden");
+    }
+  };
+  select.addEventListener("change", toggle);
+  toggle();
+})();
+</script>
+{% endblock %}

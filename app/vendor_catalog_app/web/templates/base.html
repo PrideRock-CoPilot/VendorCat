@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} | Vendor Catalog</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Vendor Catalog</div>
+    <div class="user-meta">
+      <span class="pill">{{ user_principal }}</span>
+      <span class="pill">{{ fq_schema }}</span>
+      <span class="pill">{{ "Mock" if use_mock else "Databricks SQL" }}</span>
+      {% for role in roles %}
+      <span class="pill role">{{ role }}</span>
+      {% endfor %}
+    </div>
+  </header>
+
+  <nav class="nav">
+    <a class="{{ 'active' if active_nav == 'dashboard' else '' }}" href="/dashboard">Dashboard</a>
+    <a class="{{ 'active' if active_nav == 'vendors' else '' }}" href="/vendors">Vendor 360</a>
+    <a class="{{ 'active' if active_nav == 'projects' else '' }}" href="/projects">Projects</a>
+    {% if can_report %}
+    <a class="{{ 'active' if active_nav == 'reports' else '' }}" href="/reports">Reports</a>
+    {% endif %}
+    {% if is_admin %}
+    <a class="{{ 'active' if active_nav == 'admin' else '' }}" href="/admin">Admin</a>
+    {% endif %}
+  </nav>
+
+  <main class="container">
+    {% if flashes %}
+      {% for flash in flashes %}
+      <div class="flash {{ flash.level }}">{{ flash.message }}</div>
+      {% endfor %}
+    {% endif %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="/static/js/app.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

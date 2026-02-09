@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="section-header">
+  <div>
+    <h1>{{ offering.offering_name }}</h1>
+    <p>{{ vendor_display_name }} ({{ vendor_id }})</p>
+  </div>
+  <div class="button-group">
+    <a class="button-link subtle" href="{{ portfolio_back }}">Back To Offerings</a>
+    <a class="button-link" href="{{ return_to }}">Back To List</a>
+  </div>
+</div>
+
+<section class="metrics">
+  <div class="metric"><span>Lifecycle</span><strong>{{ offering.lifecycle_state }}</strong></div>
+  <div class="metric"><span>Type</span><strong>{{ offering.offering_type }}</strong></div>
+  <div class="metric"><span>Criticality</span><strong>{{ offering.criticality_tier }}</strong></div>
+  <div class="metric"><span>Offering ID</span><strong>{{ offering.offering_id }}</strong></div>
+  <div class="metric"><span>Contracts</span><strong>{{ offering_contracts|length }}</strong></div>
+  <div class="metric"><span>Demos</span><strong>{{ offering_demos|length }}</strong></div>
+</section>
+
+{% if can_edit and not locked_mode %}
+<section class="card section-divider" id="edit-form">
+  <h2>Edit Offering</h2>
+  <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/update" class="grid grid-3">
+    <input type="hidden" name="return_to" value="{{ return_to }}">
+    <label>Offering Name
+      <input type="text" name="offering_name" value="{{ offering.offering_name }}" required>
+    </label>
+    <label>Offering Type
+      <input type="text" name="offering_type" value="{{ offering.offering_type or '' }}">
+    </label>
+    <label>Lifecycle State
+      <select name="lifecycle_state">
+        {% for state in lifecycle_states %}
+        <option value="{{ state }}" {% if state == offering.lifecycle_state %}selected{% endif %}>{{ state }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Criticality Tier
+      <select name="criticality_tier">
+        <option value="">none</option>
+        {% for tier in criticality_tiers %}
+        <option value="{{ tier }}" {% if tier == offering.criticality_tier %}selected{% endif %}>{{ tier }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="full">Reason
+      <input type="text" name="reason" placeholder="Why this update is needed" required>
+    </label>
+    <div><button type="submit">Save Offering</button></div>
+  </form>
+</section>
+{% endif %}
+
+<div class="grid grid-2">
+  <section class="card section-divider">
+    <h2>Offering Owners</h2>
+    <table>
+      <thead><tr><th>Owner</th><th>Role</th><th>Active</th><th>Action</th></tr></thead>
+      <tbody>
+      {% for row in offering_owners %}
+      <tr>
+        <td>{{ row.owner_user_principal }}</td>
+        <td>{{ row.owner_role }}</td>
+        <td>{{ row.active_flag }}</td>
+        <td>
+          {% if can_edit and not locked_mode %}
+          <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/owners/remove" class="inline-form">
+            <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?return_to={{ return_to|urlencode }}&edit=1">
+            <input type="hidden" name="offering_owner_id" value="{{ row.offering_owner_id }}">
+            <input type="text" name="reason" placeholder="Reason">
+            <button type="submit">Remove</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No owners</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if can_edit and not locked_mode %}
+    <h3>Add Owner</h3>
+    <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/owners/add" class="grid grid-2">
+      <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?return_to={{ return_to|urlencode }}&edit=1">
+      <label>Owner Principal<input type="text" name="owner_user_principal" required></label>
+      <label>Role<input type="text" name="owner_role" value="business_owner"></label>
+      <label class="full">Reason<input type="text" name="reason" placeholder="Optional"></label>
+      <div><button type="submit">Add Owner</button></div>
+    </form>
+    {% endif %}
+  </section>
+
+  <section class="card section-divider">
+    <h2>Offering Contacts</h2>
+    <table>
+      <thead><tr><th>Name</th><th>Type</th><th>Email</th><th>Phone</th><th>Action</th></tr></thead>
+      <tbody>
+      {% for row in offering_contacts %}
+      <tr>
+        <td>{{ row.full_name }}</td>
+        <td>{{ row.contact_type }}</td>
+        <td>{{ row.email }}</td>
+        <td>{{ row.phone }}</td>
+        <td>
+          {% if can_edit and not locked_mode %}
+          <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/contacts/remove" class="inline-form">
+            <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?return_to={{ return_to|urlencode }}&edit=1">
+            <input type="hidden" name="offering_contact_id" value="{{ row.offering_contact_id }}">
+            <input type="text" name="reason" placeholder="Reason">
+            <button type="submit">Remove</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No contacts</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if can_edit and not locked_mode %}
+    <h3>Add Contact</h3>
+    <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/contacts/add" class="grid grid-2">
+      <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?return_to={{ return_to|urlencode }}&edit=1">
+      <label>Full Name<input type="text" name="full_name" required></label>
+      <label>Type<input type="text" name="contact_type" value="business"></label>
+      <label>Email<input type="email" name="email"></label>
+      <label>Phone<input type="text" name="phone"></label>
+      <label class="full">Reason<input type="text" name="reason" placeholder="Optional"></label>
+      <div><button type="submit">Add Contact</button></div>
+    </form>
+    {% endif %}
+  </section>
+</div>
+
+<div class="grid grid-2">
+  <section class="card section-divider">
+    <h2>Contracts</h2>
+    <table>
+      <thead><tr><th>Contract</th><th>Status</th><th>Start</th><th>End</th><th>Map</th></tr></thead>
+      <tbody>
+      {% for row in offering_contracts %}
+      <tr>
+        <td>{{ row.contract_number or row.contract_id }}</td>
+        <td>{{ row.contract_status }}</td>
+        <td>{{ row.start_date }}</td>
+        <td>{{ row.end_date }}</td>
+        <td>
+          {% if can_edit and not locked_mode %}
+          <form method="post" action="/vendors/{{ vendor_id }}/map-contract" class="inline-form">
+            <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?return_to={{ return_to|urlencode }}&edit=1">
+            <input type="hidden" name="contract_id" value="{{ row.contract_id }}">
+            <select name="offering_id">
+              {% for option in offering_options %}
+              <option value="{{ option.offering_id }}" {% if option.offering_id == row.offering_id %}selected{% endif %}>{{ option.label }}</option>
+              {% endfor %}
+            </select>
+            <input type="text" name="reason" placeholder="Reason" required>
+            <button type="submit">Move</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No contracts</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card section-divider">
+    <h2>Demos</h2>
+    <table>
+      <thead><tr><th>Demo</th><th>Date</th><th>Outcome</th><th>Score</th><th>Map</th></tr></thead>
+      <tbody>
+      {% for row in offering_demos %}
+      <tr>
+        <td>{{ row.demo_id }}</td>
+        <td>{{ row.demo_date }}</td>
+        <td>{{ row.selection_outcome }}</td>
+        <td>{{ row.overall_score }}</td>
+        <td>
+          {% if can_edit and not locked_mode %}
+          <form method="post" action="/vendors/{{ vendor_id }}/map-demo" class="inline-form">
+            <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?return_to={{ return_to|urlencode }}&edit=1">
+            <input type="hidden" name="demo_id" value="{{ row.demo_id }}">
+            <select name="offering_id">
+              {% for option in offering_options %}
+              <option value="{{ option.offering_id }}" {% if option.offering_id == row.offering_id %}selected{% endif %}>{{ option.label }}</option>
+              {% endfor %}
+            </select>
+            <input type="text" name="reason" placeholder="Reason" required>
+            <button type="submit">Move</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No demos</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<section class="card section-divider" id="offering-docs">
+  <h2>Documents</h2>
+  <table>
+    <thead><tr><th>Title</th><th>Type</th><th>Owner</th><th>Tags</th><th>URL</th><th>Action</th></tr></thead>
+    <tbody>
+    {% for row in offering_docs %}
+    <tr>
+      <td>{{ row.doc_title }}</td>
+      <td>{{ row.doc_type }}</td>
+      <td>{{ row.owner }}</td>
+      <td>{{ row.tags }}</td>
+      <td><a href="{{ row.doc_url }}" target="_blank" rel="noopener">Open Link</a></td>
+      <td>
+        {% if can_edit and not locked_mode %}
+        <form method="post" action="/vendors/docs/{{ row.doc_id }}/remove" class="inline-form">
+          <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?return_to={{ return_to|urlencode }}">
+          <input type="hidden" name="vendor_id" value="{{ vendor_id }}">
+          <button type="submit">Remove</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6">No documents linked.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  {% if can_edit and not locked_mode %}
+  <h3>Add Link</h3>
+  <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/docs/link" class="grid grid-3" data-doc-link-form>
+    <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?return_to={{ return_to|urlencode }}">
+    <label>URL
+      <input type="url" name="doc_url" placeholder="https://..." required data-doc-url>
+      <small class="muted">We'll auto-detect the link type from the URL. You can change it.</small>
+    </label>
+    <label>Type
+      <select name="doc_type" data-doc-type>
+        <option value="">auto</option>
+        {% for type in doc_types %}
+        <option value="{{ type }}">{{ type }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Title<input type="text" name="doc_title" maxlength="120" placeholder="Optional"></label>
+    <label>Tags<input type="text" name="tags"></label>
+    <label>Owner<input type="text" name="owner"></label>
+    <div><button type="submit">Add Link</button></div>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll("[data-doc-link-form]").forEach((form) => {
+  const urlInput = form.querySelector("[data-doc-url]");
+  const typeSelect = form.querySelector("[data-doc-type]");
+  if (!urlInput || !typeSelect) return;
+  const suggestType = (url) => {
+    const v = (url || "").toLowerCase();
+    if (v.includes("sharepoint.com") || v.includes("/sites/") || v.includes("/teams/")) return "sharepoint";
+    if (v.includes("onedrive.live.com") || v.includes("1drv.ms")) return "onedrive";
+    if (v.includes("atlassian.net/wiki") || v.includes("/confluence")) return "confluence";
+    if (v.includes("docs.google.com") || v.includes("drive.google.com")) return "google_drive";
+    if (v.includes("box.com")) return "box";
+    if (v.includes("dropbox.com")) return "dropbox";
+    if (v.includes("github.com")) return "github";
+    return "other";
+  };
+  urlInput.addEventListener("input", () => {
+    if (!typeSelect.value || typeSelect.value === "other") {
+      typeSelect.value = suggestType(urlInput.value);
+    }
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,2159 @@
+from __future__ import annotations
+
+from urllib.parse import quote
+
+import pandas as pd
+from fastapi import APIRouter, Request
+from fastapi.responses import RedirectResponse
+
+from vendor_catalog_app.web.utils.doc_links import DOC_TYPES, suggest_doc_title, suggest_doc_type
+from vendor_catalog_app.web.flash import add_flash
+from vendor_catalog_app.web.services import (
+    base_template_context,
+    ensure_session_started,
+    get_repo,
+    get_user_context,
+    log_page_view,
+)
+
+
+router = APIRouter(prefix="/vendors")
+
+DEFAULT_VENDOR_FIELDS = [
+    "display_name",
+    "vendor_id",
+    "legal_name",
+    "lifecycle_state",
+    "owner_org_id",
+    "risk_tier",
+    "updated_at",
+]
+
+LIFECYCLE_STATES = ["draft", "submitted", "in_review", "approved", "active", "suspended", "retired"]
+RISK_TIERS = ["low", "medium", "high", "critical"]
+PROJECT_STATUSES = ["draft", "active", "blocked", "complete", "cancelled"]
+PROJECT_TYPES = ["rfp", "poc", "renewal", "implementation", "other"]
+PROJECT_DEMO_TYPES = ["live", "recorded", "workshop", "sandbox"]
+PROJECT_DEMO_OUTCOMES = ["unknown", "selected", "not_selected", "follow_up"]
+
+VENDOR_SECTIONS = [
+    ("summary", "Summary"),
+    ("ownership", "Ownership"),
+    ("projects", "Projects"),
+    ("offerings", "Offerings"),
+    ("contracts", "Contracts"),
+    ("demos", "Demos"),
+    ("lineage", "Lineage/Audit"),
+    ("changes", "Changes"),
+]
+
+
+def _safe_return_to(value: str | None) -> str:
+    if not value:
+        return "/vendors"
+    if value.startswith("/vendors") or value.startswith("/projects"):
+        return value
+    return "/vendors"
+
+
+def _normalize_lifecycle(value: str) -> str:
+    lifecycle = value.strip().lower()
+    if lifecycle not in LIFECYCLE_STATES:
+        raise ValueError(f"Lifecycle state must be one of: {', '.join(LIFECYCLE_STATES)}")
+    return lifecycle
+
+
+def _normalize_project_status(value: str) -> str:
+    status = value.strip().lower()
+    if status not in PROJECT_STATUSES:
+        raise ValueError(f"Project status must be one of: {', '.join(PROJECT_STATUSES)}")
+    return status
+
+
+def _normalize_project_type(value: str) -> str:
+    project_type = value.strip().lower() if value else "other"
+    if project_type not in PROJECT_TYPES:
+        raise ValueError(f"Project type must be one of: {', '.join(PROJECT_TYPES)}")
+    return project_type
+
+
+def _normalize_doc_type(value: str) -> str:
+    doc_type = (value or "").strip().lower()
+    if not doc_type:
+        return ""
+    if doc_type not in DOC_TYPES:
+        raise ValueError(f"Document type must be one of: {', '.join(DOC_TYPES)}")
+    return doc_type
+
+
+def _prepare_doc_payload(form_data: dict[str, str]) -> dict[str, str]:
+    doc_url = str(form_data.get("doc_url", "")).strip()
+    doc_type = _normalize_doc_type(str(form_data.get("doc_type", "")))
+    doc_title = str(form_data.get("doc_title", "")).strip()
+    tags = str(form_data.get("tags", "")).strip()
+    owner = str(form_data.get("owner", "")).strip()
+
+    if not doc_url.lower().startswith("https://"):
+        raise ValueError("Document URL must start with https://")
+    if not doc_type:
+        doc_type = suggest_doc_type(doc_url)
+    if not doc_title:
+        doc_title = suggest_doc_title(doc_url)
+    if not doc_title:
+        raise ValueError("Document title is required.")
+    if len(doc_title) > 120:
+        doc_title = doc_title[:120].rstrip()
+    return {
+        "doc_url": doc_url,
+        "doc_type": doc_type,
+        "doc_title": doc_title,
+        "tags": tags,
+        "owner": owner,
+    }
+
+
+def _load_visible_fields(repo, user_principal: str, available_fields: list[str]) -> list[str]:
+    saved = repo.get_user_setting(user_principal, "vendor360_list")
+    saved_fields = saved.get("visible_fields") if isinstance(saved, dict) else None
+    if not isinstance(saved_fields, list) or not saved_fields:
+        saved_fields = DEFAULT_VENDOR_FIELDS
+    visible = [field for field in saved_fields if field in available_fields]
+    return visible or available_fields
+
+
+def _series_with_bar_pct(rows: list[dict], value_key: str) -> list[dict]:
+    if not rows:
+        return rows
+    max_value = max(float(row.get(value_key, 0) or 0) for row in rows)
+    for row in rows:
+        value = float(row.get(value_key, 0) or 0)
+        row["bar_pct"] = int((value / max_value) * 100) if max_value > 0 else 0
+    return rows
+
+
+def _build_line_chart_points(
+    rows: list[dict], x_key: str, y_key: str, width: int = 560, height: int = 180, pad: int = 20
+) -> tuple[str, list[dict]]:
+    if not rows:
+        return "", rows
+    cleaned = [{"x": str(row.get(x_key, "")), "y": float(row.get(y_key, 0) or 0)} for row in rows]
+    if len(cleaned) == 1:
+        cleaned = cleaned + [dict(cleaned[0])]
+
+    values = [item["y"] for item in cleaned]
+    min_v = min(values)
+    max_v = max(values)
+    span = max(max_v - min_v, 1.0)
+    points = []
+    n = len(cleaned)
+    for idx, item in enumerate(cleaned):
+        x = pad + ((width - (pad * 2)) * (idx / (n - 1)))
+        y = height - pad - ((height - (pad * 2)) * ((item["y"] - min_v) / span))
+        points.append(f"{x:.1f},{y:.1f}")
+        item["plot_x"] = x
+        item["plot_y"] = y
+    return " ".join(points), cleaned
+
+
+def _vendor_nav(vendor_id: str, return_to: str, active_key: str) -> list[dict]:
+    nav = []
+    encoded_return = quote(return_to, safe="")
+    for key, label in VENDOR_SECTIONS:
+        nav.append(
+            {
+                "key": key,
+                "label": label,
+                "url": f"/vendors/{vendor_id}/{key}?return_to={encoded_return}",
+                "active": key == active_key,
+            }
+        )
+    return nav
+
+
+def _vendor_base_context(repo, request: Request, vendor_id: str, section: str, return_to: str):
+    user = get_user_context(request)
+    ensure_session_started(request, user)
+    log_page_view(request, user, f"Vendor 360 - {section.title()}")
+
+    profile = repo.get_vendor_profile(vendor_id)
+    if profile.empty:
+        add_flash(request, f"Vendor {vendor_id} not found.", "error")
+        return None
+
+    row = profile.iloc[0].to_dict()
+    display_name = str(row.get("display_name") or row.get("legal_name") or vendor_id)
+    return_to = _safe_return_to(return_to)
+
+    return {
+        "user": user,
+        "profile": profile,
+        "profile_row": row,
+        "display_name": display_name,
+        "vendor_id": vendor_id,
+        "return_to": return_to,
+        "vendor_nav": _vendor_nav(vendor_id, return_to, section),
+        "summary": repo.vendor_summary(vendor_id, months=12),
+    }
+
+
+def _offering_select_options(offerings: list[dict]) -> list[dict]:
+    options = [{"offering_id": "", "label": "Unassigned"}]
+    for offering in offerings:
+        options.append(
+            {
+                "offering_id": str(offering.get("offering_id") or ""),
+                "label": str(offering.get("offering_name") or offering.get("offering_id") or "unknown"),
+            }
+        )
+    return options
+
+
+def _project_demo_select_options(vendor_demos: list[dict]) -> list[dict]:
+    options = [{"demo_id": "", "label": "Select existing vendor demo"}]
+    for row in vendor_demos:
+        demo_id = str(row.get("demo_id") or "")
+        label = f"{demo_id} | {row.get('selection_outcome') or 'unknown'} | {row.get('demo_date') or ''}"
+        options.append({"demo_id": demo_id, "label": label})
+    return options
+
+
+def _write_blocked(user) -> bool:
+    return bool(user.config.locked_mode)
+
+
+def _project_vendor_options(repo) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    vendors = repo.search_vendors(search_text="", lifecycle_state="all").to_dict("records")
+    for row in vendors:
+        vendor_id = str(row.get("vendor_id") or "")
+        label = str(row.get("display_name") or row.get("legal_name") or vendor_id)
+        if vendor_id:
+            out.append({"vendor_id": vendor_id, "label": label})
+    return out
+
+
+def _project_offering_options(repo) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    for vendor in _project_vendor_options(repo):
+        for row in repo.get_vendor_offerings(vendor["vendor_id"]).to_dict("records"):
+            out.append(
+                {
+                    "offering_id": str(row.get("offering_id") or ""),
+                    "vendor_id": vendor["vendor_id"],
+                    "vendor_display_name": vendor["label"],
+                    "offering_name": str(row.get("offering_name") or row.get("offering_id") or ""),
+                }
+            )
+    out.sort(key=lambda x: (x["vendor_display_name"], x["offering_name"]))
+    return out
+
+
+def _owner_org_options(repo) -> list[str]:
+    return [org for org in repo.available_orgs() if org != "all"]
+
+
+def _render_vendor_new_form(
+    *,
+    request: Request,
+    user,
+    repo,
+    return_to: str,
+    form_values: dict[str, str] | None = None,
+    field_errors: dict[str, str] | None = None,
+    form_error: str = "",
+    status_code: int = 200,
+):
+    values = {
+        "legal_name": "",
+        "display_name": "",
+        "lifecycle_state": "draft",
+        "owner_org_choice": "",
+        "new_owner_org_id": "",
+        "risk_tier": "",
+        "source_system": "manual",
+    }
+    if form_values:
+        values.update(form_values)
+
+    owner_org_options = _owner_org_options(repo)
+    selected_owner_org = values.get("owner_org_choice", "").strip()
+    typed_owner_org = values.get("new_owner_org_id", "").strip()
+    if not selected_owner_org and typed_owner_org:
+        selected_owner_org = "__new__"
+    if selected_owner_org and selected_owner_org not in owner_org_options and selected_owner_org != "__new__":
+        values["new_owner_org_id"] = selected_owner_org
+        selected_owner_org = "__new__"
+    values["owner_org_choice"] = selected_owner_org
+
+    context = base_template_context(
+        request=request,
+        context=user,
+        title="New Vendor",
+        active_nav="vendors",
+        extra={
+            "return_to": _safe_return_to(return_to),
+            "lifecycle_states": LIFECYCLE_STATES,
+            "risk_tiers": RISK_TIERS,
+            "owner_org_options": owner_org_options,
+            "form_values": values,
+            "field_errors": field_errors or {},
+            "form_error": form_error,
+        },
+    )
+    return request.app.state.templates.TemplateResponse(
+        "vendor_new.html",
+        context,
+        status_code=status_code,
+    )
+
+
+@router.get("")
+def vendor_list(
+    request: Request,
+    search: str = "",
+    status: str = "all",
+    owner: str = "all",
+    risk: str = "all",
+    group: str = "none",
+    show_settings: int = 0,
+):
+    repo = get_repo()
+    user = get_user_context(request)
+    ensure_session_started(request, user)
+    log_page_view(request, user, "Vendor 360")
+
+    base_df = repo.search_vendors(search_text=search, lifecycle_state=status).copy()
+    if owner != "all" and "owner_org_id" in base_df.columns:
+        base_df = base_df[base_df["owner_org_id"] == owner]
+    if risk != "all" and "risk_tier" in base_df.columns:
+        base_df = base_df[base_df["risk_tier"] == risk]
+
+    vendors_df = base_df.reset_index(drop=True)
+    available_fields = vendors_df.columns.tolist() if not vendors_df.empty else DEFAULT_VENDOR_FIELDS
+    visible_fields = _load_visible_fields(repo, user.user_principal, available_fields)
+
+    grouped = pd.DataFrame()
+    if group != "none" and group in vendors_df.columns and not vendors_df.empty:
+        grouped = (
+            vendors_df.groupby(group, dropna=False, as_index=False)
+            .agg(vendor_count=("vendor_id", "count"))
+            .sort_values("vendor_count", ascending=False)
+        )
+
+    owner_options = ["all"]
+    risk_options = ["all"]
+    if "owner_org_id" in vendors_df.columns:
+        owner_options += sorted(vendors_df["owner_org_id"].dropna().astype(str).unique().tolist())
+    if "risk_tier" in vendors_df.columns:
+        risk_options += sorted(vendors_df["risk_tier"].dropna().astype(str).unique().tolist())
+
+    group_options = ["none"] + [
+        c for c in ["lifecycle_state", "owner_org_id", "risk_tier", "source_system"] if c in available_fields
+    ]
+    return_to = (
+        f"/vendors?search={quote(search)}&status={quote(status)}&owner={quote(owner)}"
+        f"&risk={quote(risk)}&group={quote(group)}&show_settings={show_settings}"
+    )
+
+    offering_map: dict[str, list[dict]] = {}
+    vendor_ids = vendors_df["vendor_id"].astype(str).tolist() if "vendor_id" in vendors_df.columns else []
+    for vid in vendor_ids:
+        off = repo.get_vendor_offerings(vid)
+        offering_map[vid] = off[["offering_id", "offering_name", "lifecycle_state"]].to_dict("records")
+
+    vendor_rows = vendors_df.to_dict("records")
+    for row in vendor_rows:
+        vid = str(row.get("vendor_id"))
+        row["_vendor_link"] = f"/vendors/{vid}/summary?return_to={quote(return_to, safe='')}"
+        row["_offerings_page_link"] = f"/vendors/{vid}/offerings?return_to={quote(return_to, safe='')}"
+        row["_offerings"] = []
+        for offering in offering_map.get(vid, []):
+            entry = dict(offering)
+            entry["_offering_link"] = (
+                f"/vendors/{vid}/offerings/{entry.get('offering_id')}?return_to={quote(return_to, safe='')}"
+            )
+            row["_offerings"].append(entry)
+
+    context = base_template_context(
+        request=request,
+        context=user,
+        title="Vendor 360",
+        active_nav="vendors",
+        extra={
+            "filters": {"search": search, "status": status, "owner": owner, "risk": risk, "group": group},
+            "status_options": ["all"] + LIFECYCLE_STATES,
+            "owner_options": owner_options,
+            "risk_options": risk_options,
+            "group_options": group_options,
+            "grouped": grouped.to_dict("records"),
+            "show_settings": bool(show_settings),
+            "all_fields": available_fields,
+            "visible_fields": visible_fields,
+            "vendors": vendor_rows,
+            "return_to": return_to,
+        },
+    )
+    return request.app.state.templates.TemplateResponse("vendors_list.html", context)
+
+
+@router.post("/settings")
+async def vendor_settings(request: Request):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+    field_names = [str(x) for x in form.getlist("field_name")]
+    selected: list[tuple[int, str]] = []
+    for field in field_names:
+        if form.get(f"include_{field}") != "on":
+            continue
+        order_raw = str(form.get(f"order_{field}", "999"))
+        try:
+            order_num = int(order_raw)
+        except ValueError:
+            order_num = 999
+        selected.append((order_num, field))
+    selected.sort(key=lambda t: t[0])
+    visible_fields = [field for _, field in selected]
+    if not visible_fields:
+        visible_fields = [field for field in DEFAULT_VENDOR_FIELDS if field in field_names] or field_names
+
+    repo.save_user_setting(
+        user_principal=user.user_principal,
+        setting_key="vendor360_list",
+        setting_value={"visible_fields": visible_fields},
+    )
+    repo.log_usage_event(
+        user_principal=user.user_principal,
+        page_name="vendor_360",
+        event_type="update_field_matrix",
+        payload={"field_count": len(visible_fields)},
+    )
+    add_flash(request, "Vendor list fields updated.", "success")
+    return RedirectResponse(url=return_to, status_code=303)
+
+
+@router.get("/new")
+def vendor_new_form(request: Request, return_to: str = "/vendors"):
+    repo = get_repo()
+    user = get_user_context(request)
+    ensure_session_started(request, user)
+    log_page_view(request, user, "Vendor Create")
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have permission to create vendors.", "error")
+        return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
+
+    return _render_vendor_new_form(
+        request=request,
+        user=user,
+        repo=repo,
+        return_to=return_to,
+    )
+
+
+@router.post("/new")
+async def vendor_new_submit(request: Request):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have permission to create vendors.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+
+    form_values = {
+        "legal_name": str(form.get("legal_name", "")).strip(),
+        "display_name": str(form.get("display_name", "")).strip(),
+        "lifecycle_state": str(form.get("lifecycle_state", "draft")).strip().lower(),
+        "owner_org_choice": str(form.get("owner_org_choice", "")).strip(),
+        "new_owner_org_id": str(form.get("new_owner_org_id", "")).strip(),
+        "risk_tier": str(form.get("risk_tier", "")).strip().lower(),
+        "source_system": str(form.get("source_system", "manual")).strip(),
+    }
+    legacy_owner_org_id = str(form.get("owner_org_id", "")).strip()
+    if legacy_owner_org_id and not form_values["owner_org_choice"] and not form_values["new_owner_org_id"]:
+        form_values["owner_org_choice"] = legacy_owner_org_id
+    owner_org_id = ""
+    if form_values["owner_org_choice"] and form_values["owner_org_choice"] != "__new__":
+        owner_org_id = form_values["owner_org_choice"]
+    elif form_values["owner_org_choice"] == "__new__":
+        owner_org_id = form_values["new_owner_org_id"]
+
+    field_errors: dict[str, str] = {}
+    if not form_values["legal_name"]:
+        field_errors["legal_name"] = "Legal name is required."
+    if not owner_org_id:
+        if form_values["owner_org_choice"] == "__new__":
+            field_errors["new_owner_org_id"] = "Enter a new Owner Org ID."
+        else:
+            field_errors["owner_org_choice"] = "Owner Org ID is required."
+
+    try:
+        form_values["lifecycle_state"] = _normalize_lifecycle(form_values["lifecycle_state"])
+        if form_values["risk_tier"] and form_values["risk_tier"] not in RISK_TIERS:
+            raise ValueError(f"Risk tier must be one of: {', '.join(RISK_TIERS)}")
+    except Exception as exc:
+        field_errors["lifecycle_state"] = str(exc)
+
+    if field_errors:
+        add_flash(request, "Please fix the highlighted fields.", "error")
+        return _render_vendor_new_form(
+            request=request,
+            user=user,
+            repo=repo,
+            return_to=return_to,
+            form_values=form_values,
+            field_errors=field_errors,
+            form_error="Validation failed.",
+            status_code=400,
+        )
+
+    try:
+        vendor_id = repo.create_vendor_profile(
+            actor_user_principal=user.user_principal,
+            legal_name=form_values["legal_name"],
+            display_name=form_values["display_name"] or form_values["legal_name"],
+            lifecycle_state=form_values["lifecycle_state"],
+            owner_org_id=owner_org_id,
+            risk_tier=form_values["risk_tier"] or None,
+            source_system=form_values["source_system"] or "manual",
+        )
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_360",
+            event_type="vendor_create",
+            payload={"vendor_id": vendor_id},
+        )
+        add_flash(request, f"Vendor created: {vendor_id}", "success")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/summary?return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    except Exception as exc:
+        error_text = str(exc)
+        if "owner_org_id" in error_text.lower():
+            field_errors["owner_org_choice"] = "Owner Org ID is required."
+            if form_values["owner_org_choice"] == "__new__":
+                field_errors["new_owner_org_id"] = "Owner Org ID is required."
+        add_flash(request, "Could not create vendor. Fix the highlighted fields and try again.", "error")
+        return _render_vendor_new_form(
+            request=request,
+            user=user,
+            repo=repo,
+            return_to=return_to,
+            form_values=form_values,
+            field_errors=field_errors,
+            form_error=error_text,
+            status_code=400,
+        )
+
+
+@router.get("/{vendor_id}")
+def vendor_default(request: Request, vendor_id: str, return_to: str = "/vendors"):
+    return RedirectResponse(
+        url=f"/vendors/{vendor_id}/summary?return_to={quote(_safe_return_to(return_to), safe='')}",
+        status_code=302,
+    )
+
+
+@router.get("/{vendor_id}/summary")
+def vendor_summary_page(request: Request, vendor_id: str, return_to: str = "/vendors"):
+    repo = get_repo()
+    base = _vendor_base_context(repo, request, vendor_id, "summary", return_to)
+    if base is None:
+        return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
+
+    profile_row = base["profile_row"]
+    contacts = repo.get_vendor_contacts(vendor_id).to_dict("records")
+    top_contacts = contacts[:3]
+    top_offerings = repo.get_vendor_offerings(vendor_id).head(5).to_dict("records")
+    for row in top_offerings:
+        row["_offering_link"] = (
+            f"/vendors/{vendor_id}/offerings/{row.get('offering_id')}?return_to={quote(base['return_to'], safe='')}"
+        )
+    projects_df = repo.list_projects(vendor_id)
+    if "status" in projects_df.columns:
+        active_projects = projects_df[projects_df["status"].astype(str).str.lower() == "active"]
+        projects_preview = (active_projects if not active_projects.empty else projects_df).head(5).to_dict("records")
+    else:
+        projects_preview = projects_df.head(5).to_dict("records")
+    for row in projects_preview:
+        row["_project_link"] = (
+            f"/vendors/{vendor_id}/projects/{row.get('project_id')}?return_to={quote(base['return_to'], safe='')}"
+        )
+    docs_preview = repo.list_docs("vendor", vendor_id).head(5).to_dict("records")
+
+    spend_category = _series_with_bar_pct(
+        repo.vendor_spend_by_category(vendor_id, months=12).to_dict("records"),
+        "total_spend",
+    )
+    spend_trend_rows = repo.vendor_monthly_spend_trend(vendor_id, months=12).to_dict("records")
+    trend_points, spend_trend_plot_rows = _build_line_chart_points(spend_trend_rows, "month", "total_spend")
+    raw_fields = [{"field": key, "value": value} for key, value in profile_row.items()]
+
+    key_facts = {
+        "legal_name": profile_row.get("legal_name"),
+        "display_name": profile_row.get("display_name"),
+        "vendor_id": profile_row.get("vendor_id"),
+        "owner_org_id": profile_row.get("owner_org_id"),
+        "source_system": profile_row.get("source_system"),
+        "updated_at": profile_row.get("updated_at"),
+    }
+
+    context = base_template_context(
+        request=request,
+        context=base["user"],
+        title=f"{base['display_name']} - Summary",
+        active_nav="vendors",
+        extra={
+            "section": "summary",
+            "vendor_id": vendor_id,
+            "vendor_display_name": base["display_name"],
+            "return_to": base["return_to"],
+            "vendor_nav": base["vendor_nav"],
+            "summary": base["summary"],
+            "key_facts": key_facts,
+            "top_contacts": top_contacts,
+            "top_offerings": top_offerings,
+            "offerings_page_link": f"/vendors/{vendor_id}/offerings?return_to={quote(base['return_to'], safe='')}",
+            "projects_preview": projects_preview,
+            "projects_page_link": f"/vendors/{vendor_id}/projects?return_to={quote(base['return_to'], safe='')}",
+            "docs_preview": docs_preview,
+            "doc_types": DOC_TYPES,
+            "spend_category": spend_category,
+            "spend_trend_points": trend_points,
+            "spend_trend_plot_rows": spend_trend_plot_rows,
+            "raw_fields": raw_fields,
+        },
+    )
+    return request.app.state.templates.TemplateResponse("vendor_section.html", context)
+
+
+@router.get("/{vendor_id}/ownership")
+def vendor_ownership_page(request: Request, vendor_id: str, return_to: str = "/vendors"):
+    repo = get_repo()
+    base = _vendor_base_context(repo, request, vendor_id, "ownership", return_to)
+    if base is None:
+        return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
+
+    context = base_template_context(
+        request=request,
+        context=base["user"],
+        title=f"{base['display_name']} - Ownership",
+        active_nav="vendors",
+        extra={
+            "section": "ownership",
+            "vendor_id": vendor_id,
+            "vendor_display_name": base["display_name"],
+            "return_to": base["return_to"],
+            "vendor_nav": base["vendor_nav"],
+            "summary": base["summary"],
+            "owners": repo.get_vendor_business_owners(vendor_id).to_dict("records"),
+            "org_assignments": repo.get_vendor_org_assignments(vendor_id).to_dict("records"),
+            "contacts": repo.get_vendor_contacts(vendor_id).to_dict("records"),
+        },
+    )
+    return request.app.state.templates.TemplateResponse("vendor_section.html", context)
+
+
+@router.get("/{vendor_id}/portfolio")
+def vendor_portfolio_compat(request: Request, vendor_id: str, return_to: str = "/vendors"):
+    return RedirectResponse(
+        url=f"/vendors/{vendor_id}/offerings?return_to={quote(_safe_return_to(return_to), safe='')}",
+        status_code=302,
+    )
+
+
+@router.get("/{vendor_id}/offerings")
+def vendor_offerings_page(request: Request, vendor_id: str, return_to: str = "/vendors"):
+    repo = get_repo()
+    base = _vendor_base_context(repo, request, vendor_id, "offerings", return_to)
+    if base is None:
+        return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
+
+    offerings = repo.get_vendor_offerings(vendor_id).to_dict("records")
+    contracts = repo.get_vendor_contracts(vendor_id).to_dict("records")
+    demos = repo.get_vendor_demos(vendor_id).to_dict("records")
+    owners = repo.get_vendor_offering_business_owners(vendor_id).to_dict("records")
+    contacts = repo.get_vendor_offering_contacts(vendor_id).to_dict("records")
+
+    contract_count: dict[str, int] = {}
+    demo_count: dict[str, int] = {}
+    owner_count: dict[str, int] = {}
+    contact_count: dict[str, int] = {}
+    for row in contracts:
+        key = str(row.get("offering_id") or "")
+        contract_count[key] = contract_count.get(key, 0) + 1
+    for row in demos:
+        key = str(row.get("offering_id") or "")
+        demo_count[key] = demo_count.get(key, 0) + 1
+    for row in owners:
+        key = str(row.get("offering_id") or "")
+        owner_count[key] = owner_count.get(key, 0) + 1
+    for row in contacts:
+        key = str(row.get("offering_id") or "")
+        contact_count[key] = contact_count.get(key, 0) + 1
+
+    for row in offerings:
+        off_id = str(row.get("offering_id") or "")
+        row["_open_link"] = f"/vendors/{vendor_id}/offerings/{off_id}?return_to={quote(base['return_to'], safe='')}"
+        row["_edit_link"] = (
+            f"/vendors/{vendor_id}/offerings/{off_id}?edit=1&return_to={quote(base['return_to'], safe='')}"
+        )
+        row["doc_count"] = int(len(repo.list_docs("offering", off_id)))
+        row["contract_count"] = contract_count.get(off_id, 0)
+        row["demo_count"] = demo_count.get(off_id, 0)
+        row["owner_count"] = owner_count.get(off_id, 0)
+        row["contact_count"] = contact_count.get(off_id, 0)
+
+    offering_options = _offering_select_options(offerings)
+    unassigned_contracts = repo.get_unassigned_contracts(vendor_id).to_dict("records")
+    unassigned_demos = repo.get_unassigned_demos(vendor_id).to_dict("records")
+    offerings_return_to = f"/vendors/{vendor_id}/offerings?return_to={quote(base['return_to'], safe='')}"
+
+    context = base_template_context(
+        request=request,
+        context=base["user"],
+        title=f"{base['display_name']} - Offerings",
+        active_nav="vendors",
+        extra={
+            "vendor_id": vendor_id,
+            "vendor_display_name": base["display_name"],
+            "summary": base["summary"],
+            "return_to": base["return_to"],
+            "vendor_nav": base["vendor_nav"],
+            "offerings": offerings,
+            "offering_options": offering_options,
+            "unassigned_contracts": unassigned_contracts,
+            "unassigned_demos": unassigned_demos,
+            "offerings_return_to": offerings_return_to,
+            "doc_types": DOC_TYPES,
+        },
+    )
+    return request.app.state.templates.TemplateResponse("vendor_offerings.html", context)
+
+
+@router.get("/{vendor_id}/offerings/new")
+def offering_new_form(request: Request, vendor_id: str, return_to: str = "/vendors"):
+    repo = get_repo()
+    base = _vendor_base_context(repo, request, vendor_id, "offerings", return_to)
+    if base is None:
+        return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
+
+    if _write_blocked(base["user"]):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings?return_to={quote(base['return_to'], safe='')}",
+            status_code=303,
+        )
+    if not base["user"].can_edit:
+        add_flash(request, "You do not have permission to create offerings.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings?return_to={quote(base['return_to'], safe='')}",
+            status_code=303,
+        )
+
+    context = base_template_context(
+        request=request,
+        context=base["user"],
+        title=f"{base['display_name']} - New Offering",
+        active_nav="vendors",
+        extra={
+            "vendor_id": vendor_id,
+            "vendor_display_name": base["display_name"],
+            "return_to": base["return_to"],
+            "lifecycle_states": LIFECYCLE_STATES,
+            "criticality_tiers": ["tier_1", "tier_2", "tier_3", "tier_4"],
+        },
+    )
+    return request.app.state.templates.TemplateResponse("offering_new.html", context)
+
+
+@router.post("/{vendor_id}/offerings/new")
+async def offering_new_submit(request: Request, vendor_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have permission to create offerings.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+
+    offering_name = str(form.get("offering_name", "")).strip()
+    offering_type = str(form.get("offering_type", "")).strip()
+    lifecycle_state = str(form.get("lifecycle_state", "draft")).strip().lower()
+    criticality_tier = str(form.get("criticality_tier", "")).strip()
+
+    try:
+        lifecycle_state = _normalize_lifecycle(lifecycle_state)
+        offering_id = repo.create_offering(
+            vendor_id=vendor_id,
+            actor_user_principal=user.user_principal,
+            offering_name=offering_name,
+            offering_type=offering_type or None,
+            lifecycle_state=lifecycle_state,
+            criticality_tier=criticality_tier or None,
+        )
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_offerings",
+            event_type="offering_create",
+            payload={"vendor_id": vendor_id, "offering_id": offering_id},
+        )
+        add_flash(request, f"Offering created: {offering_id}", "success")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not create offering: {exc}", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/new?return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+
+
+@router.get("/{vendor_id}/offerings/{offering_id}")
+def offering_detail_page(request: Request, vendor_id: str, offering_id: str, return_to: str = "/vendors", edit: int = 0):
+    repo = get_repo()
+    base = _vendor_base_context(repo, request, vendor_id, "offerings", return_to)
+    if base is None:
+        return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
+
+    offering = repo.get_offering_record(vendor_id, offering_id)
+    if offering is None:
+        add_flash(request, f"Offering {offering_id} not found for vendor.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings?return_to={quote(base['return_to'], safe='')}",
+            status_code=303,
+        )
+
+    owners_df = repo.get_vendor_offering_business_owners(vendor_id)
+    contacts_df = repo.get_vendor_offering_contacts(vendor_id)
+    contracts_df = repo.get_vendor_contracts(vendor_id)
+    demos_df = repo.get_vendor_demos(vendor_id)
+    vendor_offerings = repo.get_vendor_offerings(vendor_id).to_dict("records")
+    offering_options = _offering_select_options(vendor_offerings)
+
+    current_contracts = contracts_df[contracts_df["offering_id"].astype(str) == str(offering_id)].to_dict("records")
+    current_demos = demos_df[demos_df["offering_id"].astype(str) == str(offering_id)].to_dict("records")
+    offering_docs = repo.list_docs("offering", offering_id).to_dict("records")
+
+    context = base_template_context(
+        request=request,
+        context=base["user"],
+        title=f"{base['display_name']} - {offering.get('offering_name', offering_id)}",
+        active_nav="vendors",
+        extra={
+            "vendor_id": vendor_id,
+            "vendor_display_name": base["display_name"],
+            "summary": base["summary"],
+            "vendor_nav": base["vendor_nav"],
+            "offering": offering,
+            "offering_options": offering_options,
+            "return_to": base["return_to"],
+            "portfolio_back": f"/vendors/{vendor_id}/offerings?return_to={quote(base['return_to'], safe='')}",
+            "offering_owners": owners_df[owners_df["offering_id"].astype(str) == str(offering_id)].to_dict("records"),
+            "offering_contacts": contacts_df[contacts_df["offering_id"].astype(str) == str(offering_id)].to_dict("records"),
+            "offering_contracts": current_contracts,
+            "offering_demos": current_demos,
+            "offering_docs": offering_docs,
+            "edit_mode": bool(edit),
+            "lifecycle_states": LIFECYCLE_STATES,
+            "criticality_tiers": ["tier_1", "tier_2", "tier_3", "tier_4"],
+            "doc_types": DOC_TYPES,
+        },
+    )
+    return request.app.state.templates.TemplateResponse("offering_detail.html", context)
+
+
+@router.post("/{vendor_id}/offerings/{offering_id}/update")
+async def offering_update_submit(request: Request, vendor_id: str, offering_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+    reason = str(form.get("reason", "")).strip()
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=f"/vendors/{vendor_id}/offerings/{offering_id}?return_to={quote(return_to, safe='')}", status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(url=f"/vendors/{vendor_id}/offerings/{offering_id}?return_to={quote(return_to, safe='')}", status_code=303)
+
+    if repo.get_offering_record(vendor_id, offering_id) is None:
+        add_flash(request, "Offering does not belong to this vendor.", "error")
+        return RedirectResponse(url=f"/vendors/{vendor_id}/offerings?return_to={quote(return_to, safe='')}", status_code=303)
+
+    updates = {
+        "offering_name": str(form.get("offering_name", "")).strip(),
+        "offering_type": str(form.get("offering_type", "")).strip(),
+        "lifecycle_state": str(form.get("lifecycle_state", "")).strip().lower(),
+        "criticality_tier": str(form.get("criticality_tier", "")).strip(),
+    }
+
+    try:
+        if updates["lifecycle_state"]:
+            updates["lifecycle_state"] = _normalize_lifecycle(updates["lifecycle_state"])
+        if not updates["offering_name"]:
+            raise ValueError("Offering name is required.")
+        payload = {"offering_id": offering_id, "updates": updates, "reason": reason}
+        if user.can_direct_apply:
+            result = repo.update_offering_fields(
+                vendor_id=vendor_id,
+                offering_id=offering_id,
+                actor_user_principal=user.user_principal,
+                updates=updates,
+                reason=reason,
+            )
+            add_flash(
+                request,
+                f"Offering updated. Request ID: {result['request_id']} | Audit Event: {result['change_event_id']}",
+                "success",
+            )
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="update_offering",
+                payload=payload,
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_offering_detail",
+            event_type="offering_update",
+            payload={"vendor_id": vendor_id, "offering_id": offering_id},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not update offering: {exc}", "error")
+
+    return RedirectResponse(
+        url=f"/vendors/{vendor_id}/offerings/{offering_id}?edit=1&return_to={quote(return_to, safe='')}",
+        status_code=303,
+    )
+
+
+@router.post("/{vendor_id}/map-contract")
+async def map_contract_submit(request: Request, vendor_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", f"/vendors/{vendor_id}/offerings")))
+    contract_id = str(form.get("contract_id", "")).strip()
+    offering_id = str(form.get("offering_id", "")).strip()
+    reason = str(form.get("reason", "")).strip()
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not contract_id:
+        add_flash(request, "Contract ID is required.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    contracts_df = repo.get_vendor_contracts(vendor_id)
+    if contracts_df[contracts_df["contract_id"].astype(str) == contract_id].empty:
+        add_flash(request, "Contract does not belong to this vendor.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if offering_id and not repo.offering_belongs_to_vendor(vendor_id, offering_id):
+        add_flash(request, "Selected offering does not belong to this vendor.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+
+    try:
+        payload = {"contract_id": contract_id, "offering_id": offering_id or None, "reason": reason}
+        if user.can_direct_apply:
+            result = repo.map_contract_to_offering(
+                contract_id=contract_id,
+                vendor_id=vendor_id,
+                offering_id=offering_id or None,
+                actor_user_principal=user.user_principal,
+                reason=reason,
+            )
+            add_flash(
+                request,
+                f"Contract mapping updated. Request ID: {result['request_id']} | Audit Event: {result['change_event_id']}",
+                "success",
+            )
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="map_contract_to_offering",
+                payload=payload,
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_offerings",
+            event_type="map_contract",
+            payload={"vendor_id": vendor_id, "contract_id": contract_id, "offering_id": offering_id or None},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not map contract: {exc}", "error")
+    return RedirectResponse(url=return_to, status_code=303)
+
+
+@router.post("/{vendor_id}/map-demo")
+async def map_demo_submit(request: Request, vendor_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", f"/vendors/{vendor_id}/offerings")))
+    demo_id = str(form.get("demo_id", "")).strip()
+    offering_id = str(form.get("offering_id", "")).strip()
+    reason = str(form.get("reason", "")).strip()
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not demo_id:
+        add_flash(request, "Demo ID is required.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    demos_df = repo.get_vendor_demos(vendor_id)
+    if demos_df[demos_df["demo_id"].astype(str) == demo_id].empty:
+        add_flash(request, "Demo does not belong to this vendor.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if offering_id and not repo.offering_belongs_to_vendor(vendor_id, offering_id):
+        add_flash(request, "Selected offering does not belong to this vendor.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+
+    try:
+        payload = {"demo_id": demo_id, "offering_id": offering_id or None, "reason": reason}
+        if user.can_direct_apply:
+            result = repo.map_demo_to_offering(
+                demo_id=demo_id,
+                vendor_id=vendor_id,
+                offering_id=offering_id or None,
+                actor_user_principal=user.user_principal,
+                reason=reason,
+            )
+            add_flash(
+                request,
+                f"Demo mapping updated. Request ID: {result['request_id']} | Audit Event: {result['change_event_id']}",
+                "success",
+            )
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="map_demo_to_offering",
+                payload=payload,
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_offerings",
+            event_type="map_demo",
+            payload={"vendor_id": vendor_id, "demo_id": demo_id, "offering_id": offering_id or None},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not map demo: {exc}", "error")
+    return RedirectResponse(url=return_to, status_code=303)
+
+
+@router.post("/{vendor_id}/offerings/{offering_id}/owners/add")
+async def add_offering_owner_submit(request: Request, vendor_id: str, offering_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", f"/vendors/{vendor_id}/offerings/{offering_id}")))
+    owner_user_principal = str(form.get("owner_user_principal", "")).strip()
+    owner_role = str(form.get("owner_role", "")).strip()
+    reason = str(form.get("reason", "")).strip()
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not repo.offering_belongs_to_vendor(vendor_id, offering_id):
+        add_flash(request, "Offering does not belong to this vendor.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+
+    try:
+        payload = {
+            "offering_id": offering_id,
+            "owner_user_principal": owner_user_principal,
+            "owner_role": owner_role,
+            "reason": reason,
+        }
+        if user.can_direct_apply:
+            owner_id = repo.add_offering_owner(
+                vendor_id=vendor_id,
+                offering_id=offering_id,
+                owner_user_principal=owner_user_principal,
+                owner_role=owner_role,
+                actor_user_principal=user.user_principal,
+            )
+            add_flash(request, f"Offering owner added: {owner_id}", "success")
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="add_offering_owner",
+                payload=payload,
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_offering_detail",
+            event_type="add_offering_owner",
+            payload={"vendor_id": vendor_id, "offering_id": offering_id},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not add offering owner: {exc}", "error")
+    return RedirectResponse(url=return_to, status_code=303)
+
+
+@router.post("/{vendor_id}/offerings/{offering_id}/owners/remove")
+async def remove_offering_owner_submit(request: Request, vendor_id: str, offering_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", f"/vendors/{vendor_id}/offerings/{offering_id}")))
+    offering_owner_id = str(form.get("offering_owner_id", "")).strip()
+    reason = str(form.get("reason", "")).strip()
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not repo.offering_belongs_to_vendor(vendor_id, offering_id):
+        add_flash(request, "Offering does not belong to this vendor.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+
+    try:
+        payload = {"offering_id": offering_id, "offering_owner_id": offering_owner_id, "reason": reason}
+        if user.can_direct_apply:
+            repo.remove_offering_owner(
+                vendor_id=vendor_id,
+                offering_id=offering_id,
+                offering_owner_id=offering_owner_id,
+                actor_user_principal=user.user_principal,
+            )
+            add_flash(request, "Offering owner removed.", "success")
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="remove_offering_owner",
+                payload=payload,
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_offering_detail",
+            event_type="remove_offering_owner",
+            payload={"vendor_id": vendor_id, "offering_id": offering_id},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not remove offering owner: {exc}", "error")
+    return RedirectResponse(url=return_to, status_code=303)
+
+
+@router.post("/{vendor_id}/offerings/{offering_id}/contacts/add")
+async def add_offering_contact_submit(request: Request, vendor_id: str, offering_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", f"/vendors/{vendor_id}/offerings/{offering_id}")))
+    full_name = str(form.get("full_name", "")).strip()
+    contact_type = str(form.get("contact_type", "")).strip()
+    email = str(form.get("email", "")).strip()
+    phone = str(form.get("phone", "")).strip()
+    reason = str(form.get("reason", "")).strip()
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not repo.offering_belongs_to_vendor(vendor_id, offering_id):
+        add_flash(request, "Offering does not belong to this vendor.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+
+    try:
+        payload = {
+            "offering_id": offering_id,
+            "full_name": full_name,
+            "contact_type": contact_type,
+            "email": email,
+            "phone": phone,
+            "reason": reason,
+        }
+        if user.can_direct_apply:
+            contact_id = repo.add_offering_contact(
+                vendor_id=vendor_id,
+                offering_id=offering_id,
+                full_name=full_name,
+                contact_type=contact_type,
+                email=email or None,
+                phone=phone or None,
+                actor_user_principal=user.user_principal,
+            )
+            add_flash(request, f"Offering contact added: {contact_id}", "success")
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="add_offering_contact",
+                payload=payload,
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_offering_detail",
+            event_type="add_offering_contact",
+            payload={"vendor_id": vendor_id, "offering_id": offering_id},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not add offering contact: {exc}", "error")
+    return RedirectResponse(url=return_to, status_code=303)
+
+
+@router.post("/{vendor_id}/offerings/{offering_id}/contacts/remove")
+async def remove_offering_contact_submit(request: Request, vendor_id: str, offering_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", f"/vendors/{vendor_id}/offerings/{offering_id}")))
+    offering_contact_id = str(form.get("offering_contact_id", "")).strip()
+    reason = str(form.get("reason", "")).strip()
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not repo.offering_belongs_to_vendor(vendor_id, offering_id):
+        add_flash(request, "Offering does not belong to this vendor.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+
+    try:
+        payload = {"offering_id": offering_id, "offering_contact_id": offering_contact_id, "reason": reason}
+        if user.can_direct_apply:
+            repo.remove_offering_contact(
+                vendor_id=vendor_id,
+                offering_id=offering_id,
+                offering_contact_id=offering_contact_id,
+                actor_user_principal=user.user_principal,
+            )
+            add_flash(request, "Offering contact removed.", "success")
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="remove_offering_contact",
+                payload=payload,
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_offering_detail",
+            event_type="remove_offering_contact",
+            payload={"vendor_id": vendor_id, "offering_id": offering_id},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not remove offering contact: {exc}", "error")
+    return RedirectResponse(url=return_to, status_code=303)
+
+
+@router.get("/{vendor_id}/projects")
+def vendor_projects_page(request: Request, vendor_id: str, return_to: str = "/vendors"):
+    repo = get_repo()
+    base = _vendor_base_context(repo, request, vendor_id, "projects", return_to)
+    if base is None:
+        return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
+
+    projects = repo.list_projects(vendor_id).to_dict("records")
+    for row in projects:
+        project_id = str(row.get("project_id"))
+        row["_open_link"] = (
+            f"/projects/{project_id}/summary?return_to="
+            f"{quote(f'/vendors/{vendor_id}/projects', safe='')}"
+        )
+        row["_edit_link"] = (
+            f"/vendors/{vendor_id}/projects/{project_id}/edit?return_to={quote(base['return_to'], safe='')}"
+        )
+
+    context = base_template_context(
+        request=request,
+        context=base["user"],
+        title=f"{base['display_name']} - Projects",
+        active_nav="projects",
+        extra={
+            "vendor_id": vendor_id,
+            "vendor_display_name": base["display_name"],
+            "summary": base["summary"],
+            "return_to": base["return_to"],
+            "vendor_nav": base["vendor_nav"],
+            "projects": projects,
+        },
+    )
+    return request.app.state.templates.TemplateResponse("vendor_projects.html", context)
+
+
+@router.get("/{vendor_id}/projects/new")
+def project_new_form(request: Request, vendor_id: str, return_to: str = "/vendors"):
+    repo = get_repo()
+    base = _vendor_base_context(repo, request, vendor_id, "projects", return_to)
+    if base is None:
+        return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
+    if _write_blocked(base["user"]):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/projects?return_to={quote(base['return_to'], safe='')}",
+            status_code=303,
+        )
+    if not base["user"].can_edit:
+        add_flash(request, "You do not have permission to create projects.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/projects?return_to={quote(base['return_to'], safe='')}",
+            status_code=303,
+        )
+
+    offerings = _project_offering_options(repo)
+    vendor_options = _project_vendor_options(repo)
+    context = base_template_context(
+        request=request,
+        context=base["user"],
+        title=f"{base['display_name']} - New Project",
+        active_nav="projects",
+        extra={
+            "vendor_id": vendor_id,
+            "vendor_display_name": base["display_name"],
+            "return_to": base["return_to"],
+            "project_types": PROJECT_TYPES,
+            "project_statuses": PROJECT_STATUSES,
+            "offerings": offerings,
+            "vendor_options": vendor_options,
+            "selected_vendor_ids": [vendor_id],
+            "form_action": f"/vendors/{vendor_id}/projects/new",
+        },
+    )
+    return request.app.state.templates.TemplateResponse("project_new.html", context)
+
+
+@router.post("/{vendor_id}/projects/new")
+async def project_new_submit(request: Request, vendor_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have permission to create projects.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+
+    linked_offerings = [str(x).strip() for x in form.getlist("linked_offerings") if str(x).strip()]
+    linked_vendors = [str(x).strip() for x in form.getlist("linked_vendors") if str(x).strip()]
+    if vendor_id not in linked_vendors:
+        linked_vendors.insert(0, vendor_id)
+    try:
+        project_id = repo.create_project(
+            vendor_id=vendor_id,
+            vendor_ids=linked_vendors,
+            actor_user_principal=user.user_principal,
+            project_name=str(form.get("project_name", "")).strip(),
+            project_type=_normalize_project_type(str(form.get("project_type", "other"))),
+            status=_normalize_project_status(str(form.get("status", "draft"))),
+            start_date=str(form.get("start_date", "")).strip() or None,
+            target_date=str(form.get("target_date", "")).strip() or None,
+            owner_principal=str(form.get("owner_principal", "")).strip() or None,
+            description=str(form.get("description", "")).strip() or None,
+            linked_offering_ids=linked_offerings,
+        )
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_projects",
+            event_type="project_create",
+            payload={"vendor_id": vendor_id, "project_id": project_id},
+        )
+        add_flash(request, f"Project created: {project_id}", "success")
+        return RedirectResponse(
+            url=f"/projects/{project_id}/summary?return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not create project: {exc}", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/projects/new?return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+
+
+@router.get("/{vendor_id}/projects/{project_id}")
+def project_detail_page(request: Request, vendor_id: str, project_id: str, return_to: str = "/vendors"):
+    return RedirectResponse(
+        url=f"/projects/{project_id}/summary?return_to={quote(_safe_return_to(return_to), safe='')}",
+        status_code=302,
+    )
+
+
+@router.get("/{vendor_id}/projects/{project_id}/edit")
+def project_edit_form(request: Request, vendor_id: str, project_id: str, return_to: str = "/vendors"):
+    repo = get_repo()
+    base = _vendor_base_context(repo, request, vendor_id, "projects", return_to)
+    if base is None:
+        return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
+    project = repo.get_project(vendor_id, project_id)
+    if project is None:
+        add_flash(request, "Project not found for vendor.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/projects?return_to={quote(base['return_to'], safe='')}",
+            status_code=303,
+        )
+    if _write_blocked(base["user"]):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(
+            url=f"/projects/{project_id}/summary?return_to={quote(base['return_to'], safe='')}",
+            status_code=303,
+        )
+    if not base["user"].can_edit:
+        add_flash(request, "You do not have permission to edit projects.", "error")
+        return RedirectResponse(
+            url=f"/projects/{project_id}/summary?return_to={quote(base['return_to'], safe='')}",
+            status_code=303,
+        )
+
+    offerings = _project_offering_options(repo)
+    vendor_options = _project_vendor_options(repo)
+    context = base_template_context(
+        request=request,
+        context=base["user"],
+        title=f"{base['display_name']} - Edit Project",
+        active_nav="projects",
+        extra={
+            "vendor_id": vendor_id,
+            "vendor_display_name": base["display_name"],
+            "project": project,
+            "offerings": offerings,
+            "vendor_options": vendor_options,
+            "return_to": base["return_to"],
+            "project_types": PROJECT_TYPES,
+            "project_statuses": PROJECT_STATUSES,
+            "form_action": f"/vendors/{vendor_id}/projects/{project_id}/edit",
+        },
+    )
+    return request.app.state.templates.TemplateResponse("project_edit.html", context)
+
+
+@router.post("/{vendor_id}/projects/{project_id}/edit")
+async def project_edit_submit(request: Request, vendor_id: str, project_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+    reason = str(form.get("reason", "")).strip()
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(
+            url=f"/projects/{project_id}/summary?return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if not user.can_edit:
+        add_flash(request, "You do not have permission to edit projects.", "error")
+        return RedirectResponse(
+            url=f"/projects/{project_id}/summary?return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+
+    linked_offerings = [str(x).strip() for x in form.getlist("linked_offerings") if str(x).strip()]
+    linked_vendors = [str(x).strip() for x in form.getlist("linked_vendors") if str(x).strip()]
+    if vendor_id not in linked_vendors:
+        linked_vendors.insert(0, vendor_id)
+    updates = {
+        "project_name": str(form.get("project_name", "")).strip(),
+        "project_type": str(form.get("project_type", "other")),
+        "status": str(form.get("status", "draft")),
+        "start_date": str(form.get("start_date", "")).strip() or None,
+        "target_date": str(form.get("target_date", "")).strip() or None,
+        "owner_principal": str(form.get("owner_principal", "")).strip() or None,
+        "description": str(form.get("description", "")).strip() or None,
+    }
+
+    try:
+        updates["project_type"] = _normalize_project_type(str(updates.get("project_type", "other")))
+        updates["status"] = _normalize_project_status(str(updates.get("status", "draft")))
+        if user.can_direct_apply:
+            result = repo.update_project(
+                vendor_id=vendor_id,
+                project_id=project_id,
+                actor_user_principal=user.user_principal,
+                updates=updates,
+                vendor_ids=linked_vendors,
+                linked_offering_ids=linked_offerings,
+                reason=reason,
+            )
+            add_flash(
+                request,
+                f"Project updated. Request ID: {result['request_id']} | Audit Event: {result['change_event_id']}",
+                "success",
+            )
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="update_project",
+                payload={"project_id": project_id, "updates": updates, "linked_offering_ids": linked_offerings, "reason": reason},
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_project_detail",
+            event_type="project_update",
+            payload={"vendor_id": vendor_id, "project_id": project_id},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not update project: {exc}", "error")
+
+    return RedirectResponse(
+        url=f"/projects/{project_id}/summary?return_to={quote(return_to, safe='')}",
+        status_code=303,
+    )
+
+
+@router.get("/{vendor_id}/projects/{project_id}/demos/new")
+def project_demo_new_form(request: Request, vendor_id: str, project_id: str, return_to: str = "/vendors"):
+    repo = get_repo()
+    base = _vendor_base_context(repo, request, vendor_id, "projects", return_to)
+    if base is None:
+        return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
+    project = repo.get_project(vendor_id, project_id)
+    if project is None:
+        add_flash(request, "Project not found for vendor.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/projects?return_to={quote(base['return_to'], safe='')}",
+            status_code=303,
+        )
+    if _write_blocked(base["user"]):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(
+            url=f"/projects/{project_id}/demos?return_to={quote(base['return_to'], safe='')}",
+            status_code=303,
+        )
+    if not base["user"].can_edit:
+        add_flash(request, "You do not have permission to add demos.", "error")
+        return RedirectResponse(
+            url=f"/projects/{project_id}/demos?return_to={quote(base['return_to'], safe='')}",
+            status_code=303,
+        )
+
+    offerings = repo.get_vendor_offerings(vendor_id).to_dict("records")
+    vendor_demos = repo.get_vendor_demos(vendor_id).to_dict("records")
+    context = base_template_context(
+        request=request,
+        context=base["user"],
+        title=f"{base['display_name']} - New Project Demo",
+        active_nav="projects",
+        extra={
+            "vendor_id": vendor_id,
+            "vendor_display_name": base["display_name"],
+            "project": project,
+            "return_to": base["return_to"],
+            "offerings": offerings,
+            "project_demo_types": PROJECT_DEMO_TYPES,
+            "project_demo_outcomes": PROJECT_DEMO_OUTCOMES,
+            "demo_map_options": _project_demo_select_options(vendor_demos),
+        },
+    )
+    return request.app.state.templates.TemplateResponse("project_demo_new.html", context)
+
+
+@router.post("/{vendor_id}/projects/{project_id}/demos/new")
+async def project_demo_new_submit(request: Request, vendor_id: str, project_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have permission to add demos.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+
+    linked_vendor_demo_id = str(form.get("linked_vendor_demo_id", "")).strip()
+    try:
+        demo_id = repo.create_project_demo(
+            vendor_id=vendor_id,
+            project_id=project_id,
+            actor_user_principal=user.user_principal,
+            demo_name=str(form.get("demo_name", "")).strip(),
+            demo_datetime_start=str(form.get("demo_datetime_start", "")).strip() or None,
+            demo_datetime_end=str(form.get("demo_datetime_end", "")).strip() or None,
+            demo_type=str(form.get("demo_type", "live")).strip() or "live",
+            outcome=str(form.get("outcome", "unknown")).strip() or "unknown",
+            score=float(str(form.get("score", "")).strip()) if str(form.get("score", "")).strip() else None,
+            attendees_internal=str(form.get("attendees_internal", "")).strip() or None,
+            attendees_vendor=str(form.get("attendees_vendor", "")).strip() or None,
+            notes=str(form.get("notes", "")).strip() or None,
+            followups=str(form.get("followups", "")).strip() or None,
+            linked_offering_id=str(form.get("linked_offering_id", "")).strip() or None,
+            linked_vendor_demo_id=linked_vendor_demo_id or None,
+        )
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_project_detail",
+            event_type="project_demo_create",
+            payload={"vendor_id": vendor_id, "project_id": project_id, "project_demo_id": demo_id},
+        )
+        add_flash(request, f"Project demo created: {demo_id}", "success")
+    except Exception as exc:
+        add_flash(request, f"Could not create project demo: {exc}", "error")
+    return RedirectResponse(
+        url=f"/projects/{project_id}/demos?return_to={quote(return_to, safe='')}",
+        status_code=303,
+    )
+
+
+@router.post("/{vendor_id}/projects/{project_id}/demos/map")
+async def project_demo_map_submit(request: Request, vendor_id: str, project_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+    vendor_demo_id = str(form.get("vendor_demo_id", "")).strip()
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have permission to map demos.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not vendor_demo_id:
+        add_flash(request, "Vendor demo is required.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+
+    try:
+        demo_id = repo.map_vendor_demo_to_project(
+            vendor_id=vendor_id,
+            project_id=project_id,
+            vendor_demo_id=vendor_demo_id,
+            actor_user_principal=user.user_principal,
+        )
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_project_detail",
+            event_type="project_demo_map",
+            payload={"vendor_id": vendor_id, "project_id": project_id, "vendor_demo_id": vendor_demo_id, "project_demo_id": demo_id},
+        )
+        add_flash(request, f"Vendor demo mapped to project: {demo_id}", "success")
+    except Exception as exc:
+        add_flash(request, f"Could not map vendor demo: {exc}", "error")
+    return RedirectResponse(
+        url=f"/projects/{project_id}/demos?return_to={quote(return_to, safe='')}",
+        status_code=303,
+    )
+
+
+@router.post("/{vendor_id}/projects/{project_id}/demos/{demo_id}/update")
+async def project_demo_update_submit(request: Request, vendor_id: str, project_id: str, demo_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+    reason = str(form.get("reason", "")).strip()
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have permission to update demos.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+
+    updates = {
+        "demo_name": str(form.get("demo_name", "")).strip(),
+        "demo_datetime_start": str(form.get("demo_datetime_start", "")).strip() or None,
+        "demo_datetime_end": str(form.get("demo_datetime_end", "")).strip() or None,
+        "demo_type": str(form.get("demo_type", "")).strip() or None,
+        "outcome": str(form.get("outcome", "")).strip() or None,
+        "score": float(str(form.get("score", "")).strip()) if str(form.get("score", "")).strip() else None,
+        "attendees_internal": str(form.get("attendees_internal", "")).strip() or None,
+        "attendees_vendor": str(form.get("attendees_vendor", "")).strip() or None,
+        "notes": str(form.get("notes", "")).strip() or None,
+        "followups": str(form.get("followups", "")).strip() or None,
+        "linked_offering_id": str(form.get("linked_offering_id", "")).strip() or None,
+    }
+    updates = {k: v for k, v in updates.items() if v is not None and v != ""}
+
+    try:
+        if user.can_direct_apply:
+            result = repo.update_project_demo(
+                vendor_id=vendor_id,
+                project_id=project_id,
+                project_demo_id=demo_id,
+                actor_user_principal=user.user_principal,
+                updates=updates,
+                reason=reason,
+            )
+            add_flash(
+                request,
+                f"Project demo updated. Request ID: {result['request_id']} | Audit Event: {result['change_event_id']}",
+                "success",
+            )
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="update_project_demo",
+                payload={"project_id": project_id, "project_demo_id": demo_id, "updates": updates, "reason": reason},
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_project_detail",
+            event_type="project_demo_update",
+            payload={"vendor_id": vendor_id, "project_id": project_id, "project_demo_id": demo_id},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not update project demo: {exc}", "error")
+    return RedirectResponse(
+        url=f"/projects/{project_id}/demos?return_to={quote(return_to, safe='')}",
+        status_code=303,
+    )
+
+
+@router.post("/{vendor_id}/projects/{project_id}/demos/{demo_id}/remove")
+async def project_demo_remove_submit(request: Request, vendor_id: str, project_id: str, demo_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have permission to remove demos.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+
+    try:
+        if user.can_direct_apply:
+            repo.remove_project_demo(
+                vendor_id=vendor_id,
+                project_id=project_id,
+                project_demo_id=demo_id,
+                actor_user_principal=user.user_principal,
+            )
+            add_flash(request, "Project demo removed.", "success")
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="remove_project_demo",
+                payload={"project_id": project_id, "project_demo_id": demo_id},
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+    except Exception as exc:
+        add_flash(request, f"Could not remove project demo: {exc}", "error")
+    return RedirectResponse(
+        url=f"/projects/{project_id}/demos?return_to={quote(return_to, safe='')}",
+        status_code=303,
+    )
+
+
+def _entity_exists_for_doc(repo, vendor_id: str, entity_type: str, entity_id: str) -> bool:
+    if entity_type == "vendor":
+        return not repo.get_vendor_profile(vendor_id).empty and str(entity_id) == str(vendor_id)
+    if entity_type == "project":
+        return repo.project_belongs_to_vendor(vendor_id, entity_id)
+    if entity_type == "offering":
+        return repo.offering_belongs_to_vendor(vendor_id, entity_id)
+    if entity_type == "demo":
+        project_rows = repo.list_projects(vendor_id).to_dict("records")
+        for row in project_rows:
+            demos = repo.list_project_demos(vendor_id, str(row.get("project_id")))
+            if not demos.empty and not demos[demos["project_demo_id"].astype(str) == str(entity_id)].empty:
+                return True
+        return False
+    return False
+
+
+async def _create_doc_link_for_entity(
+    request: Request,
+    *,
+    form,
+    vendor_id: str,
+    entity_type: str,
+    entity_id: str,
+    page_name: str,
+    event_payload: dict[str, str],
+    redirect_url: str,
+):
+    repo = get_repo()
+    user = get_user_context(request)
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=return_to or redirect_url, status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have permission to add document links.", "error")
+        return RedirectResponse(url=return_to or redirect_url, status_code=303)
+    if not _entity_exists_for_doc(repo, vendor_id, entity_type, entity_id):
+        add_flash(request, "Target record was not found for this vendor.", "error")
+        return RedirectResponse(url=return_to or redirect_url, status_code=303)
+
+    try:
+        payload = _prepare_doc_payload(
+            {
+                "doc_url": str(form.get("doc_url", "")),
+                "doc_type": str(form.get("doc_type", "")),
+                "doc_title": str(form.get("doc_title", "")),
+                "tags": str(form.get("tags", "")),
+                "owner": str(form.get("owner", "")),
+            }
+        )
+        doc_id = repo.create_doc_link(
+            entity_type=entity_type,
+            entity_id=entity_id,
+            doc_title=payload["doc_title"],
+            doc_url=payload["doc_url"],
+            doc_type=payload["doc_type"],
+            tags=payload["tags"] or None,
+            owner=payload["owner"] or None,
+            actor_user_principal=user.user_principal,
+        )
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name=page_name,
+            event_type="doc_link_create",
+            payload={**event_payload, "doc_id": doc_id, "entity_type": entity_type},
+        )
+        add_flash(request, f"Document link added: {payload['doc_title']}", "success")
+    except Exception as exc:
+        add_flash(request, f"Could not add document link: {exc}", "error")
+    target = return_to or redirect_url
+    return RedirectResponse(url=target, status_code=303)
+
+
+@router.post("/{vendor_id}/docs/link")
+async def vendor_doc_link_submit(request: Request, vendor_id: str):
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", f"/vendors/{vendor_id}/summary")))
+    return await _create_doc_link_for_entity(
+        request,
+        form=form,
+        vendor_id=vendor_id,
+        entity_type="vendor",
+        entity_id=vendor_id,
+        page_name="vendor_summary",
+        event_payload={"vendor_id": vendor_id},
+        redirect_url=f"/vendors/{vendor_id}/summary?return_to={quote(return_to, safe='')}",
+    )
+
+
+@router.post("/{vendor_id}/projects/{project_id}/docs/link")
+async def project_doc_link_submit(request: Request, vendor_id: str, project_id: str):
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", f"/projects/{project_id}/docs")))
+    return await _create_doc_link_for_entity(
+        request,
+        form=form,
+        vendor_id=vendor_id,
+        entity_type="project",
+        entity_id=project_id,
+        page_name="vendor_project_detail",
+        event_payload={"vendor_id": vendor_id, "project_id": project_id},
+        redirect_url=f"/vendors/{vendor_id}/projects/{project_id}?return_to={quote(return_to, safe='')}",
+    )
+
+
+@router.post("/{vendor_id}/offerings/{offering_id}/docs/link")
+async def offering_doc_link_submit(request: Request, vendor_id: str, offering_id: str):
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", f"/vendors/{vendor_id}/offerings/{offering_id}")))
+    return await _create_doc_link_for_entity(
+        request,
+        form=form,
+        vendor_id=vendor_id,
+        entity_type="offering",
+        entity_id=offering_id,
+        page_name="vendor_offering_detail",
+        event_payload={"vendor_id": vendor_id, "offering_id": offering_id},
+        redirect_url=f"/vendors/{vendor_id}/offerings/{offering_id}?return_to={quote(return_to, safe='')}",
+    )
+
+
+@router.post("/{vendor_id}/projects/{project_id}/demos/{demo_id}/docs/link")
+async def project_demo_doc_link_submit(request: Request, vendor_id: str, project_id: str, demo_id: str):
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", f"/projects/{project_id}/demos")))
+    return await _create_doc_link_for_entity(
+        request,
+        form=form,
+        vendor_id=vendor_id,
+        entity_type="demo",
+        entity_id=demo_id,
+        page_name="vendor_project_detail",
+        event_payload={"vendor_id": vendor_id, "project_id": project_id, "project_demo_id": demo_id},
+        redirect_url=f"/vendors/{vendor_id}/projects/{project_id}?return_to={quote(return_to, safe='')}",
+    )
+
+
+@router.post("/docs/{doc_id}/remove")
+async def doc_link_remove_submit(request: Request, doc_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have permission to remove document links.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    doc = repo.get_doc_link(doc_id)
+    if not doc:
+        add_flash(request, "Document link not found.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    try:
+        if user.can_direct_apply:
+            repo.remove_doc_link(doc_id=doc_id, actor_user_principal=user.user_principal)
+            add_flash(request, "Document link removed.", "success")
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=str(form.get("vendor_id", "")).strip() or str(doc.get("entity_id")),
+                requestor_user_principal=user.user_principal,
+                change_type="remove_doc_link",
+                payload={"doc_id": doc_id},
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_docs",
+            event_type="doc_link_remove",
+            payload={"doc_id": doc_id, "entity_type": str(doc.get("entity_type"))},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not remove document link: {exc}", "error")
+    return RedirectResponse(url=return_to, status_code=303)
+
+@router.get("/{vendor_id}/contracts")
+def vendor_contracts_page(request: Request, vendor_id: str, return_to: str = "/vendors"):
+    repo = get_repo()
+    base = _vendor_base_context(repo, request, vendor_id, "contracts", return_to)
+    if base is None:
+        return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
+
+    context = base_template_context(
+        request=request,
+        context=base["user"],
+        title=f"{base['display_name']} - Contracts",
+        active_nav="vendors",
+        extra={
+            "section": "contracts",
+            "vendor_id": vendor_id,
+            "vendor_display_name": base["display_name"],
+            "return_to": base["return_to"],
+            "vendor_nav": base["vendor_nav"],
+            "summary": base["summary"],
+            "contracts": repo.get_vendor_contracts(vendor_id).to_dict("records"),
+            "contract_events": repo.get_vendor_contract_events(vendor_id).to_dict("records"),
+        },
+    )
+    return request.app.state.templates.TemplateResponse("vendor_section.html", context)
+
+
+@router.get("/{vendor_id}/demos")
+def vendor_demos_page(request: Request, vendor_id: str, return_to: str = "/vendors"):
+    repo = get_repo()
+    base = _vendor_base_context(repo, request, vendor_id, "demos", return_to)
+    if base is None:
+        return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
+
+    context = base_template_context(
+        request=request,
+        context=base["user"],
+        title=f"{base['display_name']} - Demos",
+        active_nav="vendors",
+        extra={
+            "section": "demos",
+            "vendor_id": vendor_id,
+            "vendor_display_name": base["display_name"],
+            "return_to": base["return_to"],
+            "vendor_nav": base["vendor_nav"],
+            "summary": base["summary"],
+            "demos": repo.get_vendor_demos(vendor_id).to_dict("records"),
+            "demo_scores": repo.get_vendor_demo_scores(vendor_id).to_dict("records"),
+            "demo_notes": repo.get_vendor_demo_notes(vendor_id).to_dict("records"),
+        },
+    )
+    return request.app.state.templates.TemplateResponse("vendor_section.html", context)
+
+
+@router.get("/{vendor_id}/lineage")
+def vendor_lineage_page(request: Request, vendor_id: str, return_to: str = "/vendors"):
+    repo = get_repo()
+    base = _vendor_base_context(repo, request, vendor_id, "lineage", return_to)
+    if base is None:
+        return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
+
+    context = base_template_context(
+        request=request,
+        context=base["user"],
+        title=f"{base['display_name']} - Lineage/Audit",
+        active_nav="vendors",
+        extra={
+            "section": "lineage",
+            "vendor_id": vendor_id,
+            "vendor_display_name": base["display_name"],
+            "return_to": base["return_to"],
+            "vendor_nav": base["vendor_nav"],
+            "summary": base["summary"],
+            "source_lineage": repo.get_vendor_source_lineage(vendor_id).to_dict("records"),
+            "change_requests": repo.get_vendor_change_requests(vendor_id).to_dict("records"),
+            "audit_events": repo.get_vendor_audit_events(vendor_id).to_dict("records"),
+        },
+    )
+    return request.app.state.templates.TemplateResponse("vendor_section.html", context)
+
+
+@router.get("/{vendor_id}/changes")
+def vendor_changes_page(request: Request, vendor_id: str, return_to: str = "/vendors"):
+    repo = get_repo()
+    base = _vendor_base_context(repo, request, vendor_id, "changes", return_to)
+    if base is None:
+        return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
+
+    context = base_template_context(
+        request=request,
+        context=base["user"],
+        title=f"{base['display_name']} - Changes",
+        active_nav="vendors",
+        extra={
+            "section": "changes",
+            "vendor_id": vendor_id,
+            "vendor_display_name": base["display_name"],
+            "return_to": base["return_to"],
+            "vendor_nav": base["vendor_nav"],
+            "summary": base["summary"],
+            "profile": base["profile"].to_dict("records"),
+            "recent_audit": repo.get_vendor_audit_events(vendor_id).head(5).to_dict("records"),
+            "lifecycle_states": LIFECYCLE_STATES,
+            "risk_tiers": RISK_TIERS,
+        },
+    )
+    return request.app.state.templates.TemplateResponse("vendor_section.html", context)
+
+
+@router.post("/{vendor_id}/direct-update")
+async def vendor_direct_update(request: Request, vendor_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=f"/vendors/{vendor_id}/changes?return_to={quote(return_to, safe='')}", status_code=303)
+    if not user.can_direct_apply:
+        add_flash(request, "Direct updates require admin or steward rights.", "error")
+        return RedirectResponse(url=f"/vendors/{vendor_id}/changes?return_to={quote(return_to, safe='')}", status_code=303)
+
+    profile = repo.get_vendor_profile(vendor_id)
+    if profile.empty:
+        add_flash(request, f"Vendor {vendor_id} not found.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+
+    current = profile.iloc[0].to_dict()
+    candidate_updates = {
+        "legal_name": str(form.get("legal_name", "")).strip(),
+        "display_name": str(form.get("display_name", "")).strip(),
+        "lifecycle_state": str(form.get("lifecycle_state", "")).strip(),
+        "owner_org_id": str(form.get("owner_org_id", "")).strip(),
+        "risk_tier": str(form.get("risk_tier", "")).strip(),
+    }
+    updates = {key: value for key, value in candidate_updates.items() if value != str(current.get(key, "")).strip()}
+    reason = str(form.get("reason", "")).strip()
+
+    if not updates:
+        add_flash(request, "No field values changed.", "info")
+        return RedirectResponse(url=f"/vendors/{vendor_id}/changes?return_to={quote(return_to, safe='')}", status_code=303)
+    if not reason:
+        add_flash(request, "Reason for change is required.", "error")
+        return RedirectResponse(url=f"/vendors/{vendor_id}/changes?return_to={quote(return_to, safe='')}", status_code=303)
+
+    try:
+        result = repo.apply_vendor_profile_update(
+            vendor_id=vendor_id,
+            actor_user_principal=user.user_principal,
+            updates=updates,
+            reason=reason,
+        )
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_360",
+            event_type="apply_vendor_update",
+            payload={"vendor_id": vendor_id, "fields": sorted(list(updates.keys()))},
+        )
+        add_flash(
+            request,
+            f"Vendor updated. Request ID: {result['request_id']} | Audit Event: {result['change_event_id']}",
+            "success",
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not apply update: {exc}", "error")
+
+    return RedirectResponse(url=f"/vendors/{vendor_id}/changes?return_to={quote(return_to, safe='')}", status_code=303)
+
+
+@router.post("/{vendor_id}/change-request")
+async def vendor_change_request(request: Request, vendor_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=f"/vendors/{vendor_id}/changes?return_to={quote(return_to, safe='')}", status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(url=f"/vendors/{vendor_id}/changes?return_to={quote(return_to, safe='')}", status_code=303)
+
+    change_type = str(form.get("change_type", "update_vendor_profile"))
+    change_notes = str(form.get("change_notes", "")).strip()
+    request_id = repo.create_vendor_change_request(
+        vendor_id=vendor_id,
+        requestor_user_principal=user.user_principal,
+        change_type=change_type,
+        payload={"notes": change_notes},
+    )
+    repo.log_usage_event(
+        user_principal=user.user_principal,
+        page_name="vendor_360",
+        event_type="submit_change_request",
+        payload={"vendor_id": vendor_id, "change_type": change_type},
+    )
+    add_flash(request, f"Change request submitted: {request_id}", "success")
+    return RedirectResponse(url=f"/vendors/{vendor_id}/changes?return_to={quote(return_to, safe='')}", status_code=303)

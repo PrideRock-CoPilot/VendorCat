@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Vendor 360</h1>
+
+<form method="get" action="/vendors" class="card grid grid-5">
+  <label>
+    Search related data
+    <input type="text" name="search" value="{{ filters.search }}" placeholder="Vendor, offering, contract, owner, contact, demo...">
+  </label>
+  <label>
+    Status
+    <select name="status">
+      {% for option in status_options %}
+      <option value="{{ option }}" {% if option == filters.status %}selected{% endif %}>{{ option }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Owner Org
+    <select name="owner">
+      {% for option in owner_options %}
+      <option value="{{ option }}" {% if option == filters.owner %}selected{% endif %}>{{ option }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Risk
+    <select name="risk">
+      {% for option in risk_options %}
+      <option value="{{ option }}" {% if option == filters.risk %}selected{% endif %}>{{ option }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Group By
+    <select name="group">
+      {% for option in group_options %}
+      <option value="{{ option }}" {% if option == filters.group %}selected{% endif %}>{{ option }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <input type="hidden" name="show_settings" value="{{ 1 if show_settings else 0 }}">
+  <div>
+    <button type="submit">Apply Filters</button>
+    <p>Example: search a business owner like "bob smith" to find all related vendors and offerings.</p>
+  </div>
+</form>
+
+{% if grouped %}
+<section class="card">
+  <h2>Group Summary</h2>
+  <table>
+    <thead><tr><th>{{ filters.group }}</th><th>Vendor Count</th></tr></thead>
+    <tbody>
+    {% for row in grouped %}
+    <tr><td>{{ row[filters.group] }}</td><td>{{ row.vendor_count }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<div class="section-header">
+  <div>
+    <h2>Vendor List</h2>
+    <p>Click a vendor row to open the high-level overview. Use Offerings for deep-dive offering management.</p>
+  </div>
+  <div class="button-group">
+    {% if can_edit and not locked_mode %}
+    <a class="button-link" href="/vendors/new?return_to={{ return_to|urlencode }}">+ New Vendor</a>
+    {% endif %}
+    <a class="button-link settings-toggle" href="{{ return_to.replace('show_settings=0', 'show_settings=1') if not show_settings else return_to.replace('show_settings=1', 'show_settings=0') }}">
+      {% if show_settings %}&#9881; Hide Fields{% else %}&#9881; Field Settings{% endif %}
+    </a>
+  </div>
+</div>
+
+{% if show_settings %}
+<section class="card">
+  <h2>Field Matrix</h2>
+  <form method="post" action="/vendors/settings">
+    <input type="hidden" name="return_to" value="{{ return_to }}">
+    <table>
+      <thead><tr><th>Show</th><th>Order</th><th>Field</th></tr></thead>
+      <tbody>
+      {% for field in all_fields %}
+      <tr>
+        <td>
+          <input type="checkbox" name="include_{{ field }}" {% if field in visible_fields %}checked{% endif %}>
+        </td>
+        <td>
+          <input type="number" name="order_{{ field }}" min="1" max="999"
+                 value="{{ (visible_fields.index(field) + 1) if field in visible_fields else 999 }}">
+        </td>
+        <td>
+          {{ field }}
+          <input type="hidden" name="field_name" value="{{ field }}">
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <button type="submit">Apply Field Matrix</button>
+  </form>
+</section>
+{% endif %}
+
+<section class="card">
+  <table id="vendor-table">
+    <thead>
+      <tr>
+        {% for field in visible_fields %}
+        <th>{{ field }}</th>
+        {% endfor %}
+        <th>actions</th>
+        <th>offerings</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in vendors %}
+      <tr class="clickable-row" data-href="{{ row._vendor_link }}">
+        {% for field in visible_fields %}
+        <td>
+          {% if field == "display_name" %}
+          <strong>{{ row[field] }}</strong>
+          {% else %}
+          {{ row[field] }}
+          {% endif %}
+        </td>
+        {% endfor %}
+        <td>
+          <a class="button-link subtle" href="{{ row._offerings_page_link }}">Offerings</a>
+        </td>
+        <td>
+          {% if row._offerings %}
+          <div class="offering-chip-list">
+            {% for offering in row._offerings %}
+            <a class="offering-chip" href="{{ offering._offering_link }}">
+              <span>{{ offering.offering_name }}</span>
+              <small>{{ offering.lifecycle_state }}</small>
+            </a>
+            {% endfor %}
+          </div>
+          {% else %}
+          <span class="muted">none</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="{{ visible_fields|length + 2 }}">No vendors found</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
