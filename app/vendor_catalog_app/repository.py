@@ -4,6 +4,8 @@ import json
 import os
 import uuid
 from datetime import datetime, timezone
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -17,6 +19,7 @@ class VendorRepository:
     def __init__(self, config: AppConfig) -> None:
         self.config = config
         self.client = DatabricksSQLClient(config)
+        self._runtime_tables_ensured = False
         self._mock_role_overrides: dict[str, set[str]] = {}
         self._mock_user_settings: dict[tuple[str, str], dict[str, Any]] = {}
         self._mock_usage_events: list[dict[str, Any]] = []
@@ -49,6 +52,41 @@ class VendorRepository:
         if self.config.use_local_db:
             return name
         return f"{self.config.fq_schema}.{name}"
+
+    @staticmethod
+    @lru_cache(maxsize=512)
+    def _read_sql_file(path_str: str) -> str:
+        path = Path(path_str)
+        if not path.exists():
+            raise FileNotFoundError(f"SQL file not found: {path}")
+        return path.read_text(encoding="utf-8")
+
+    def _sql(self, relative_path: str, **format_args: Any) -> str:
+        sql_root = Path(__file__).resolve().parent / "sql"
+        sql_path = (sql_root / relative_path).resolve()
+        template = self._read_sql_file(str(sql_path))
+        return template.format(**format_args) if format_args else template
+
+    def _query_file(
+        self,
+        relative_path: str,
+        *,
+        params: tuple | None = None,
+        columns: list[str] | None = None,
+        **format_args: Any,
+    ) -> pd.DataFrame:
+        statement = self._sql(relative_path, **format_args)
+        return self._query_or_empty(statement, params=params, columns=columns)
+
+    def _execute_file(
+        self,
+        relative_path: str,
+        *,
+        params: tuple | None = None,
+        **format_args: Any,
+    ) -> None:
+        statement = self._sql(relative_path, **format_args)
+        self.client.execute(statement, params)
 
     def _now(self) -> datetime:
         return datetime.now(timezone.utc)
@@ -96,6 +134,34 @@ class VendorRepository:
             if column in df.columns:
                 mask = mask | df[column].astype(str).str.lower().str.contains(cleaned, regex=False, na=False)
         return df[mask].copy()
+
+    @staticmethod
+    def _vendor_sort_column(sort_by: str) -> str:
+        mapping = {
+            "vendor_name": "display_name",
+            "display_name": "display_name",
+            "vendor_id": "vendor_id",
+            "legal_name": "legal_name",
+            "lifecycle_state": "lifecycle_state",
+            "owner_org_id": "owner_org_id",
+            "risk_tier": "risk_tier",
+            "updated_at": "updated_at",
+        }
+        return mapping.get((sort_by or "").strip().lower(), "display_name")
+
+    @staticmethod
+    def _vendor_sort_expr(sort_by: str) -> str:
+        mapping = {
+            "vendor_name": "lower(coalesce(v.display_name, v.legal_name, v.vendor_id))",
+            "display_name": "lower(coalesce(v.display_name, v.legal_name, v.vendor_id))",
+            "vendor_id": "lower(v.vendor_id)",
+            "legal_name": "lower(coalesce(v.legal_name, ''))",
+            "lifecycle_state": "lower(coalesce(v.lifecycle_state, ''))",
+            "owner_org_id": "lower(coalesce(v.owner_org_id, ''))",
+            "risk_tier": "lower(coalesce(v.risk_tier, ''))",
+            "updated_at": "v.updated_at",
+        }
+        return mapping.get((sort_by or "").strip().lower(), mapping["vendor_name"])
 
     def _serialize_payload(self, payload: dict[str, Any] | None) -> str:
         if not payload:
@@ -194,14 +260,9 @@ class VendorRepository:
                 request_id=request_id,
             )
         try:
-            self.client.execute(
-                f"""
-                INSERT INTO {self._table('audit_entity_change')}
-                  (change_event_id, entity_name, entity_id, action_type, before_json, after_json, actor_user_principal, event_ts, request_id)
-                VALUES
-                  (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
+            self._execute_file(
+                "inserts/audit_entity_change.sql",
+                params=(
                     change_event_id,
                     entity_name,
                     entity_id,
@@ -212,6 +273,7 @@ class VendorRepository:
                     self._now(),
                     request_id,
                 ),
+                audit_entity_change=self._table("audit_entity_change"),
             )
         except Exception:
             pass
@@ -326,131 +388,30 @@ class VendorRepository:
     def ensure_runtime_tables(self) -> None:
         if self.config.use_mock or self.config.use_local_db:
             return
-        statements = [
-            f"""
-            CREATE TABLE IF NOT EXISTS {self._table('app_user_settings')} (
-              setting_id STRING NOT NULL,
-              user_principal STRING NOT NULL,
-              setting_key STRING NOT NULL,
-              setting_value_json STRING NOT NULL,
-              updated_at TIMESTAMP NOT NULL,
-              updated_by STRING NOT NULL
-            ) USING DELTA
-            """,
-            f"""
-            CREATE TABLE IF NOT EXISTS {self._table('app_usage_log')} (
-              usage_event_id STRING NOT NULL,
-              user_principal STRING NOT NULL,
-              page_name STRING NOT NULL,
-              event_type STRING NOT NULL,
-              event_ts TIMESTAMP NOT NULL,
-              payload_json STRING NOT NULL
-            ) USING DELTA
-            """,
-            f"""
-            CREATE TABLE IF NOT EXISTS {self._table('app_project')} (
-              project_id STRING NOT NULL,
-              vendor_id STRING,
-              project_name STRING NOT NULL,
-              project_type STRING,
-              status STRING NOT NULL,
-              start_date DATE,
-              target_date DATE,
-              owner_principal STRING,
-              description STRING,
-              active_flag BOOLEAN NOT NULL,
-              created_at TIMESTAMP NOT NULL,
-              created_by STRING NOT NULL,
-              updated_at TIMESTAMP NOT NULL,
-              updated_by STRING NOT NULL
-            ) USING DELTA
-            """,
-            f"""
-            CREATE TABLE IF NOT EXISTS {self._table('app_project_vendor_map')} (
-              project_vendor_map_id STRING NOT NULL,
-              project_id STRING NOT NULL,
-              vendor_id STRING NOT NULL,
-              active_flag BOOLEAN NOT NULL,
-              created_at TIMESTAMP NOT NULL,
-              created_by STRING NOT NULL,
-              updated_at TIMESTAMP NOT NULL,
-              updated_by STRING NOT NULL
-            ) USING DELTA
-            """,
-            f"""
-            CREATE TABLE IF NOT EXISTS {self._table('app_project_offering_map')} (
-              project_offering_map_id STRING NOT NULL,
-              project_id STRING NOT NULL,
-              vendor_id STRING NOT NULL,
-              offering_id STRING NOT NULL,
-              active_flag BOOLEAN NOT NULL,
-              created_at TIMESTAMP NOT NULL,
-              created_by STRING NOT NULL,
-              updated_at TIMESTAMP NOT NULL,
-              updated_by STRING NOT NULL
-            ) USING DELTA
-            """,
-            f"""
-            CREATE TABLE IF NOT EXISTS {self._table('app_project_demo')} (
-              project_demo_id STRING NOT NULL,
-              project_id STRING NOT NULL,
-              vendor_id STRING NOT NULL,
-              demo_name STRING NOT NULL,
-              demo_datetime_start TIMESTAMP,
-              demo_datetime_end TIMESTAMP,
-              demo_type STRING,
-              outcome STRING,
-              score DOUBLE,
-              attendees_internal STRING,
-              attendees_vendor STRING,
-              notes STRING,
-              followups STRING,
-              linked_offering_id STRING,
-              linked_vendor_demo_id STRING,
-              active_flag BOOLEAN NOT NULL,
-              created_at TIMESTAMP NOT NULL,
-              created_by STRING NOT NULL,
-              updated_at TIMESTAMP NOT NULL,
-              updated_by STRING NOT NULL
-            ) USING DELTA
-            """,
-            f"""
-            CREATE TABLE IF NOT EXISTS {self._table('app_project_note')} (
-              project_note_id STRING NOT NULL,
-              project_id STRING NOT NULL,
-              vendor_id STRING NOT NULL,
-              note_text STRING NOT NULL,
-              active_flag BOOLEAN NOT NULL,
-              created_at TIMESTAMP NOT NULL,
-              created_by STRING NOT NULL,
-              updated_at TIMESTAMP NOT NULL,
-              updated_by STRING NOT NULL
-            ) USING DELTA
-            """,
-            f"""
-            CREATE TABLE IF NOT EXISTS {self._table('app_document_link')} (
-              doc_id STRING NOT NULL,
-              entity_type STRING NOT NULL,
-              entity_id STRING NOT NULL,
-              doc_title STRING NOT NULL,
-              doc_url STRING NOT NULL,
-              doc_type STRING NOT NULL,
-              tags STRING,
-              owner STRING,
-              active_flag BOOLEAN NOT NULL,
-              created_at TIMESTAMP NOT NULL,
-              created_by STRING NOT NULL,
-              updated_at TIMESTAMP NOT NULL,
-              updated_by STRING NOT NULL
-            ) USING DELTA
-            """,
-        ]
-        for statement in statements:
+        if self._runtime_tables_ensured:
+            return
+
+        required_tables = (
+            "core_vendor",
+            "sec_user_role_map",
+            "app_user_settings",
+        )
+        missing_or_blocked: list[str] = []
+        for table_name in required_tables:
             try:
-                self.client.execute(statement)
+                self.client.query(f"SELECT 1 AS present FROM {self._table(table_name)} LIMIT 1")
             except Exception:
-                # Do not block app startup if runtime user cannot create tables.
-                pass
+                missing_or_blocked.append(self._table(table_name))
+
+        if missing_or_blocked:
+            raise RuntimeError(
+                "Databricks schema is not initialized or access is blocked. "
+                f"Run the bootstrap SQL manually before starting the app: {self.config.schema_bootstrap_sql_path}. "
+                f"Configured schema: {self.config.fq_schema}. "
+                f"Missing/inaccessible objects: {', '.join(missing_or_blocked)}"
+            )
+
+        self._runtime_tables_ensured = True
 
     def bootstrap_user_access(self, user_principal: str) -> set[str]:
         roles = self.get_user_roles(user_principal)
@@ -466,31 +427,21 @@ class VendorRepository:
                 self._mock_role_overrides[user_principal] = {"vendor_viewer"}
             return
 
-        current = self._query_or_empty(
-            f"""
-            SELECT 1 AS has_role
-            FROM {self._table('sec_user_role_map')}
-            WHERE user_principal = %s
-              AND active_flag = true
-              AND revoked_at IS NULL
-            LIMIT 1
-            """,
+        current = self._query_file(
+            "ingestion/select_user_role_presence.sql",
             params=(user_principal,),
             columns=["has_role"],
+            sec_user_role_map=self._table("sec_user_role_map"),
         )
         if not current.empty:
             return
 
         now = self._now()
         try:
-            self.client.execute(
-                f"""
-                INSERT INTO {self._table('sec_user_role_map')}
-                  (user_principal, role_code, active_flag, granted_by, granted_at, revoked_at)
-                VALUES
-                  (%s, %s, %s, %s, %s, %s)
-                """,
-                (user_principal, "vendor_viewer", True, "system:auto-bootstrap", now, None),
+            self._execute_file(
+                "inserts/grant_role.sql",
+                params=(user_principal, "vendor_viewer", True, "system:auto-bootstrap", now, None),
+                sec_user_role_map=self._table("sec_user_role_map"),
             )
             self._audit_access(
                 actor_user_principal="system:auto-bootstrap",
@@ -507,17 +458,11 @@ class VendorRepository:
         if self.config.use_mock:
             return self._mock_user_settings.get((user_principal, setting_key), {})
 
-        df = self._query_or_empty(
-            f"""
-            SELECT setting_value_json
-            FROM {self._table('app_user_settings')}
-            WHERE user_principal = %s
-              AND setting_key = %s
-            ORDER BY updated_at DESC
-            LIMIT 1
-            """,
+        df = self._query_file(
+            "ingestion/select_user_setting_latest.sql",
             params=(user_principal, setting_key),
             columns=["setting_value_json"],
+            app_user_settings=self._table("app_user_settings"),
         )
         if df.empty:
             return {}
@@ -534,22 +479,15 @@ class VendorRepository:
         now = self._now()
         payload = self._serialize_payload(setting_value)
         try:
-            self.client.execute(
-                f"""
-                DELETE FROM {self._table('app_user_settings')}
-                WHERE user_principal = %s
-                  AND setting_key = %s
-                """,
-                (user_principal, setting_key),
+            self._execute_file(
+                "updates/delete_user_setting.sql",
+                params=(user_principal, setting_key),
+                app_user_settings=self._table("app_user_settings"),
             )
-            self.client.execute(
-                f"""
-                INSERT INTO {self._table('app_user_settings')}
-                  (setting_id, user_principal, setting_key, setting_value_json, updated_at, updated_by)
-                VALUES
-                  (%s, %s, %s, %s, %s, %s)
-                """,
-                (str(uuid.uuid4()), user_principal, setting_key, payload, now, user_principal),
+            self._execute_file(
+                "inserts/save_user_setting.sql",
+                params=(str(uuid.uuid4()), user_principal, setting_key, payload, now, user_principal),
+                app_user_settings=self._table("app_user_settings"),
             )
         except Exception:
             pass
@@ -571,14 +509,9 @@ class VendorRepository:
             return
 
         try:
-            self.client.execute(
-                f"""
-                INSERT INTO {self._table('app_usage_log')}
-                  (usage_event_id, user_principal, page_name, event_type, event_ts, payload_json)
-                VALUES
-                  (%s, %s, %s, %s, %s, %s)
-                """,
-                (
+            self._execute_file(
+                "inserts/log_usage_event.sql",
+                params=(
                     str(uuid.uuid4()),
                     user_principal,
                     page_name,
@@ -586,6 +519,7 @@ class VendorRepository:
                     self._now(),
                     self._serialize_payload(payload),
                 ),
+                app_usage_log=self._table("app_usage_log"),
             )
         except Exception:
             pass
@@ -595,8 +529,10 @@ class VendorRepository:
             return "admin@example.com"
         if self.config.use_local_db:
             return os.getenv("TVENDOR_TEST_USER", "admin@example.com")
-        query = "SELECT current_user() AS user_principal"
-        df = self.client.query(query)
+        df = self._query_file(
+            "ingestion/select_current_user.sql",
+            columns=["user_principal"],
+        )
         if df.empty:
             return "unknown_user"
         return str(df.iloc[0]["user_principal"])
@@ -608,16 +544,11 @@ class VendorRepository:
             base_roles = set(rows["role_code"].tolist())
             return base_roles.union(self._mock_role_overrides.get(user_principal, set()))
 
-        df = self._query_or_empty(
-            f"""
-            SELECT DISTINCT role_code
-            FROM {self._table("sec_user_role_map")}
-            WHERE user_principal = %s
-              AND active_flag = true
-              AND revoked_at IS NULL
-            """,
+        df = self._query_file(
+            "ingestion/select_user_roles.sql",
             params=(user_principal,),
             columns=["role_code"],
+            sec_user_role_map=self._table("sec_user_role_map"),
         )
         return set(df["role_code"].tolist()) if not df.empty else set()
 
@@ -631,18 +562,28 @@ class VendorRepository:
             }
 
         vendor_df = self.client.query(
-            f"SELECT COUNT(*) AS c FROM {self._table('core_vendor')} WHERE lifecycle_state = 'active'"
+            self._sql(
+                "reporting/dashboard_active_vendors.sql",
+                core_vendor=self._table("core_vendor"),
+            )
         )
         offering_df = self.client.query(
-            f"SELECT COUNT(*) AS c FROM {self._table('core_vendor_offering')} WHERE lifecycle_state = 'active'"
+            self._sql(
+                "reporting/dashboard_active_offerings.sql",
+                core_vendor_offering=self._table("core_vendor_offering"),
+            )
         )
-        demo_df = self.client.query(f"SELECT COUNT(*) AS c FROM {self._table('core_vendor_demo')}")
+        demo_df = self.client.query(
+            self._sql(
+                "reporting/dashboard_demo_count.sql",
+                core_vendor_demo=self._table("core_vendor_demo"),
+            )
+        )
         cancel_df = self.client.query(
-            f"""
-            SELECT COUNT(*) AS c
-            FROM {self._table('core_contract_event')}
-            WHERE event_type = 'contract_cancelled'
-            """
+            self._sql(
+                "reporting/dashboard_cancelled_contract_count.sql",
+                core_contract_event=self._table("core_contract_event"),
+            )
         )
         return {
             "active_vendors": int(vendor_df.iloc[0]["c"]),
@@ -655,14 +596,10 @@ class VendorRepository:
         if self.config.use_mock:
             orgs = sorted(self._mock_vendors_df()["owner_org_id"].dropna().unique().tolist())
             return ["all"] + orgs
-        df = self._query_or_empty(
-            f"""
-            SELECT DISTINCT owner_org_id AS org_id
-            FROM {self._table('core_vendor')}
-            WHERE owner_org_id IS NOT NULL
-            ORDER BY owner_org_id
-            """,
+        df = self._query_file(
+            "reporting/available_orgs.sql",
             columns=["org_id"],
+            core_vendor=self._table("core_vendor"),
         )
         if df.empty:
             return ["all"]
@@ -682,17 +619,13 @@ class VendorRepository:
         months = max(1, min(months, 36))
         org_clause = "AND org_id = %s" if org_id and org_id != "all" else ""
         params: tuple = (org_id,) if org_clause else ()
-        return self._query_or_empty(
-            f"""
-            SELECT category, SUM(amount) AS total_spend
-            FROM {self._table('rpt_spend_fact')}
-            WHERE month >= add_months(date_trunc('month', current_date()), -{months - 1})
-              {org_clause}
-            GROUP BY category
-            ORDER BY total_spend DESC
-            """,
+        return self._query_file(
+            "reporting/executive_spend_by_category.sql",
             params=params,
             columns=["category", "total_spend"],
+            rpt_spend_fact=self._table("rpt_spend_fact"),
+            months_back=(months - 1),
+            org_clause=org_clause,
         )
 
     def executive_monthly_spend_trend(self, org_id: str = "all", months: int = 12) -> pd.DataFrame:
@@ -709,17 +642,13 @@ class VendorRepository:
         months = max(1, min(months, 36))
         org_clause = "AND org_id = %s" if org_id and org_id != "all" else ""
         params: tuple = (org_id,) if org_clause else ()
-        return self._query_or_empty(
-            f"""
-            SELECT month, SUM(amount) AS total_spend
-            FROM {self._table('rpt_spend_fact')}
-            WHERE month >= add_months(date_trunc('month', current_date()), -{months - 1})
-              {org_clause}
-            GROUP BY month
-            ORDER BY month
-            """,
+        return self._query_file(
+            "reporting/executive_monthly_spend_trend.sql",
             params=params,
             columns=["month", "total_spend"],
+            rpt_spend_fact=self._table("rpt_spend_fact"),
+            months_back=(months - 1),
+            org_clause=org_clause,
         )
 
     def executive_top_vendors_by_spend(
@@ -743,24 +672,15 @@ class VendorRepository:
         months = max(1, min(months, 36))
         org_clause = "AND sf.org_id = %s" if org_id and org_id != "all" else ""
         params: tuple = (org_id,) if org_clause else ()
-        return self._query_or_empty(
-            f"""
-            SELECT
-              sf.vendor_id,
-              coalesce(v.display_name, v.legal_name) AS vendor_name,
-              v.risk_tier,
-              SUM(sf.amount) AS total_spend
-            FROM {self._table('rpt_spend_fact')} sf
-            LEFT JOIN {self._table('core_vendor')} v
-              ON sf.vendor_id = v.vendor_id
-            WHERE sf.month >= add_months(date_trunc('month', current_date()), -{months - 1})
-              {org_clause}
-            GROUP BY sf.vendor_id, coalesce(v.display_name, v.legal_name), v.risk_tier
-            ORDER BY total_spend DESC
-            LIMIT {limit}
-            """,
+        return self._query_file(
+            "reporting/executive_top_vendors_by_spend.sql",
             params=params,
             columns=["vendor_id", "vendor_name", "risk_tier", "total_spend"],
+            rpt_spend_fact=self._table("rpt_spend_fact"),
+            core_vendor=self._table("core_vendor"),
+            months_back=(months - 1),
+            org_clause=org_clause,
+            limit_rows=limit,
         )
 
     def executive_risk_distribution(self, org_id: str = "all") -> pd.DataFrame:
@@ -777,17 +697,12 @@ class VendorRepository:
 
         org_clause = "AND owner_org_id = %s" if org_id and org_id != "all" else ""
         params: tuple = (org_id,) if org_clause else ()
-        return self._query_or_empty(
-            f"""
-            SELECT risk_tier, COUNT(*) AS vendor_count
-            FROM {self._table('core_vendor')}
-            WHERE lifecycle_state = 'active'
-              {org_clause}
-            GROUP BY risk_tier
-            ORDER BY vendor_count DESC
-            """,
+        return self._query_file(
+            "reporting/executive_risk_distribution.sql",
             params=params,
             columns=["risk_tier", "vendor_count"],
+            core_vendor=self._table("core_vendor"),
+            org_clause=org_clause,
         )
 
     def executive_renewal_pipeline(self, org_id: str = "all", horizon_days: int = 180) -> pd.DataFrame:
@@ -806,24 +721,8 @@ class VendorRepository:
 
         org_clause = "AND org_id = %s" if org_id and org_id != "all" else ""
         params: tuple = (org_id,) if org_clause else ()
-        return self._query_or_empty(
-            f"""
-            SELECT
-              contract_id,
-              vendor_id,
-              vendor_name,
-              org_id,
-              category,
-              renewal_date,
-              annual_value,
-              risk_tier,
-              renewal_status,
-              datediff(renewal_date, current_date()) AS days_to_renewal
-            FROM {self._table('rpt_contract_renewals')}
-            WHERE renewal_date BETWEEN current_date() AND date_add(current_date(), {horizon_days})
-              {org_clause}
-            ORDER BY renewal_date
-            """,
+        return self._query_file(
+            "reporting/executive_renewal_pipeline.sql",
             params=params,
             columns=[
                 "contract_id",
@@ -837,6 +736,9 @@ class VendorRepository:
                 "renewal_status",
                 "days_to_renewal",
             ],
+            rpt_contract_renewals=self._table("rpt_contract_renewals"),
+            horizon_days=horizon_days,
+            org_clause=org_clause,
         )
 
     def executive_summary(self, org_id: str = "all", months: int = 12, horizon_days: int = 180) -> dict[str, float]:
@@ -905,36 +807,26 @@ class VendorRepository:
             project_map = self._mock_project_vendor_map_df()[["project_id", "vendor_id"]].copy()
             owners = mock_data.vendor_business_owners().copy()
         else:
-            offerings = self._query_or_empty(
-                f"SELECT vendor_id, lifecycle_state FROM {self._table('core_vendor_offering')}",
+            offerings = self._query_file(
+                "reporting/report_vendor_inventory_offerings.sql",
                 columns=["vendor_id", "lifecycle_state"],
+                core_vendor_offering=self._table("core_vendor_offering"),
             )
-            contracts = self._query_or_empty(
-                f"""
-                SELECT vendor_id, contract_status, annual_value
-                FROM {self._table('core_contract')}
-                """,
+            contracts = self._query_file(
+                "reporting/report_vendor_inventory_contracts.sql",
                 columns=["vendor_id", "contract_status", "annual_value"],
+                core_contract=self._table("core_contract"),
             )
-            project_map = self._query_or_empty(
-                f"""
-                SELECT project_id, vendor_id
-                FROM {self._table('app_project_vendor_map')}
-                WHERE coalesce(active_flag, true) = true
-                UNION ALL
-                SELECT project_id, vendor_id
-                FROM {self._table('app_project')}
-                WHERE vendor_id IS NOT NULL
-                  AND coalesce(active_flag, true) = true
-                """,
+            project_map = self._query_file(
+                "reporting/report_vendor_inventory_project_map.sql",
                 columns=["project_id", "vendor_id"],
+                app_project_vendor_map=self._table("app_project_vendor_map"),
+                app_project=self._table("app_project"),
             )
-            owners = self._query_or_empty(
-                f"""
-                SELECT vendor_id, owner_user_principal, owner_role, active_flag
-                FROM {self._table('core_vendor_business_owner')}
-                """,
+            owners = self._query_file(
+                "reporting/report_vendor_inventory_owners.sql",
                 columns=["vendor_id", "owner_user_principal", "owner_role", "active_flag"],
+                core_vendor_business_owner=self._table("core_vendor_business_owner"),
             )
 
         offerings["vendor_id"] = offerings["vendor_id"].astype(str)
@@ -1068,43 +960,26 @@ class VendorRepository:
             project_docs = self._mock_doc_links_df()
             project_docs = project_docs[project_docs["entity_type"].astype(str) == "project"][["entity_id", "doc_id"]].copy()
         else:
-            project_vendor_map = self._query_or_empty(
-                f"""
-                SELECT project_id, vendor_id
-                FROM {self._table('app_project_vendor_map')}
-                WHERE coalesce(active_flag, true) = true
-                UNION ALL
-                SELECT project_id, vendor_id
-                FROM {self._table('app_project')}
-                WHERE vendor_id IS NOT NULL
-                  AND coalesce(active_flag, true) = true
-                """,
+            project_vendor_map = self._query_file(
+                "reporting/report_project_portfolio_vendor_map.sql",
                 columns=["project_id", "vendor_id"],
+                app_project_vendor_map=self._table("app_project_vendor_map"),
+                app_project=self._table("app_project"),
             )
-            project_offering_map = self._query_or_empty(
-                f"""
-                SELECT project_id, offering_id
-                FROM {self._table('app_project_offering_map')}
-                WHERE coalesce(active_flag, true) = true
-                """,
+            project_offering_map = self._query_file(
+                "reporting/report_project_portfolio_offering_map.sql",
                 columns=["project_id", "offering_id"],
+                app_project_offering_map=self._table("app_project_offering_map"),
             )
-            project_notes = self._query_or_empty(
-                f"""
-                SELECT project_id, project_note_id
-                FROM {self._table('app_project_note')}
-                WHERE coalesce(active_flag, true) = true
-                """,
+            project_notes = self._query_file(
+                "reporting/report_project_portfolio_notes.sql",
                 columns=["project_id", "project_note_id"],
+                app_project_note=self._table("app_project_note"),
             )
-            project_docs = self._query_or_empty(
-                f"""
-                SELECT entity_id, doc_id
-                FROM {self._table('app_document_link')}
-                WHERE entity_type = 'project'
-                  AND coalesce(active_flag, true) = true
-                """,
+            project_docs = self._query_file(
+                "reporting/report_project_portfolio_docs.sql",
                 columns=["entity_id", "doc_id"],
+                app_document_link=self._table("app_document_link"),
             )
 
         project_vendor_counts = (
@@ -1310,52 +1185,14 @@ class VendorRepository:
 
             out = pd.concat([vendor_owners, offering_owners, project_owners], ignore_index=True)
         else:
-            out = self._query_or_empty(
-                f"""
-                SELECT
-                  bo.owner_user_principal AS owner_principal,
-                  bo.owner_role AS owner_role,
-                  'vendor' AS entity_type,
-                  bo.vendor_id AS entity_id,
-                  coalesce(v.display_name, v.legal_name, bo.vendor_id) AS entity_name,
-                  bo.vendor_id AS vendor_id,
-                  coalesce(v.display_name, v.legal_name, bo.vendor_id) AS vendor_display_name
-                FROM {self._table('core_vendor_business_owner')} bo
-                LEFT JOIN {self._table('core_vendor')} v
-                  ON bo.vendor_id = v.vendor_id
-                WHERE coalesce(bo.active_flag, true) = true
-                UNION ALL
-                SELECT
-                  obo.owner_user_principal AS owner_principal,
-                  obo.owner_role AS owner_role,
-                  'offering' AS entity_type,
-                  obo.offering_id AS entity_id,
-                  coalesce(o.offering_name, obo.offering_id) AS entity_name,
-                  o.vendor_id AS vendor_id,
-                  coalesce(v2.display_name, v2.legal_name, o.vendor_id) AS vendor_display_name
-                FROM {self._table('core_offering_business_owner')} obo
-                INNER JOIN {self._table('core_vendor_offering')} o
-                  ON obo.offering_id = o.offering_id
-                LEFT JOIN {self._table('core_vendor')} v2
-                  ON o.vendor_id = v2.vendor_id
-                WHERE coalesce(obo.active_flag, true) = true
-                UNION ALL
-                SELECT
-                  p.owner_principal AS owner_principal,
-                  'project_owner' AS owner_role,
-                  'project' AS entity_type,
-                  p.project_id AS entity_id,
-                  p.project_name AS entity_name,
-                  p.vendor_id AS vendor_id,
-                  coalesce(v3.display_name, v3.legal_name, p.vendor_id, 'Unassigned') AS vendor_display_name
-                FROM {self._table('app_project')} p
-                LEFT JOIN {self._table('core_vendor')} v3
-                  ON p.vendor_id = v3.vendor_id
-                WHERE coalesce(p.active_flag, true) = true
-                  AND p.owner_principal IS NOT NULL
-                  AND trim(p.owner_principal) <> ''
-                """,
+            out = self._query_file(
+                "reporting/report_owner_coverage.sql",
                 columns=columns,
+                core_vendor_business_owner=self._table("core_vendor_business_owner"),
+                core_vendor=self._table("core_vendor"),
+                core_offering_business_owner=self._table("core_offering_business_owner"),
+                core_vendor_offering=self._table("core_vendor_offering"),
+                app_project=self._table("app_project"),
             )
 
         if out.empty:
@@ -1371,6 +1208,369 @@ class VendorRepository:
                 ["owner_principal", "owner_role", "entity_type", "entity_id", "entity_name", "vendor_id", "vendor_display_name"],
             )
         return out[columns].sort_values(["owner_principal", "entity_type", "entity_name"]).head(limit)
+
+    def list_vendor_offerings_for_vendors(self, vendor_ids: list[str]) -> pd.DataFrame:
+        columns = ["offering_id", "vendor_id", "offering_name", "lifecycle_state"]
+        cleaned_ids = [str(v).strip() for v in vendor_ids if str(v).strip()]
+        if not cleaned_ids:
+            return pd.DataFrame(columns=columns)
+
+        if self.config.use_mock:
+            offerings = self._mock_offerings_df().copy()
+            offerings = offerings[offerings["vendor_id"].astype(str).isin(cleaned_ids)].copy()
+            if offerings.empty:
+                return pd.DataFrame(columns=columns)
+            out = offerings[["offering_id", "vendor_id", "offering_name", "lifecycle_state"]].copy()
+            return out.sort_values(["vendor_id", "offering_name"], ascending=[True, True])
+
+        placeholders = ", ".join(["%s"] * len(cleaned_ids))
+        return self._query_file(
+            "ingestion/select_vendor_offerings_for_vendor_ids.sql",
+            params=tuple(cleaned_ids),
+            columns=columns,
+            vendor_ids_placeholders=placeholders,
+            core_vendor_offering=self._table("core_vendor_offering"),
+        )
+
+    def get_vendors_by_ids(self, vendor_ids: list[str]) -> pd.DataFrame:
+        columns = ["vendor_id", "display_name", "legal_name", "lifecycle_state", "owner_org_id", "risk_tier"]
+        cleaned_ids = [str(v).strip() for v in vendor_ids if str(v).strip()]
+        if not cleaned_ids:
+            return pd.DataFrame(columns=columns)
+        if self.config.use_mock:
+            vendors = self._mock_vendors_df().copy()
+            vendors = vendors[vendors["vendor_id"].astype(str).isin(cleaned_ids)].copy()
+            for col in columns:
+                if col not in vendors.columns:
+                    vendors[col] = None
+            return vendors[columns]
+        placeholders = ", ".join(["%s"] * len(cleaned_ids))
+        return self._query_file(
+            "ingestion/select_vendors_by_ids.sql",
+            params=tuple(cleaned_ids),
+            columns=columns,
+            vendor_ids_placeholders=placeholders,
+            core_vendor=self._table("core_vendor"),
+        )
+
+    def get_offerings_by_ids(self, offering_ids: list[str]) -> pd.DataFrame:
+        columns = [
+            "offering_id",
+            "vendor_id",
+            "offering_name",
+            "offering_type",
+            "lifecycle_state",
+            "criticality_tier",
+            "vendor_display_name",
+        ]
+        cleaned_ids = [str(v).strip() for v in offering_ids if str(v).strip()]
+        if not cleaned_ids:
+            return pd.DataFrame(columns=columns)
+        if self.config.use_mock:
+            offerings = self._mock_offerings_df().copy()
+            offerings = offerings[offerings["offering_id"].astype(str).isin(cleaned_ids)].copy()
+            vendors = self._mock_vendors_df()[["vendor_id", "display_name", "legal_name"]].copy()
+            offerings = offerings.merge(vendors, on="vendor_id", how="left")
+            offerings["vendor_display_name"] = offerings["display_name"].fillna(offerings["legal_name"]).fillna(
+                offerings["vendor_id"]
+            )
+            for col in columns:
+                if col not in offerings.columns:
+                    offerings[col] = None
+            return offerings[columns]
+        placeholders = ", ".join(["%s"] * len(cleaned_ids))
+        return self._query_file(
+            "ingestion/select_offerings_by_ids.sql",
+            params=tuple(cleaned_ids),
+            columns=columns,
+            offering_ids_placeholders=placeholders,
+            core_vendor_offering=self._table("core_vendor_offering"),
+            core_vendor=self._table("core_vendor"),
+        )
+
+    def search_vendors_typeahead(self, *, q: str = "", limit: int = 20) -> pd.DataFrame:
+        limit = max(1, min(int(limit or 20), 100))
+        columns = ["vendor_id", "label", "display_name", "legal_name", "lifecycle_state"]
+        if self.config.use_mock:
+            df = self._mock_vendors_df().copy()
+            if q.strip():
+                needle = q.strip().lower()
+                df = df[
+                    df.apply(
+                        lambda r: any(
+                            self._matches_needle(r.get(field), needle)
+                            for field in ["vendor_id", "display_name", "legal_name", "owner_org_id", "risk_tier"]
+                        ),
+                        axis=1,
+                    )
+                ].copy()
+            df["label"] = df["display_name"].fillna(df["legal_name"]).fillna(df["vendor_id"])
+            for col in columns:
+                if col not in df.columns:
+                    df[col] = None
+            return df.sort_values(["label", "vendor_id"]).head(limit)[columns]
+        params: list[Any] = []
+        where = "1 = 1"
+        if q.strip():
+            like = f"%{q.strip()}%"
+            where = (
+                "("
+                "lower(v.vendor_id) LIKE lower(%s)"
+                " OR lower(coalesce(v.display_name, '')) LIKE lower(%s)"
+                " OR lower(coalesce(v.legal_name, '')) LIKE lower(%s)"
+                ")"
+            )
+            params.extend([like, like, like])
+        return self._query_file(
+            "reporting/search_vendors_typeahead.sql",
+            params=tuple(params) if params else None,
+            columns=columns,
+            where_clause=where,
+            limit=limit,
+            core_vendor=self._table("core_vendor"),
+        )
+
+    def search_offerings_typeahead(self, *, vendor_id: str | None = None, q: str = "", limit: int = 20) -> pd.DataFrame:
+        limit = max(1, min(int(limit or 20), 100))
+        columns = [
+            "offering_id",
+            "vendor_id",
+            "offering_name",
+            "offering_type",
+            "lifecycle_state",
+            "vendor_display_name",
+            "label",
+        ]
+        filter_vendor = str(vendor_id or "").strip()
+        if self.config.use_mock:
+            offerings = self._mock_offerings_df().copy()
+            vendors = self._mock_vendors_df()[["vendor_id", "display_name", "legal_name"]].copy()
+            offerings = offerings.merge(vendors, on="vendor_id", how="left")
+            offerings["vendor_display_name"] = offerings["display_name"].fillna(offerings["legal_name"]).fillna(
+                offerings["vendor_id"]
+            )
+            if filter_vendor:
+                offerings = offerings[offerings["vendor_id"].astype(str) == filter_vendor].copy()
+            if q.strip():
+                needle = q.strip().lower()
+                offerings = offerings[
+                    offerings.apply(
+                        lambda r: any(
+                            self._matches_needle(r.get(field), needle)
+                            for field in [
+                                "offering_id",
+                                "offering_name",
+                                "offering_type",
+                                "vendor_id",
+                                "vendor_display_name",
+                            ]
+                        ),
+                        axis=1,
+                    )
+                ].copy()
+            offerings["label"] = (
+                offerings["offering_name"].fillna(offerings["offering_id"])
+                + " ("
+                + offerings["offering_id"].astype(str)
+                + ") - "
+                + offerings["vendor_display_name"].astype(str)
+            )
+            for col in columns:
+                if col not in offerings.columns:
+                    offerings[col] = None
+            return offerings.sort_values(["vendor_display_name", "offering_name"]).head(limit)[columns]
+
+        where_parts = []
+        params: list[Any] = []
+        if filter_vendor:
+            where_parts.append("o.vendor_id = %s")
+            params.append(filter_vendor)
+        if q.strip():
+            like = f"%{q.strip()}%"
+            where_parts.append(
+                "("
+                "lower(o.offering_id) LIKE lower(%s)"
+                " OR lower(coalesce(o.offering_name, '')) LIKE lower(%s)"
+                " OR lower(coalesce(o.offering_type, '')) LIKE lower(%s)"
+                " OR lower(coalesce(v.display_name, v.legal_name, o.vendor_id)) LIKE lower(%s)"
+                ")"
+            )
+            params.extend([like, like, like, like])
+        where = " AND ".join(where_parts) if where_parts else "1 = 1"
+        return self._query_file(
+            "reporting/search_offerings_typeahead.sql",
+            params=tuple(params) if params else None,
+            columns=columns,
+            where_clause=where,
+            limit=limit,
+            core_vendor_offering=self._table("core_vendor_offering"),
+            core_vendor=self._table("core_vendor"),
+        )
+
+    def search_projects_typeahead(self, *, q: str = "", limit: int = 20) -> pd.DataFrame:
+        limit = max(1, min(int(limit or 20), 100))
+        columns = ["project_id", "project_name", "status", "vendor_id", "vendor_display_name", "label"]
+        if self.config.use_mock:
+            projects = self.list_all_projects(search_text=q, status="all", vendor_id="all", limit=max(50, limit)).copy()
+            if projects.empty:
+                return pd.DataFrame(columns=columns)
+            projects["vendor_display_name"] = projects["vendor_display_name"].fillna("Unassigned")
+            projects["label"] = (
+                projects["project_name"].fillna(projects["project_id"])
+                + " ("
+                + projects["project_id"].astype(str)
+                + ") - "
+                + projects["vendor_display_name"].astype(str)
+            )
+            for col in columns:
+                if col not in projects.columns:
+                    projects[col] = None
+            return projects[columns].head(limit)
+
+        params: list[Any] = []
+        where_parts = ["coalesce(p.active_flag, true) = true"]
+        if q.strip():
+            like = f"%{q.strip()}%"
+            where_parts.append(
+                "("
+                "lower(p.project_id) LIKE lower(%s)"
+                " OR lower(coalesce(p.project_name, '')) LIKE lower(%s)"
+                " OR lower(coalesce(p.status, '')) LIKE lower(%s)"
+                " OR lower(coalesce(p.owner_principal, '')) LIKE lower(%s)"
+                " OR lower(coalesce(p.description, '')) LIKE lower(%s)"
+                " OR lower(coalesce(v.display_name, v.legal_name, p.vendor_id, '')) LIKE lower(%s)"
+                ")"
+            )
+            params.extend([like, like, like, like, like, like])
+        where = " AND ".join(where_parts)
+        return self._query_file(
+            "reporting/search_projects_typeahead.sql",
+            params=tuple(params) if params else None,
+            columns=columns,
+            where_clause=where,
+            limit=limit,
+            app_project=self._table("app_project"),
+            core_vendor=self._table("core_vendor"),
+        )
+
+    def list_vendors_page(
+        self,
+        *,
+        search_text: str = "",
+        lifecycle_state: str = "all",
+        owner_org_id: str = "all",
+        risk_tier: str = "all",
+        page: int = 1,
+        page_size: int = 25,
+        sort_by: str = "vendor_name",
+        sort_dir: str = "asc",
+    ) -> tuple[pd.DataFrame, int]:
+        page = max(1, int(page or 1))
+        page_size = max(1, min(int(page_size or 25), 200))
+        sort_dir = "desc" if str(sort_dir).strip().lower() == "desc" else "asc"
+        sort_col = self._vendor_sort_column(sort_by)
+        sort_expr = self._vendor_sort_expr(sort_by)
+        offset = (page - 1) * page_size
+        columns = [
+            "vendor_id",
+            "legal_name",
+            "display_name",
+            "lifecycle_state",
+            "owner_org_id",
+            "risk_tier",
+            "source_system",
+            "updated_at",
+        ]
+
+        if self.config.use_mock:
+            df = self.search_vendors(search_text=search_text, lifecycle_state=lifecycle_state).copy()
+            if owner_org_id != "all" and "owner_org_id" in df.columns:
+                df = df[df["owner_org_id"].astype(str) == str(owner_org_id)].copy()
+            if risk_tier != "all" and "risk_tier" in df.columns:
+                df = df[df["risk_tier"].astype(str) == str(risk_tier)].copy()
+            if sort_col in df.columns:
+                df = df.sort_values(sort_col, ascending=(sort_dir == "asc"), kind="mergesort", na_position="last")
+            if "vendor_id" in df.columns:
+                df = df.sort_values(
+                    [sort_col, "vendor_id"] if sort_col in df.columns else ["vendor_id"],
+                    ascending=[sort_dir == "asc", True] if sort_col in df.columns else [True],
+                    kind="mergesort",
+                    na_position="last",
+                )
+            total = int(len(df))
+            page_df = df.iloc[offset : offset + page_size].copy()
+            for col in columns:
+                if col not in page_df.columns:
+                    page_df[col] = None
+            return page_df[columns], total
+
+        where_parts = ["1 = 1"]
+        params: list[Any] = []
+        if lifecycle_state != "all":
+            where_parts.append("v.lifecycle_state = %s")
+            params.append(lifecycle_state)
+        if owner_org_id != "all":
+            where_parts.append("v.owner_org_id = %s")
+            params.append(owner_org_id)
+        if risk_tier != "all":
+            where_parts.append("v.risk_tier = %s")
+            params.append(risk_tier)
+        if search_text.strip():
+            like = f"%{search_text.strip()}%"
+            where_parts.append(
+                self._sql(
+                    "reporting/filter_vendors_page_search_clause.sql",
+                    core_vendor_offering=self._table("core_vendor_offering"),
+                    core_contract=self._table("core_contract"),
+                    core_vendor_business_owner=self._table("core_vendor_business_owner"),
+                    core_offering_business_owner=self._table("core_offering_business_owner"),
+                    core_vendor_contact=self._table("core_vendor_contact"),
+                    core_offering_contact=self._table("core_offering_contact"),
+                    core_vendor_demo=self._table("core_vendor_demo"),
+                    app_project=self._table("app_project"),
+                )
+            )
+            params.extend([like] * 37)
+
+        where_clause = " AND ".join(where_parts)
+
+        try:
+            total_df = self._query_file(
+                "reporting/list_vendors_page_count.sql",
+                params=tuple(params),
+                columns=["total_rows"],
+                where_clause=where_clause,
+                core_vendor=self._table("core_vendor"),
+            )
+            total = int(total_df.iloc[0]["total_rows"]) if not total_df.empty else 0
+            rows = self._query_file(
+                "reporting/list_vendors_page_data.sql",
+                params=tuple(params + [page_size, offset]),
+                where_clause=where_clause,
+                sort_expr=sort_expr,
+                sort_dir=sort_dir,
+                core_vendor=self._table("core_vendor"),
+            )
+            if rows.empty:
+                return pd.DataFrame(columns=columns), total
+            for col in columns:
+                if col not in rows.columns:
+                    rows[col] = None
+            return rows[columns], total
+        except Exception:
+            fallback = self.search_vendors(search_text=search_text, lifecycle_state=lifecycle_state).copy()
+            if owner_org_id != "all" and "owner_org_id" in fallback.columns:
+                fallback = fallback[fallback["owner_org_id"].astype(str) == str(owner_org_id)].copy()
+            if risk_tier != "all" and "risk_tier" in fallback.columns:
+                fallback = fallback[fallback["risk_tier"].astype(str) == str(risk_tier)].copy()
+            if sort_col in fallback.columns:
+                fallback = fallback.sort_values(sort_col, ascending=(sort_dir == "asc"), kind="mergesort", na_position="last")
+            total = int(len(fallback))
+            out = fallback.iloc[offset : offset + page_size].copy()
+            for col in columns:
+                if col not in out.columns:
+                    out[col] = None
+            return out[columns], total
 
     def search_vendors(self, search_text: str = "", lifecycle_state: str = "all") -> pd.DataFrame:
         if self.config.use_mock:
@@ -1479,193 +1679,71 @@ class VendorRepository:
             params.append(lifecycle_state)
 
         if not search_text.strip():
-            query = f"""
-                SELECT vendor_id, legal_name, display_name, lifecycle_state, owner_org_id, risk_tier, updated_at
-                FROM {self._table("core_vendor")} v
-                WHERE 1 = 1
-                {state_clause}
-                ORDER BY display_name
-                LIMIT 250
-            """
-            return self.client.query(query, tuple(params))
+            return self._query_file(
+                "reporting/search_vendors_base.sql",
+                params=tuple(params),
+                state_clause=state_clause,
+                core_vendor=self._table("core_vendor"),
+            )
 
         like = f"%{search_text.strip()}%"
-        broad_query = f"""
-            SELECT DISTINCT
-              v.vendor_id,
-              v.legal_name,
-              v.display_name,
-              v.lifecycle_state,
-              v.owner_org_id,
-              v.risk_tier,
-              v.updated_at
-            FROM {self._table("core_vendor")} v
-            WHERE (
-              lower(v.vendor_id) LIKE lower(%s)
-              OR lower(coalesce(v.legal_name, '')) LIKE lower(%s)
-              OR lower(coalesce(v.display_name, '')) LIKE lower(%s)
-              OR lower(coalesce(v.owner_org_id, '')) LIKE lower(%s)
-              OR lower(coalesce(v.risk_tier, '')) LIKE lower(%s)
-              OR lower(coalesce(v.source_system, '')) LIKE lower(%s)
-              OR lower(coalesce(v.source_record_id, '')) LIKE lower(%s)
-              OR lower(coalesce(v.source_batch_id, '')) LIKE lower(%s)
-              OR EXISTS (
-                SELECT 1
-                FROM {self._table('core_vendor_offering')} o
-                WHERE o.vendor_id = v.vendor_id
-                  AND (
-                    lower(o.offering_id) LIKE lower(%s)
-                    OR lower(coalesce(o.offering_name, '')) LIKE lower(%s)
-                    OR lower(coalesce(o.offering_type, '')) LIKE lower(%s)
-                  )
-              )
-              OR EXISTS (
-                SELECT 1
-                FROM {self._table('core_contract')} c
-                WHERE c.vendor_id = v.vendor_id
-                  AND (
-                    lower(c.contract_id) LIKE lower(%s)
-                    OR lower(coalesce(c.contract_number, '')) LIKE lower(%s)
-                    OR lower(coalesce(c.contract_status, '')) LIKE lower(%s)
-                  )
-              )
-              OR EXISTS (
-                SELECT 1
-                FROM {self._table('core_vendor_business_owner')} bo
-                WHERE bo.vendor_id = v.vendor_id
-                  AND (
-                    lower(coalesce(bo.owner_user_principal, '')) LIKE lower(%s)
-                    OR lower(coalesce(bo.owner_role, '')) LIKE lower(%s)
-                  )
-              )
-              OR EXISTS (
-                SELECT 1
-                FROM {self._table('core_offering_business_owner')} obo
-                INNER JOIN {self._table('core_vendor_offering')} o2
-                  ON obo.offering_id = o2.offering_id
-                WHERE o2.vendor_id = v.vendor_id
-                  AND (
-                    lower(coalesce(obo.owner_user_principal, '')) LIKE lower(%s)
-                    OR lower(coalesce(obo.owner_role, '')) LIKE lower(%s)
-                  )
-              )
-              OR EXISTS (
-                SELECT 1
-                FROM {self._table('core_vendor_contact')} vc
-                WHERE vc.vendor_id = v.vendor_id
-                  AND (
-                    lower(coalesce(vc.full_name, '')) LIKE lower(%s)
-                    OR lower(coalesce(vc.email, '')) LIKE lower(%s)
-                    OR lower(coalesce(vc.contact_type, '')) LIKE lower(%s)
-                    OR lower(coalesce(vc.phone, '')) LIKE lower(%s)
-                  )
-              )
-              OR EXISTS (
-                SELECT 1
-                FROM {self._table('core_offering_contact')} oc
-                INNER JOIN {self._table('core_vendor_offering')} o3
-                  ON oc.offering_id = o3.offering_id
-                WHERE o3.vendor_id = v.vendor_id
-                  AND (
-                    lower(coalesce(oc.full_name, '')) LIKE lower(%s)
-                    OR lower(coalesce(oc.email, '')) LIKE lower(%s)
-                    OR lower(coalesce(oc.contact_type, '')) LIKE lower(%s)
-                    OR lower(coalesce(oc.phone, '')) LIKE lower(%s)
-                  )
-              )
-              OR EXISTS (
-                SELECT 1
-                FROM {self._table('core_vendor_demo')} d
-                WHERE d.vendor_id = v.vendor_id
-                  AND (
-                    lower(d.demo_id) LIKE lower(%s)
-                    OR lower(coalesce(d.offering_id, '')) LIKE lower(%s)
-                    OR lower(coalesce(d.selection_outcome, '')) LIKE lower(%s)
-                    OR lower(coalesce(d.non_selection_reason_code, '')) LIKE lower(%s)
-                    OR lower(coalesce(d.notes, '')) LIKE lower(%s)
-                  )
-              )
-              OR EXISTS (
-                SELECT 1
-                FROM {self._table('app_project')} p
-                WHERE p.vendor_id = v.vendor_id
-                  AND coalesce(p.active_flag, true) = true
-                  AND (
-                    lower(p.project_id) LIKE lower(%s)
-                    OR lower(coalesce(p.project_name, '')) LIKE lower(%s)
-                    OR lower(coalesce(p.project_type, '')) LIKE lower(%s)
-                    OR lower(coalesce(p.status, '')) LIKE lower(%s)
-                    OR lower(coalesce(p.owner_principal, '')) LIKE lower(%s)
-                    OR lower(coalesce(p.description, '')) LIKE lower(%s)
-                  )
-              )
-            )
-            {state_clause}
-            ORDER BY v.display_name
-            LIMIT 250
-        """
         broad_params = [like] * 37 + params
 
         try:
-            return self.client.query(broad_query, tuple(broad_params))
+            return self._query_file(
+                "reporting/search_vendors_broad.sql",
+                params=tuple(broad_params),
+                state_clause=state_clause,
+                core_vendor=self._table("core_vendor"),
+                core_vendor_offering=self._table("core_vendor_offering"),
+                core_contract=self._table("core_contract"),
+                core_vendor_business_owner=self._table("core_vendor_business_owner"),
+                core_offering_business_owner=self._table("core_offering_business_owner"),
+                core_vendor_contact=self._table("core_vendor_contact"),
+                core_offering_contact=self._table("core_offering_contact"),
+                core_vendor_demo=self._table("core_vendor_demo"),
+                app_project=self._table("app_project"),
+            )
         except Exception:
-            fallback_query = f"""
-                SELECT vendor_id, legal_name, display_name, lifecycle_state, owner_org_id, risk_tier, updated_at
-                FROM {self._table("core_vendor")} v
-                WHERE (
-                  lower(v.legal_name) LIKE lower(%s)
-                  OR lower(coalesce(v.display_name, '')) LIKE lower(%s)
-                  OR lower(v.vendor_id) LIKE lower(%s)
-                )
-                {state_clause}
-                ORDER BY v.display_name
-                LIMIT 250
-            """
-            return self.client.query(fallback_query, tuple([like, like, like] + params))
+            return self._query_file(
+                "reporting/search_vendors_fallback.sql",
+                params=tuple([like, like, like] + params),
+                state_clause=state_clause,
+                core_vendor=self._table("core_vendor"),
+            )
 
     def get_vendor_profile(self, vendor_id: str) -> pd.DataFrame:
         if self.config.use_mock:
             return self._mock_vendors_df().query("vendor_id == @vendor_id")
-        return self.client.query(
-            f"SELECT * FROM {self._table('core_vendor')} WHERE vendor_id = %s", (vendor_id,)
+        return self._query_file(
+            "ingestion/select_vendor_profile_by_id.sql",
+            params=(vendor_id,),
+            core_vendor=self._table("core_vendor"),
         )
 
     def get_vendor_offerings(self, vendor_id: str) -> pd.DataFrame:
         if self.config.use_mock:
             return self._mock_offerings_df().query("vendor_id == @vendor_id")
-        return self.client.query(
-            f"""
-            SELECT offering_id, vendor_id, offering_name, offering_type, lifecycle_state, criticality_tier
-            FROM {self._table('core_vendor_offering')}
-            WHERE vendor_id = %s
-            ORDER BY offering_name
-            """,
-            (vendor_id,),
+        return self._query_file(
+            "ingestion/select_vendor_offerings.sql",
+            params=(vendor_id,),
+            core_vendor_offering=self._table("core_vendor_offering"),
         )
 
     def get_vendor_contacts(self, vendor_id: str) -> pd.DataFrame:
         if self.config.use_mock:
             return mock_data.contacts().query("vendor_id == @vendor_id")
-        return self.client.query(
-            f"""
-            SELECT vendor_contact_id, vendor_id, contact_type, full_name, email, phone, active_flag
-            FROM {self._table('core_vendor_contact')}
-            WHERE vendor_id = %s
-            ORDER BY full_name
-            """,
-            (vendor_id,),
+        return self._query_file(
+            "ingestion/select_vendor_contacts.sql",
+            params=(vendor_id,),
+            core_vendor_contact=self._table("core_vendor_contact"),
         )
 
     def get_vendor_identifiers(self, vendor_id: str) -> pd.DataFrame:
         if self.config.use_mock:
             return mock_data.vendor_identifiers().query("vendor_id == @vendor_id")
-        return self._query_or_empty(
-            f"""
-            SELECT vendor_identifier_id, vendor_id, identifier_type, identifier_value, is_primary, country_code
-            FROM {self._table('core_vendor_identifier')}
-            WHERE vendor_id = %s
-            ORDER BY is_primary DESC, identifier_type
-            """,
+        return self._query_file(
+            "ingestion/select_vendor_identifiers.sql",
             params=(vendor_id,),
             columns=[
                 "vendor_identifier_id",
@@ -1675,34 +1753,27 @@ class VendorRepository:
                 "is_primary",
                 "country_code",
             ],
+            core_vendor_identifier=self._table("core_vendor_identifier"),
         )
 
     def get_vendor_business_owners(self, vendor_id: str) -> pd.DataFrame:
         if self.config.use_mock:
             return mock_data.vendor_business_owners().query("vendor_id == @vendor_id")
-        return self._query_or_empty(
-            f"""
-            SELECT vendor_owner_id, vendor_id, owner_user_principal, owner_role, active_flag
-            FROM {self._table('core_vendor_business_owner')}
-            WHERE vendor_id = %s
-            ORDER BY active_flag DESC, owner_role
-            """,
+        return self._query_file(
+            "ingestion/select_vendor_business_owners.sql",
             params=(vendor_id,),
             columns=["vendor_owner_id", "vendor_id", "owner_user_principal", "owner_role", "active_flag"],
+            core_vendor_business_owner=self._table("core_vendor_business_owner"),
         )
 
     def get_vendor_org_assignments(self, vendor_id: str) -> pd.DataFrame:
         if self.config.use_mock:
             return mock_data.vendor_org_assignments().query("vendor_id == @vendor_id")
-        return self._query_or_empty(
-            f"""
-            SELECT vendor_org_assignment_id, vendor_id, org_id, assignment_type, active_flag
-            FROM {self._table('core_vendor_org_assignment')}
-            WHERE vendor_id = %s
-            ORDER BY active_flag DESC, org_id
-            """,
+        return self._query_file(
+            "ingestion/select_vendor_org_assignments.sql",
             params=(vendor_id,),
             columns=["vendor_org_assignment_id", "vendor_id", "org_id", "assignment_type", "active_flag"],
+            core_vendor_org_assignment=self._table("core_vendor_org_assignment"),
         )
 
     def get_vendor_offering_business_owners(self, vendor_id: str) -> pd.DataFrame:
@@ -1711,21 +1782,8 @@ class VendorRepository:
             owners = self._mock_offering_owners_df()
             merged = owners.merge(offs, on="offering_id", how="inner")
             return merged
-        return self._query_or_empty(
-            f"""
-            SELECT
-              o.offering_id,
-              o.offering_name,
-              obo.offering_owner_id,
-              obo.owner_user_principal,
-              obo.owner_role,
-              obo.active_flag
-            FROM {self._table('core_offering_business_owner')} obo
-            INNER JOIN {self._table('core_vendor_offering')} o
-              ON obo.offering_id = o.offering_id
-            WHERE o.vendor_id = %s
-            ORDER BY o.offering_name, obo.active_flag DESC
-            """,
+        return self._query_file(
+            "ingestion/select_vendor_offering_business_owners.sql",
             params=(vendor_id,),
             columns=[
                 "offering_id",
@@ -1735,6 +1793,8 @@ class VendorRepository:
                 "owner_role",
                 "active_flag",
             ],
+            core_offering_business_owner=self._table("core_offering_business_owner"),
+            core_vendor_offering=self._table("core_vendor_offering"),
         )
 
     def get_vendor_offering_contacts(self, vendor_id: str) -> pd.DataFrame:
@@ -1743,23 +1803,8 @@ class VendorRepository:
             contacts = self._mock_offering_contacts_df()
             merged = contacts.merge(offs, on="offering_id", how="inner")
             return merged
-        return self._query_or_empty(
-            f"""
-            SELECT
-              o.offering_id,
-              o.offering_name,
-              c.offering_contact_id,
-              c.contact_type,
-              c.full_name,
-              c.email,
-              c.phone,
-              c.active_flag
-            FROM {self._table('core_offering_contact')} c
-            INNER JOIN {self._table('core_vendor_offering')} o
-              ON c.offering_id = o.offering_id
-            WHERE o.vendor_id = %s
-            ORDER BY o.offering_name, c.full_name
-            """,
+        return self._query_file(
+            "ingestion/select_vendor_offering_contacts.sql",
             params=(vendor_id,),
             columns=[
                 "offering_id",
@@ -1771,18 +1816,15 @@ class VendorRepository:
                 "phone",
                 "active_flag",
             ],
+            core_offering_contact=self._table("core_offering_contact"),
+            core_vendor_offering=self._table("core_vendor_offering"),
         )
 
     def get_vendor_contracts(self, vendor_id: str) -> pd.DataFrame:
         if self.config.use_mock:
             return self._mock_contracts_df().query("vendor_id == @vendor_id")
-        return self._query_or_empty(
-            f"""
-            SELECT contract_id, vendor_id, offering_id, contract_number, contract_status, start_date, end_date, cancelled_flag
-            FROM {self._table('core_contract')}
-            WHERE vendor_id = %s
-            ORDER BY end_date DESC
-            """,
+        return self._query_file(
+            "ingestion/select_vendor_contracts.sql",
             params=(vendor_id,),
             columns=[
                 "contract_id",
@@ -1794,6 +1836,7 @@ class VendorRepository:
                 "end_date",
                 "cancelled_flag",
             ],
+            core_contract=self._table("core_contract"),
         )
 
     def get_vendor_contract_events(self, vendor_id: str) -> pd.DataFrame:
@@ -1801,15 +1844,8 @@ class VendorRepository:
             contracts = self._mock_contracts_df().query("vendor_id == @vendor_id")[["contract_id"]]
             events = mock_data.contract_events()
             return events.merge(contracts, on="contract_id", how="inner").sort_values("event_ts", ascending=False)
-        return self._query_or_empty(
-            f"""
-            SELECT e.contract_event_id, e.contract_id, e.event_type, e.event_ts, e.reason_code, e.notes, e.actor_user_principal
-            FROM {self._table('core_contract_event')} e
-            INNER JOIN {self._table('core_contract')} c
-              ON e.contract_id = c.contract_id
-            WHERE c.vendor_id = %s
-            ORDER BY e.event_ts DESC
-            """,
+        return self._query_file(
+            "ingestion/select_vendor_contract_events.sql",
             params=(vendor_id,),
             columns=[
                 "contract_event_id",
@@ -1820,18 +1856,15 @@ class VendorRepository:
                 "notes",
                 "actor_user_principal",
             ],
+            core_contract_event=self._table("core_contract_event"),
+            core_contract=self._table("core_contract"),
         )
 
     def get_vendor_demos(self, vendor_id: str) -> pd.DataFrame:
         if self.config.use_mock:
             return self._mock_demos_df().query("vendor_id == @vendor_id").sort_values("demo_date", ascending=False)
-        return self._query_or_empty(
-            f"""
-            SELECT demo_id, vendor_id, offering_id, demo_date, overall_score, selection_outcome, non_selection_reason_code, notes
-            FROM {self._table('core_vendor_demo')}
-            WHERE vendor_id = %s
-            ORDER BY demo_date DESC
-            """,
+        return self._query_file(
+            "ingestion/select_vendor_demos.sql",
             params=(vendor_id,),
             columns=[
                 "demo_id",
@@ -1843,52 +1876,38 @@ class VendorRepository:
                 "non_selection_reason_code",
                 "notes",
             ],
+            core_vendor_demo=self._table("core_vendor_demo"),
         )
 
     def get_vendor_demo_scores(self, vendor_id: str) -> pd.DataFrame:
         if self.config.use_mock:
             demos = self._mock_demos_df().query("vendor_id == @vendor_id")[["demo_id"]]
             return mock_data.demo_scores().merge(demos, on="demo_id", how="inner")
-        return self._query_or_empty(
-            f"""
-            SELECT s.demo_score_id, s.demo_id, s.score_category, s.score_value, s.weight, s.comments
-            FROM {self._table('core_vendor_demo_score')} s
-            INNER JOIN {self._table('core_vendor_demo')} d
-              ON s.demo_id = d.demo_id
-            WHERE d.vendor_id = %s
-            ORDER BY d.demo_date DESC, s.score_category
-            """,
+        return self._query_file(
+            "ingestion/select_vendor_demo_scores.sql",
             params=(vendor_id,),
             columns=["demo_score_id", "demo_id", "score_category", "score_value", "weight", "comments"],
+            core_vendor_demo_score=self._table("core_vendor_demo_score"),
+            core_vendor_demo=self._table("core_vendor_demo"),
         )
 
     def get_vendor_demo_notes(self, vendor_id: str) -> pd.DataFrame:
         if self.config.use_mock:
             demos = self._mock_demos_df().query("vendor_id == @vendor_id")[["demo_id"]]
             return mock_data.demo_notes().merge(demos, on="demo_id", how="inner")
-        return self._query_or_empty(
-            f"""
-            SELECT n.demo_note_id, n.demo_id, n.note_type, n.note_text, n.created_at, n.created_by
-            FROM {self._table('core_vendor_demo_note')} n
-            INNER JOIN {self._table('core_vendor_demo')} d
-              ON n.demo_id = d.demo_id
-            WHERE d.vendor_id = %s
-            ORDER BY n.created_at DESC
-            """,
+        return self._query_file(
+            "ingestion/select_vendor_demo_notes.sql",
             params=(vendor_id,),
             columns=["demo_note_id", "demo_id", "note_type", "note_text", "created_at", "created_by"],
+            core_vendor_demo_note=self._table("core_vendor_demo_note"),
+            core_vendor_demo=self._table("core_vendor_demo"),
         )
 
     def get_vendor_change_requests(self, vendor_id: str) -> pd.DataFrame:
         if self.config.use_mock:
             return self._mock_change_requests_df().query("vendor_id == @vendor_id").sort_values("submitted_at", ascending=False)
-        return self._query_or_empty(
-            f"""
-            SELECT change_request_id, vendor_id, requestor_user_principal, change_type, requested_payload_json, status, submitted_at, updated_at
-            FROM {self._table('app_vendor_change_request')}
-            WHERE vendor_id = %s
-            ORDER BY submitted_at DESC
-            """,
+        return self._query_file(
+            "ingestion/select_vendor_change_requests.sql",
             params=(vendor_id,),
             columns=[
                 "change_request_id",
@@ -1900,6 +1919,7 @@ class VendorRepository:
                 "submitted_at",
                 "updated_at",
             ],
+            app_vendor_change_request=self._table("app_vendor_change_request"),
         )
 
     def get_vendor_audit_events(self, vendor_id: str) -> pd.DataFrame:
@@ -1908,19 +1928,8 @@ class VendorRepository:
             requests = self._mock_change_requests_df().query("vendor_id == @vendor_id")["change_request_id"].tolist()
             vendor_events = events[(events["entity_id"] == vendor_id) | (events["request_id"].isin(requests))]
             return vendor_events.sort_values("event_ts", ascending=False)
-        return self._query_or_empty(
-            f"""
-            SELECT change_event_id, entity_name, entity_id, action_type, event_ts, actor_user_principal, request_id
-            FROM {self._table('audit_entity_change')}
-            WHERE entity_id = %s
-               OR request_id IN (
-                    SELECT change_request_id
-                    FROM {self._table('app_vendor_change_request')}
-                    WHERE vendor_id = %s
-               )
-            ORDER BY event_ts DESC
-            LIMIT 500
-            """,
+        return self._query_file(
+            "ingestion/select_vendor_audit_events.sql",
             params=(vendor_id, vendor_id),
             columns=[
                 "change_event_id",
@@ -1931,6 +1940,8 @@ class VendorRepository:
                 "actor_user_principal",
                 "request_id",
             ],
+            audit_entity_change=self._table("audit_entity_change"),
+            app_vendor_change_request=self._table("app_vendor_change_request"),
         )
 
     def get_vendor_source_lineage(self, vendor_id: str) -> pd.DataFrame:
@@ -1971,17 +1982,12 @@ class VendorRepository:
                 .sort_values("total_spend", ascending=False)
             )
         months = max(1, min(months, 36))
-        return self._query_or_empty(
-            f"""
-            SELECT category, SUM(amount) AS total_spend
-            FROM {self._table('rpt_spend_fact')}
-            WHERE vendor_id = %s
-              AND month >= add_months(date_trunc('month', current_date()), -{months - 1})
-            GROUP BY category
-            ORDER BY total_spend DESC
-            """,
+        return self._query_file(
+            "reporting/vendor_spend_by_category.sql",
             params=(vendor_id,),
             columns=["category", "total_spend"],
+            rpt_spend_fact=self._table("rpt_spend_fact"),
+            months_back=(months - 1),
         )
 
     def vendor_monthly_spend_trend(self, vendor_id: str, months: int = 12) -> pd.DataFrame:
@@ -1994,17 +2000,12 @@ class VendorRepository:
                 .sort_values("month")
             )
         months = max(1, min(months, 36))
-        return self._query_or_empty(
-            f"""
-            SELECT month, SUM(amount) AS total_spend
-            FROM {self._table('rpt_spend_fact')}
-            WHERE vendor_id = %s
-              AND month >= add_months(date_trunc('month', current_date()), -{months - 1})
-            GROUP BY month
-            ORDER BY month
-            """,
+        return self._query_file(
+            "reporting/vendor_monthly_spend_trend.sql",
             params=(vendor_id,),
             columns=["month", "total_spend"],
+            rpt_spend_fact=self._table("rpt_spend_fact"),
+            months_back=(months - 1),
         )
 
     def vendor_summary(self, vendor_id: str, months: int = 12) -> dict[str, float]:
@@ -2058,16 +2059,11 @@ class VendorRepository:
             return False
         if self.config.use_mock:
             return self.get_offering_record(vendor_id, offering_id) is not None
-        check = self._query_or_empty(
-            f"""
-            SELECT 1 AS present
-            FROM {self._table('core_vendor_offering')}
-            WHERE vendor_id = %s
-              AND offering_id = %s
-            LIMIT 1
-            """,
+        check = self._query_file(
+            "ingestion/select_offering_belongs_to_vendor.sql",
             params=(vendor_id, offering_id),
             columns=["present"],
+            core_vendor_offering=self._table("core_vendor_offering"),
         )
         return not check.empty
 
@@ -2135,14 +2131,9 @@ class VendorRepository:
             )
             return vendor_id
 
-        self.client.execute(
-            f"""
-            INSERT INTO {self._table('core_vendor')}
-              (vendor_id, legal_name, display_name, lifecycle_state, owner_org_id, risk_tier, source_system, updated_at, updated_by)
-            VALUES
-              (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
+        self._execute_file(
+            "inserts/create_vendor_profile.sql",
+            params=(
                 vendor_id,
                 row["legal_name"],
                 row["display_name"],
@@ -2153,6 +2144,7 @@ class VendorRepository:
                 now,
                 actor_user_principal,
             ),
+            core_vendor=self._table("core_vendor"),
         )
         self._write_audit_entity_change(
             entity_name="core_vendor",
@@ -2205,14 +2197,9 @@ class VendorRepository:
             )
             return offering_id
 
-        self.client.execute(
-            f"""
-            INSERT INTO {self._table('core_vendor_offering')}
-              (offering_id, vendor_id, offering_name, offering_type, lifecycle_state, criticality_tier)
-            VALUES
-              (%s, %s, %s, %s, %s, %s)
-            """,
-            (
+        self._execute_file(
+            "inserts/create_offering.sql",
+            params=(
                 offering_id,
                 vendor_id,
                 row["offering_name"],
@@ -2220,6 +2207,7 @@ class VendorRepository:
                 row["lifecycle_state"],
                 row["criticality_tier"],
             ),
+            core_vendor_offering=self._table("core_vendor_offering"),
         )
         self._write_audit_entity_change(
             entity_name="core_vendor_offering",
@@ -2286,14 +2274,11 @@ class VendorRepository:
 
         set_clause = ", ".join([f"{k} = %s" for k in clean_updates.keys()])
         params = list(clean_updates.values()) + [offering_id, vendor_id]
-        self.client.execute(
-            f"""
-            UPDATE {self._table('core_vendor_offering')}
-            SET {set_clause}
-            WHERE offering_id = %s
-              AND vendor_id = %s
-            """,
-            tuple(params),
+        self._execute_file(
+            "updates/update_offering_fields.sql",
+            params=tuple(params),
+            core_vendor_offering=self._table("core_vendor_offering"),
+            set_clause=set_clause,
         )
         change_event_id = self._write_audit_entity_change(
             entity_name="core_vendor_offering",
@@ -2358,16 +2343,10 @@ class VendorRepository:
             )
             return {"request_id": request_id, "change_event_id": change_event_id}
 
-        self.client.execute(
-            f"""
-            UPDATE {self._table('core_contract')}
-            SET offering_id = %s,
-                updated_at = %s,
-                updated_by = %s
-            WHERE contract_id = %s
-              AND vendor_id = %s
-            """,
-            (offering_id, self._now(), actor_user_principal, contract_id, vendor_id),
+        self._execute_file(
+            "updates/map_contract_to_offering.sql",
+            params=(offering_id, self._now(), actor_user_principal, contract_id, vendor_id),
+            core_contract=self._table("core_contract"),
         )
         change_event_id = self._write_audit_entity_change(
             entity_name="core_contract",
@@ -2432,16 +2411,10 @@ class VendorRepository:
             )
             return {"request_id": request_id, "change_event_id": change_event_id}
 
-        self.client.execute(
-            f"""
-            UPDATE {self._table('core_vendor_demo')}
-            SET offering_id = %s,
-                updated_at = %s,
-                updated_by = %s
-            WHERE demo_id = %s
-              AND vendor_id = %s
-            """,
-            (offering_id, self._now(), actor_user_principal, demo_id, vendor_id),
+        self._execute_file(
+            "updates/map_demo_to_offering.sql",
+            params=(offering_id, self._now(), actor_user_principal, demo_id, vendor_id),
+            core_vendor_demo=self._table("core_vendor_demo"),
         )
         change_event_id = self._write_audit_entity_change(
             entity_name="core_vendor_demo",
@@ -2488,14 +2461,10 @@ class VendorRepository:
             )
             return owner_id
 
-        self.client.execute(
-            f"""
-            INSERT INTO {self._table('core_offering_business_owner')}
-              (offering_owner_id, offering_id, owner_user_principal, owner_role, active_flag)
-            VALUES
-              (%s, %s, %s, %s, %s)
-            """,
-            (owner_id, offering_id, row["owner_user_principal"], row["owner_role"], True),
+        self._execute_file(
+            "inserts/add_offering_owner.sql",
+            params=(owner_id, offering_id, row["owner_user_principal"], row["owner_role"], True),
+            core_offering_business_owner=self._table("core_offering_business_owner"),
         )
         self._write_audit_entity_change(
             entity_name="core_offering_business_owner",
@@ -2531,23 +2500,16 @@ class VendorRepository:
             )
             return
         try:
-            self.client.execute(
-                f"""
-                UPDATE {self._table('core_offering_business_owner')}
-                SET active_flag = false
-                WHERE offering_owner_id = %s
-                  AND offering_id = %s
-                """,
-                (offering_owner_id, offering_id),
+            self._execute_file(
+                "updates/remove_offering_owner_soft.sql",
+                params=(offering_owner_id, offering_id),
+                core_offering_business_owner=self._table("core_offering_business_owner"),
             )
         except Exception:
-            self.client.execute(
-                f"""
-                DELETE FROM {self._table('core_offering_business_owner')}
-                WHERE offering_owner_id = %s
-                  AND offering_id = %s
-                """,
-                (offering_owner_id, offering_id),
+            self._execute_file(
+                "updates/remove_offering_owner_delete.sql",
+                params=(offering_owner_id, offering_id),
+                core_offering_business_owner=self._table("core_offering_business_owner"),
             )
         self._write_audit_entity_change(
             entity_name="core_offering_business_owner",
@@ -2597,14 +2559,10 @@ class VendorRepository:
             )
             return contact_id
 
-        self.client.execute(
-            f"""
-            INSERT INTO {self._table('core_offering_contact')}
-              (offering_contact_id, offering_id, contact_type, full_name, email, phone, active_flag)
-            VALUES
-              (%s, %s, %s, %s, %s, %s, %s)
-            """,
-            (contact_id, offering_id, row["contact_type"], row["full_name"], row["email"], row["phone"], True),
+        self._execute_file(
+            "inserts/add_offering_contact.sql",
+            params=(contact_id, offering_id, row["contact_type"], row["full_name"], row["email"], row["phone"], True),
+            core_offering_contact=self._table("core_offering_contact"),
         )
         self._write_audit_entity_change(
             entity_name="core_offering_contact",
@@ -2640,23 +2598,16 @@ class VendorRepository:
             )
             return
         try:
-            self.client.execute(
-                f"""
-                UPDATE {self._table('core_offering_contact')}
-                SET active_flag = false
-                WHERE offering_contact_id = %s
-                  AND offering_id = %s
-                """,
-                (offering_contact_id, offering_id),
+            self._execute_file(
+                "updates/remove_offering_contact_soft.sql",
+                params=(offering_contact_id, offering_id),
+                core_offering_contact=self._table("core_offering_contact"),
             )
         except Exception:
-            self.client.execute(
-                f"""
-                DELETE FROM {self._table('core_offering_contact')}
-                WHERE offering_contact_id = %s
-                  AND offering_id = %s
-                """,
-                (offering_contact_id, offering_id),
+            self._execute_file(
+                "updates/remove_offering_contact_delete.sql",
+                params=(offering_contact_id, offering_id),
+                core_offering_contact=self._table("core_offering_contact"),
             )
         self._write_audit_entity_change(
             entity_name="core_offering_contact",
@@ -2678,30 +2629,21 @@ class VendorRepository:
                 return []
             return sorted(matched["vendor_id"].astype(str).dropna().unique().tolist())
 
-        map_rows = self._query_or_empty(
-            f"""
-            SELECT DISTINCT vendor_id
-            FROM {self._table('app_project_vendor_map')}
-            WHERE project_id = %s
-              AND coalesce(active_flag, true) = true
-            """,
+        map_rows = self._query_file(
+            "ingestion/select_project_vendor_ids.sql",
             params=(project_id,),
             columns=["vendor_id"],
+            app_project_vendor_map=self._table("app_project_vendor_map"),
         )
         if not map_rows.empty and "vendor_id" in map_rows.columns:
             return sorted(map_rows["vendor_id"].astype(str).dropna().unique().tolist())
 
         # Backward compatibility: if mapping table has no rows, fall back to primary vendor_id on app_project.
-        fallback = self._query_or_empty(
-            f"""
-            SELECT vendor_id
-            FROM {self._table('app_project')}
-            WHERE project_id = %s
-              AND coalesce(active_flag, true) = true
-            LIMIT 1
-            """,
+        fallback = self._query_file(
+            "ingestion/select_project_primary_vendor_fallback.sql",
             params=(project_id,),
             columns=["vendor_id"],
+            app_project=self._table("app_project"),
         )
         if fallback.empty:
             return []
@@ -2772,44 +2714,8 @@ class VendorRepository:
             projects["demo_count"] = projects["demo_count"].fillna(0).astype(int)
             return projects.sort_values(["status", "project_name"], ascending=[True, True])
 
-        return self._query_or_empty(
-            f"""
-            SELECT
-              p.project_id,
-              p.vendor_id,
-              p.project_name,
-              p.project_type,
-              p.status,
-              p.start_date,
-              p.target_date,
-              p.owner_principal,
-              p.description,
-              p.updated_at,
-              COALESCE(d.demo_count, 0) AS demo_count,
-              CASE
-                WHEN d.last_demo_at IS NOT NULL AND d.last_demo_at > p.updated_at THEN d.last_demo_at
-                ELSE p.updated_at
-              END AS last_activity_at
-            FROM {self._table('app_project')} p
-            LEFT JOIN (
-              SELECT project_id, COUNT(*) AS demo_count, MAX(updated_at) AS last_demo_at
-              FROM {self._table('app_project_demo')}
-              WHERE coalesce(active_flag, true) = true
-              GROUP BY project_id
-            ) d
-              ON p.project_id = d.project_id
-            WHERE (
-              p.project_id IN (
-                SELECT project_id
-                FROM {self._table('app_project_vendor_map')}
-                WHERE vendor_id = %s
-                  AND coalesce(active_flag, true) = true
-              )
-              OR p.vendor_id = %s
-            )
-              AND coalesce(p.active_flag, true) = true
-            ORDER BY p.status, p.project_name
-            """,
+        return self._query_file(
+            "reporting/list_projects_for_vendor.sql",
             params=(vendor_id, vendor_id),
             columns=[
                 "project_id",
@@ -2825,6 +2731,9 @@ class VendorRepository:
                 "demo_count",
                 "last_activity_at",
             ],
+            app_project=self._table("app_project"),
+            app_project_demo=self._table("app_project_demo"),
+            app_project_vendor_map=self._table("app_project_vendor_map"),
         )
 
     def list_all_projects(
@@ -2895,12 +2804,10 @@ class VendorRepository:
         where_parts = ["coalesce(p.active_flag, true) = true"]
         if vendor_id != "all":
             where_parts.append(
-                "("
-                "p.project_id IN ("
-                f"SELECT project_id FROM {self._table('app_project_vendor_map')} "
-                "WHERE vendor_id = %s AND coalesce(active_flag, true) = true)"
-                " OR p.vendor_id = %s"
-                ")"
+                self._sql(
+                    "reporting/filter_all_projects_vendor_clause.sql",
+                    app_project_vendor_map=self._table("app_project_vendor_map"),
+                )
             )
             params.append(vendor_id)
             params.append(vendor_id)
@@ -2922,39 +2829,8 @@ class VendorRepository:
             params.extend([like, like, like, like, like, like])
 
         where_clause = " AND ".join(where_parts)
-        return self._query_or_empty(
-            f"""
-            SELECT
-              p.project_id,
-              p.vendor_id,
-              coalesce(v.display_name, v.legal_name, p.vendor_id) AS vendor_display_name,
-              p.project_name,
-              p.project_type,
-              p.status,
-              p.start_date,
-              p.target_date,
-              p.owner_principal,
-              p.description,
-              p.updated_at,
-              COALESCE(d.demo_count, 0) AS demo_count,
-              CASE
-                WHEN d.last_demo_at IS NOT NULL AND d.last_demo_at > p.updated_at THEN d.last_demo_at
-                ELSE p.updated_at
-              END AS last_activity_at
-            FROM {self._table('app_project')} p
-            LEFT JOIN {self._table('core_vendor')} v
-              ON p.vendor_id = v.vendor_id
-            LEFT JOIN (
-              SELECT project_id, COUNT(*) AS demo_count, MAX(updated_at) AS last_demo_at
-              FROM {self._table('app_project_demo')}
-              WHERE coalesce(active_flag, true) = true
-              GROUP BY project_id
-            ) d
-              ON p.project_id = d.project_id
-            WHERE {where_clause}
-            ORDER BY p.status, p.project_name
-            LIMIT {limit}
-            """,
+        return self._query_file(
+            "reporting/list_all_projects.sql",
             params=tuple(params),
             columns=[
                 "project_id",
@@ -2971,6 +2847,11 @@ class VendorRepository:
                 "demo_count",
                 "last_activity_at",
             ],
+            where_clause=where_clause,
+            limit=limit,
+            app_project=self._table("app_project"),
+            core_vendor=self._table("core_vendor"),
+            app_project_demo=self._table("app_project_demo"),
         )
 
     def get_project(self, vendor_id: str, project_id: str) -> dict[str, Any] | None:
@@ -2999,30 +2880,8 @@ class VendorRepository:
             row["vendor_ids"] = self._project_vendor_ids(str(project_id))
             return row
 
-        rows = self._query_or_empty(
-            f"""
-            SELECT
-              p.project_id,
-              p.vendor_id,
-              coalesce(v.display_name, v.legal_name, p.vendor_id) AS vendor_display_name,
-              p.project_name,
-              p.project_type,
-              p.status,
-              p.start_date,
-              p.target_date,
-              p.owner_principal,
-              p.description,
-              p.updated_at,
-              p.created_at,
-              p.created_by,
-              p.updated_by
-            FROM {self._table('app_project')} p
-            LEFT JOIN {self._table('core_vendor')} v
-              ON p.vendor_id = v.vendor_id
-            WHERE p.project_id = %s
-              AND coalesce(p.active_flag, true) = true
-            LIMIT 1
-            """,
+        rows = self._query_file(
+            "ingestion/select_project_by_id.sql",
             params=(project_id,),
             columns=[
                 "project_id",
@@ -3040,6 +2899,8 @@ class VendorRepository:
                 "created_by",
                 "updated_by",
             ],
+            app_project=self._table("app_project"),
+            core_vendor=self._table("core_vendor"),
         )
         if rows.empty:
             return None
@@ -3068,23 +2929,8 @@ class VendorRepository:
 
         vendor_clause = "AND m.vendor_id = %s" if vendor_id else ""
         params: tuple[Any, ...] = (project_id, vendor_id) if vendor_id else (project_id,)
-        return self._query_or_empty(
-            f"""
-            SELECT
-              o.offering_id,
-              o.vendor_id,
-              o.offering_name,
-              o.offering_type,
-              o.lifecycle_state,
-              o.criticality_tier
-            FROM {self._table('app_project_offering_map')} m
-            INNER JOIN {self._table('core_vendor_offering')} o
-              ON m.offering_id = o.offering_id
-            WHERE m.project_id = %s
-              {vendor_clause}
-              AND coalesce(m.active_flag, true) = true
-            ORDER BY o.offering_name
-            """,
+        return self._query_file(
+            "ingestion/select_project_offerings.sql",
             params=params,
             columns=[
                 "offering_id",
@@ -3094,6 +2940,9 @@ class VendorRepository:
                 "lifecycle_state",
                 "criticality_tier",
             ],
+            vendor_clause=vendor_clause,
+            app_project_offering_map=self._table("app_project_offering_map"),
+            core_vendor_offering=self._table("core_vendor_offering"),
         )
 
     def create_project(
@@ -3127,9 +2976,10 @@ class VendorRepository:
         if self.config.use_mock:
             offerings = self._mock_offerings_df()
         else:
-            offerings = self._query_or_empty(
-                f"SELECT offering_id, vendor_id FROM {self._table('core_vendor_offering')}",
+            offerings = self._query_file(
+                "ingestion/select_offering_vendor_pairs.sql",
                 columns=["offering_id", "vendor_id"],
+                core_vendor_offering=self._table("core_vendor_offering"),
             )
         offering_vendor_map = (
             {str(r["offering_id"]): str(r["vendor_id"]) for r in offerings.to_dict("records")}
@@ -3182,14 +3032,9 @@ class VendorRepository:
             )
             return project_id
 
-        self.client.execute(
-            f"""
-            INSERT INTO {self._table('app_project')}
-              (project_id, vendor_id, project_name, project_type, status, start_date, target_date, owner_principal, description, active_flag, created_at, created_by, updated_at, updated_by)
-            VALUES
-              (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
+        self._execute_file(
+            "inserts/create_project.sql",
+            params=(
                 project_id,
                 row["vendor_id"],
                 row["project_name"],
@@ -3205,16 +3050,12 @@ class VendorRepository:
                 now,
                 actor_user_principal,
             ),
+            app_project=self._table("app_project"),
         )
         for mapped_vendor_id in normalized_vendor_ids:
-            self.client.execute(
-                f"""
-                INSERT INTO {self._table('app_project_vendor_map')}
-                  (project_vendor_map_id, project_id, vendor_id, active_flag, created_at, created_by, updated_at, updated_by)
-                VALUES
-                  (%s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
+            self._execute_file(
+                "inserts/create_project_vendor_map.sql",
+                params=(
                     self._new_id("pvm"),
                     project_id,
                     mapped_vendor_id,
@@ -3224,17 +3065,13 @@ class VendorRepository:
                     now,
                     actor_user_principal,
                 ),
+                app_project_vendor_map=self._table("app_project_vendor_map"),
             )
         for offering_id in linked_offering_ids:
             mapped_vendor_id = offering_vendor_map.get(offering_id) or row["vendor_id"]
-            self.client.execute(
-                f"""
-                INSERT INTO {self._table('app_project_offering_map')}
-                  (project_offering_map_id, project_id, vendor_id, offering_id, active_flag, created_at, created_by, updated_at, updated_by)
-                VALUES
-                  (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
+            self._execute_file(
+                "inserts/create_project_offering_map.sql",
+                params=(
                     self._new_id("pom"),
                     project_id,
                     mapped_vendor_id,
@@ -3245,6 +3082,7 @@ class VendorRepository:
                     now,
                     actor_user_principal,
                 ),
+                app_project_offering_map=self._table("app_project_offering_map"),
             )
         self._write_audit_entity_change(
             entity_name="app_project",
@@ -3299,9 +3137,10 @@ class VendorRepository:
             if self.config.use_mock:
                 offerings = self._mock_offerings_df()
             else:
-                offerings = self._query_or_empty(
-                    f"SELECT offering_id, vendor_id FROM {self._table('core_vendor_offering')}",
+                offerings = self._query_file(
+                    "ingestion/select_offering_vendor_pairs.sql",
                     columns=["offering_id", "vendor_id"],
+                    core_vendor_offering=self._table("core_vendor_offering"),
                 )
             offering_vendor_map = (
                 {str(r["offering_id"]): str(r["vendor_id"]) for r in offerings.to_dict("records")}
@@ -3366,45 +3205,29 @@ class VendorRepository:
         if clean_updates:
             set_clause = ", ".join([f"{key} = %s" for key in clean_updates.keys()])
             params = list(clean_updates.values()) + [now, actor_user_principal, project_id]
-            self.client.execute(
-                f"""
-                UPDATE {self._table('app_project')}
-                SET {set_clause},
-                    updated_at = %s,
-                    updated_by = %s
-                WHERE project_id = %s
-                """,
-                tuple(params),
+            self._execute_file(
+                "updates/update_project.sql",
+                params=tuple(params),
+                app_project=self._table("app_project"),
+                set_clause=set_clause,
             )
         if target_vendor_ids is not None:
             try:
-                self.client.execute(
-                    f"""
-                    UPDATE {self._table('app_project_vendor_map')}
-                    SET active_flag = false,
-                        updated_at = %s,
-                        updated_by = %s
-                    WHERE project_id = %s
-                    """,
-                    (now, actor_user_principal, project_id),
+                self._execute_file(
+                    "updates/update_project_vendor_map_soft.sql",
+                    params=(now, actor_user_principal, project_id),
+                    app_project_vendor_map=self._table("app_project_vendor_map"),
                 )
             except Exception:
-                self.client.execute(
-                    f"""
-                    DELETE FROM {self._table('app_project_vendor_map')}
-                    WHERE project_id = %s
-                    """,
-                    (project_id,),
+                self._execute_file(
+                    "updates/delete_project_vendor_map.sql",
+                    params=(project_id,),
+                    app_project_vendor_map=self._table("app_project_vendor_map"),
                 )
             for mapped_vendor_id in target_vendor_ids:
-                self.client.execute(
-                    f"""
-                    INSERT INTO {self._table('app_project_vendor_map')}
-                      (project_vendor_map_id, project_id, vendor_id, active_flag, created_at, created_by, updated_at, updated_by)
-                    VALUES
-                      (%s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (
+                self._execute_file(
+                    "inserts/create_project_vendor_map.sql",
+                    params=(
                         self._new_id("pvm"),
                         project_id,
                         mapped_vendor_id,
@@ -3414,33 +3237,28 @@ class VendorRepository:
                         now,
                         actor_user_principal,
                     ),
+                    app_project_vendor_map=self._table("app_project_vendor_map"),
                 )
         if target_offering_ids is not None:
             try:
-                self.client.execute(
-                    f"""
-                    UPDATE {self._table('app_project_offering_map')}
-                    SET active_flag = false,
-                        updated_at = %s,
-                        updated_by = %s
-                    WHERE project_id = %s
-                    """,
-                    (now, actor_user_principal, project_id),
+                self._execute_file(
+                    "updates/update_project_offering_map_soft.sql",
+                    params=(now, actor_user_principal, project_id),
+                    app_project_offering_map=self._table("app_project_offering_map"),
                 )
             except Exception:
-                self.client.execute(
-                    f"""
-                    DELETE FROM {self._table('app_project_offering_map')}
-                    WHERE project_id = %s
-                    """,
-                    (project_id,),
+                self._execute_file(
+                    "updates/delete_project_offering_map.sql",
+                    params=(project_id,),
+                    app_project_offering_map=self._table("app_project_offering_map"),
                 )
             if self.config.use_mock:
                 offerings = self._mock_offerings_df()
             else:
-                offerings = self._query_or_empty(
-                    f"SELECT offering_id, vendor_id FROM {self._table('core_vendor_offering')}",
+                offerings = self._query_file(
+                    "ingestion/select_offering_vendor_pairs.sql",
                     columns=["offering_id", "vendor_id"],
+                    core_vendor_offering=self._table("core_vendor_offering"),
                 )
             offering_vendor_map = (
                 {str(r["offering_id"]): str(r["vendor_id"]) for r in offerings.to_dict("records")}
@@ -3449,14 +3267,9 @@ class VendorRepository:
             )
             for offering_id in target_offering_ids:
                 mapped_vendor_id = offering_vendor_map.get(offering_id) or str(current.get("vendor_id") or "")
-                self.client.execute(
-                    f"""
-                    INSERT INTO {self._table('app_project_offering_map')}
-                      (project_offering_map_id, project_id, vendor_id, offering_id, active_flag, created_at, created_by, updated_at, updated_by)
-                    VALUES
-                      (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (
+                self._execute_file(
+                    "inserts/create_project_offering_map.sql",
+                    params=(
                         self._new_id("pom"),
                         project_id,
                         mapped_vendor_id,
@@ -3467,6 +3280,7 @@ class VendorRepository:
                         now,
                         actor_user_principal,
                     ),
+                    app_project_offering_map=self._table("app_project_offering_map"),
                 )
         change_event_id = self._write_audit_entity_change(
             entity_name="app_project",
@@ -3492,34 +3306,8 @@ class VendorRepository:
             return demos
         vendor_clause = "AND vendor_id = %s" if vendor_id else ""
         params: tuple[Any, ...] = (project_id, vendor_id) if vendor_id else (project_id,)
-        return self._query_or_empty(
-            f"""
-            SELECT
-              project_demo_id,
-              project_id,
-              vendor_id,
-              demo_name,
-              demo_datetime_start,
-              demo_datetime_end,
-              demo_type,
-              outcome,
-              score,
-              attendees_internal,
-              attendees_vendor,
-              notes,
-              followups,
-              linked_offering_id,
-              linked_vendor_demo_id,
-              created_at,
-              created_by,
-              updated_at,
-              updated_by
-            FROM {self._table('app_project_demo')}
-            WHERE project_id = %s
-              {vendor_clause}
-              AND coalesce(active_flag, true) = true
-            ORDER BY updated_at DESC
-            """,
+        return self._query_file(
+            "ingestion/select_project_demos.sql",
             params=params,
             columns=[
                 "project_demo_id",
@@ -3542,6 +3330,8 @@ class VendorRepository:
                 "updated_at",
                 "updated_by",
             ],
+            vendor_clause=vendor_clause,
+            app_project_demo=self._table("app_project_demo"),
         )
 
     def get_project_demo(self, vendor_id: str | None, project_id: str, project_demo_id: str) -> dict[str, Any] | None:
@@ -3622,14 +3412,9 @@ class VendorRepository:
             )
             return demo_id
 
-        self.client.execute(
-            f"""
-            INSERT INTO {self._table('app_project_demo')}
-              (project_demo_id, project_id, vendor_id, demo_name, demo_datetime_start, demo_datetime_end, demo_type, outcome, score, attendees_internal, attendees_vendor, notes, followups, linked_offering_id, linked_vendor_demo_id, active_flag, created_at, created_by, updated_at, updated_by)
-            VALUES
-              (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
+        self._execute_file(
+            "inserts/create_project_demo.sql",
+            params=(
                 demo_id,
                 project_id,
                 vendor_id,
@@ -3651,6 +3436,7 @@ class VendorRepository:
                 now,
                 actor_user_principal,
             ),
+            app_project_demo=self._table("app_project_demo"),
         )
         self._write_audit_entity_change(
             entity_name="app_project_demo",
@@ -3728,17 +3514,11 @@ class VendorRepository:
 
         set_clause = ", ".join([f"{k} = %s" for k in clean_updates.keys()])
         params = list(clean_updates.values()) + [now, actor_user_principal, project_demo_id, project_id, vendor_id]
-        self.client.execute(
-            f"""
-            UPDATE {self._table('app_project_demo')}
-            SET {set_clause},
-                updated_at = %s,
-                updated_by = %s
-            WHERE project_demo_id = %s
-              AND project_id = %s
-              AND vendor_id = %s
-            """,
-            tuple(params),
+        self._execute_file(
+            "updates/update_project_demo.sql",
+            params=tuple(params),
+            app_project_demo=self._table("app_project_demo"),
+            set_clause=set_clause,
         )
         change_event_id = self._write_audit_entity_change(
             entity_name="app_project_demo",
@@ -3775,27 +3555,16 @@ class VendorRepository:
             )
             return
         try:
-            self.client.execute(
-                f"""
-                UPDATE {self._table('app_project_demo')}
-                SET active_flag = false,
-                    updated_at = %s,
-                    updated_by = %s
-                WHERE project_demo_id = %s
-                  AND project_id = %s
-                  AND vendor_id = %s
-                """,
-                (self._now(), actor_user_principal, project_demo_id, project_id, vendor_id),
+            self._execute_file(
+                "updates/remove_project_demo_soft.sql",
+                params=(self._now(), actor_user_principal, project_demo_id, project_id, vendor_id),
+                app_project_demo=self._table("app_project_demo"),
             )
         except Exception:
-            self.client.execute(
-                f"""
-                DELETE FROM {self._table('app_project_demo')}
-                WHERE project_demo_id = %s
-                  AND project_id = %s
-                  AND vendor_id = %s
-                """,
-                (project_demo_id, project_id, vendor_id),
+            self._execute_file(
+                "updates/remove_project_demo_delete.sql",
+                params=(project_demo_id, project_id, vendor_id),
+                app_project_demo=self._table("app_project_demo"),
             )
         self._write_audit_entity_change(
             entity_name="app_project_demo",
@@ -3851,23 +3620,8 @@ class VendorRepository:
             return notes
         vendor_clause = "AND vendor_id = %s" if vendor_id else ""
         params: tuple[Any, ...] = (project_id, vendor_id) if vendor_id else (project_id,)
-        return self._query_or_empty(
-            f"""
-            SELECT
-              project_note_id,
-              project_id,
-              vendor_id,
-              note_text,
-              created_at,
-              created_by,
-              updated_at,
-              updated_by
-            FROM {self._table('app_project_note')}
-            WHERE project_id = %s
-              {vendor_clause}
-              AND coalesce(active_flag, true) = true
-            ORDER BY created_at DESC
-            """,
+        return self._query_file(
+            "ingestion/select_project_notes.sql",
             params=params,
             columns=[
                 "project_note_id",
@@ -3879,6 +3633,8 @@ class VendorRepository:
                 "updated_at",
                 "updated_by",
             ],
+            vendor_clause=vendor_clause,
+            app_project_note=self._table("app_project_note"),
         )
 
     def add_project_note(
@@ -3924,14 +3680,9 @@ class VendorRepository:
             )
             return note_id
 
-        self.client.execute(
-            f"""
-            INSERT INTO {self._table('app_project_note')}
-              (project_note_id, project_id, vendor_id, note_text, active_flag, created_at, created_by, updated_at, updated_by)
-            VALUES
-              (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
+        self._execute_file(
+            "inserts/add_project_note.sql",
+            params=(
                 note_id,
                 project_id,
                 effective_vendor_id,
@@ -3942,6 +3693,7 @@ class VendorRepository:
                 now,
                 actor_user_principal,
             ),
+            app_project_note=self._table("app_project_note"),
         )
         self._write_audit_entity_change(
             entity_name="app_project_note",
@@ -3977,32 +3729,8 @@ class VendorRepository:
                 filtered = filtered.sort_values("event_ts", ascending=False)
             return filtered
 
-        return self._query_or_empty(
-            f"""
-            SELECT change_event_id, entity_name, entity_id, action_type, event_ts, actor_user_principal, request_id
-            FROM {self._table('audit_entity_change')}
-            WHERE entity_id = %s
-            OR entity_id IN (
-                    SELECT project_demo_id
-                    FROM {self._table('app_project_demo')}
-                    WHERE project_id = %s
-                      AND (%s IS NULL OR vendor_id = %s)
-               )
-               OR entity_id IN (
-                    SELECT doc_id
-                    FROM {self._table('app_document_link')}
-                    WHERE entity_type = 'project'
-                      AND entity_id = %s
-               )
-            OR entity_id IN (
-                    SELECT project_note_id
-                    FROM {self._table('app_project_note')}
-                    WHERE project_id = %s
-                      AND (%s IS NULL OR vendor_id = %s)
-               )
-            ORDER BY event_ts DESC
-            LIMIT 500
-            """,
+        return self._query_file(
+            "ingestion/select_project_activity.sql",
             params=(project_id, project_id, vendor_id, vendor_id, project_id, project_id, vendor_id, vendor_id),
             columns=[
                 "change_event_id",
@@ -4013,6 +3741,10 @@ class VendorRepository:
                 "actor_user_principal",
                 "request_id",
             ],
+            audit_entity_change=self._table("audit_entity_change"),
+            app_project_demo=self._table("app_project_demo"),
+            app_document_link=self._table("app_document_link"),
+            app_project_note=self._table("app_project_note"),
         )
 
     def get_doc_link(self, doc_id: str) -> dict[str, Any] | None:
@@ -4022,13 +3754,8 @@ class VendorRepository:
             if matched.empty:
                 return None
             return matched.iloc[0].to_dict()
-        rows = self._query_or_empty(
-            f"""
-            SELECT doc_id, entity_type, entity_id, doc_title, doc_url, doc_type, tags, owner, active_flag, created_at, created_by, updated_at, updated_by
-            FROM {self._table('app_document_link')}
-            WHERE doc_id = %s
-            LIMIT 1
-            """,
+        rows = self._query_file(
+            "ingestion/select_doc_link_by_id.sql",
             params=(doc_id,),
             columns=[
                 "doc_id",
@@ -4045,6 +3772,7 @@ class VendorRepository:
                 "updated_at",
                 "updated_by",
             ],
+            app_document_link=self._table("app_document_link"),
         )
         if rows.empty:
             return None
@@ -4078,15 +3806,8 @@ class VendorRepository:
             if "updated_at" in docs.columns:
                 docs = docs.sort_values("updated_at", ascending=False)
             return docs
-        return self._query_or_empty(
-            f"""
-            SELECT doc_id, entity_type, entity_id, doc_title, doc_url, doc_type, tags, owner, created_at, created_by, updated_at, updated_by
-            FROM {self._table('app_document_link')}
-            WHERE entity_type = %s
-              AND entity_id = %s
-              AND coalesce(active_flag, true) = true
-            ORDER BY updated_at DESC
-            """,
+        return self._query_file(
+            "ingestion/select_docs_by_entity.sql",
             params=(entity_type, entity_id),
             columns=[
                 "doc_id",
@@ -4102,6 +3823,7 @@ class VendorRepository:
                 "updated_at",
                 "updated_by",
             ],
+            app_document_link=self._table("app_document_link"),
         )
 
     def create_doc_link(
@@ -4159,14 +3881,9 @@ class VendorRepository:
             )
             return doc_id
 
-        self.client.execute(
-            f"""
-            INSERT INTO {self._table('app_document_link')}
-              (doc_id, entity_type, entity_id, doc_title, doc_url, doc_type, tags, owner, active_flag, created_at, created_by, updated_at, updated_by)
-            VALUES
-              (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
+        self._execute_file(
+            "inserts/create_doc_link.sql",
+            params=(
                 doc_id,
                 entity_type,
                 entity_id,
@@ -4181,6 +3898,7 @@ class VendorRepository:
                 now,
                 actor_user_principal,
             ),
+            app_document_link=self._table("app_document_link"),
         )
         self._write_audit_entity_change(
             entity_name="app_document_link",
@@ -4228,15 +3946,11 @@ class VendorRepository:
 
         set_clause = ", ".join([f"{k} = %s" for k in clean_updates.keys()])
         params = list(clean_updates.values()) + [now, actor_user_principal, doc_id]
-        self.client.execute(
-            f"""
-            UPDATE {self._table('app_document_link')}
-            SET {set_clause},
-                updated_at = %s,
-                updated_by = %s
-            WHERE doc_id = %s
-            """,
-            tuple(params),
+        self._execute_file(
+            "updates/update_doc_link.sql",
+            params=tuple(params),
+            app_document_link=self._table("app_document_link"),
+            set_clause=set_clause,
         )
         change_event_id = self._write_audit_entity_change(
             entity_name="app_document_link",
@@ -4266,23 +3980,16 @@ class VendorRepository:
             )
             return
         try:
-            self.client.execute(
-                f"""
-                UPDATE {self._table('app_document_link')}
-                SET active_flag = false,
-                    updated_at = %s,
-                    updated_by = %s
-                WHERE doc_id = %s
-                """,
-                (self._now(), actor_user_principal, doc_id),
+            self._execute_file(
+                "updates/remove_doc_link_soft.sql",
+                params=(self._now(), actor_user_principal, doc_id),
+                app_document_link=self._table("app_document_link"),
             )
         except Exception:
-            self.client.execute(
-                f"""
-                DELETE FROM {self._table('app_document_link')}
-                WHERE doc_id = %s
-                """,
-                (doc_id,),
+            self._execute_file(
+                "updates/remove_doc_link_delete.sql",
+                params=(doc_id,),
+                app_document_link=self._table("app_document_link"),
             )
         self._write_audit_entity_change(
             entity_name="app_document_link",
@@ -4327,14 +4034,9 @@ class VendorRepository:
             return request_id
 
         try:
-            self.client.execute(
-                f"""
-                INSERT INTO {self._table('app_vendor_change_request')}
-                  (change_request_id, vendor_id, requestor_user_principal, change_type, requested_payload_json, status, submitted_at, updated_at)
-                VALUES
-                  (%s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
+            self._execute_file(
+                "inserts/create_vendor_change_request.sql",
+                params=(
                     request_id,
                     vendor_id,
                     requestor_user_principal,
@@ -4344,19 +4046,15 @@ class VendorRepository:
                     now,
                     now,
                 ),
+                app_vendor_change_request=self._table("app_vendor_change_request"),
             )
         except Exception:
             return request_id
 
         try:
-            self.client.execute(
-                f"""
-                INSERT INTO {self._table('audit_workflow_event')}
-                  (workflow_event_id, workflow_type, workflow_id, old_status, new_status, actor_user_principal, event_ts, notes)
-                VALUES
-                  (%s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
+            self._execute_file(
+                "inserts/create_workflow_event.sql",
+                params=(
                     str(uuid.uuid4()),
                     "vendor_change_request",
                     request_id,
@@ -4366,6 +4064,7 @@ class VendorRepository:
                     now,
                     f"{change_type} request created",
                 ),
+                audit_workflow_event=self._table("audit_workflow_event"),
             )
         except Exception:
             pass
@@ -4432,10 +4131,11 @@ class VendorRepository:
             )
             return {"request_id": request_id, "change_event_id": change_event_id}
 
-        existing = self._query_or_empty(
-            f"SELECT * FROM {self._table('core_vendor')} WHERE vendor_id = %s LIMIT 1",
+        existing = self._query_file(
+            "ingestion/select_vendor_profile_by_id.sql",
             params=(vendor_id,),
             columns=[],
+            core_vendor=self._table("core_vendor"),
         )
         if existing.empty:
             raise ValueError("Vendor not found.")
@@ -4443,14 +4143,9 @@ class VendorRepository:
 
         # Create and immediately approve a change request so all direct edits remain traceable.
         try:
-            self.client.execute(
-                f"""
-                INSERT INTO {self._table('app_vendor_change_request')}
-                  (change_request_id, vendor_id, requestor_user_principal, change_type, requested_payload_json, status, submitted_at, updated_at)
-                VALUES
-                  (%s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
+            self._execute_file(
+                "inserts/create_vendor_change_request.sql",
+                params=(
                     request_id,
                     vendor_id,
                     actor_user_principal,
@@ -4460,15 +4155,11 @@ class VendorRepository:
                     now,
                     now,
                 ),
+                app_vendor_change_request=self._table("app_vendor_change_request"),
             )
-            self.client.execute(
-                f"""
-                INSERT INTO {self._table('audit_workflow_event')}
-                  (workflow_event_id, workflow_type, workflow_id, old_status, new_status, actor_user_principal, event_ts, notes)
-                VALUES
-                  (%s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
+            self._execute_file(
+                "inserts/create_workflow_event.sql",
+                params=(
                     str(uuid.uuid4()),
                     "vendor_change_request",
                     request_id,
@@ -4478,6 +4169,7 @@ class VendorRepository:
                     now,
                     "Direct vendor profile update approved and applied.",
                 ),
+                audit_workflow_event=self._table("audit_workflow_event"),
             )
         except Exception:
             # Continue to apply update even if app workflow tables are unavailable.
@@ -4485,55 +4177,39 @@ class VendorRepository:
 
         set_clause = ", ".join([f"{field} = %s" for field in clean_updates.keys()])
         params = list(clean_updates.values()) + [now, actor_user_principal, vendor_id]
-        self.client.execute(
-            f"""
-            UPDATE {self._table('core_vendor')}
-            SET {set_clause},
-                updated_at = %s,
-                updated_by = %s
-            WHERE vendor_id = %s
-            """,
-            tuple(params),
+        self._execute_file(
+            "updates/apply_vendor_profile_update.sql",
+            params=tuple(params),
+            core_vendor=self._table("core_vendor"),
+            set_clause=set_clause,
         )
 
-        updated = self._query_or_empty(
-            f"SELECT * FROM {self._table('core_vendor')} WHERE vendor_id = %s LIMIT 1",
+        updated = self._query_file(
+            "ingestion/select_vendor_profile_by_id.sql",
             params=(vendor_id,),
             columns=[],
+            core_vendor=self._table("core_vendor"),
         )
         new_row = updated.iloc[0].to_dict() if not updated.empty else {**old_row, **clean_updates}
 
         # Maintain SCD-style vendor history.
         try:
-            version_df = self._query_or_empty(
-                f"""
-                SELECT COALESCE(MAX(version_no), 0) + 1 AS next_version
-                FROM {self._table('hist_vendor')}
-                WHERE vendor_id = %s
-                """,
+            version_df = self._query_file(
+                "ingestion/select_next_hist_vendor_version.sql",
                 params=(vendor_id,),
                 columns=["next_version"],
+                hist_vendor=self._table("hist_vendor"),
             )
             next_version = int(version_df.iloc[0]["next_version"]) if not version_df.empty else 1
 
-            self.client.execute(
-                f"""
-                UPDATE {self._table('hist_vendor')}
-                SET is_current = false,
-                    valid_to_ts = %s
-                WHERE vendor_id = %s
-                  AND is_current = true
-                """,
-                (now, vendor_id),
+            self._execute_file(
+                "updates/apply_vendor_hist_close_current.sql",
+                params=(now, vendor_id),
+                hist_vendor=self._table("hist_vendor"),
             )
-            self.client.execute(
-                f"""
-                INSERT INTO {self._table('hist_vendor')}
-                  (vendor_hist_id, vendor_id, version_no, valid_from_ts, valid_to_ts, is_current, snapshot_json, changed_by, change_reason)
-                VALUES
-                  (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
+            self._execute_file(
+                "inserts/apply_vendor_hist_insert.sql",
+                params=(
                     str(uuid.uuid4()),
                     vendor_id,
                     next_version,
@@ -4544,19 +4220,15 @@ class VendorRepository:
                     actor_user_principal,
                     reason,
                 ),
+                hist_vendor=self._table("hist_vendor"),
             )
         except Exception:
             pass
 
         try:
-            self.client.execute(
-                f"""
-                INSERT INTO {self._table('audit_entity_change')}
-                  (change_event_id, entity_name, entity_id, action_type, before_json, after_json, actor_user_principal, event_ts, request_id)
-                VALUES
-                  (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
+            self._execute_file(
+                "inserts/audit_entity_change.sql",
+                params=(
                     change_event_id,
                     "core_vendor",
                     vendor_id,
@@ -4567,6 +4239,7 @@ class VendorRepository:
                     now,
                     request_id,
                 ),
+                audit_entity_change=self._table("audit_entity_change"),
             )
         except Exception:
             pass
@@ -4577,12 +4250,10 @@ class VendorRepository:
         if self.config.use_mock:
             return self._mock_demos_df()
         return self.client.query(
-            f"""
-            SELECT demo_id, vendor_id, offering_id, demo_date, overall_score, selection_outcome, non_selection_reason_code, notes
-            FROM {self._table('core_vendor_demo')}
-            ORDER BY demo_date DESC
-            LIMIT 500
-            """
+            self._sql(
+                "reporting/demo_outcomes.sql",
+                core_vendor_demo=self._table("core_vendor_demo"),
+            )
         )
 
     def create_demo_outcome(
@@ -4601,14 +4272,9 @@ class VendorRepository:
         if self.config.use_mock:
             return demo_id
 
-        self.client.execute(
-            f"""
-            INSERT INTO {self._table('core_vendor_demo')}
-              (demo_id, vendor_id, offering_id, demo_date, overall_score, selection_outcome, non_selection_reason_code, notes, updated_at, updated_by)
-            VALUES
-              (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
+        self._execute_file(
+            "inserts/create_demo_outcome.sql",
+            params=(
                 demo_id,
                 vendor_id,
                 offering_id,
@@ -4620,16 +4286,12 @@ class VendorRepository:
                 now,
                 actor_user_principal,
             ),
+            core_vendor_demo=self._table("core_vendor_demo"),
         )
 
-        self.client.execute(
-            f"""
-            INSERT INTO {self._table('audit_entity_change')}
-              (change_event_id, entity_name, entity_id, action_type, before_json, after_json, actor_user_principal, event_ts, request_id)
-            VALUES
-              (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
+        self._execute_file(
+            "inserts/audit_entity_change.sql",
+            params=(
                 str(uuid.uuid4()),
                 "core_vendor_demo",
                 demo_id,
@@ -4650,6 +4312,7 @@ class VendorRepository:
                 now,
                 None,
             ),
+            audit_entity_change=self._table("audit_entity_change"),
         )
         return demo_id
 
@@ -4657,12 +4320,10 @@ class VendorRepository:
         if self.config.use_mock:
             return mock_data.contract_cancellations()
         return self.client.query(
-            f"""
-            SELECT contract_id, vendor_id, offering_id, cancelled_at, reason_code, notes
-            FROM {self._table('rpt_contract_cancellations')}
-            ORDER BY cancelled_at DESC
-            LIMIT 500
-            """
+            self._sql(
+                "reporting/contract_cancellations.sql",
+                rpt_contract_cancellations=self._table("rpt_contract_cancellations"),
+            )
         )
 
     def record_contract_cancellation(
@@ -4673,36 +4334,21 @@ class VendorRepository:
         if self.config.use_mock:
             return event_id
 
-        self.client.execute(
-            f"""
-            INSERT INTO {self._table('core_contract_event')}
-              (contract_event_id, contract_id, event_type, event_ts, reason_code, notes, actor_user_principal)
-            VALUES
-              (%s, %s, %s, %s, %s, %s, %s)
-            """,
-            (event_id, contract_id, "contract_cancelled", now, reason_code, notes, actor_user_principal),
+        self._execute_file(
+            "inserts/record_contract_cancellation_event.sql",
+            params=(event_id, contract_id, "contract_cancelled", now, reason_code, notes, actor_user_principal),
+            core_contract_event=self._table("core_contract_event"),
         )
 
-        self.client.execute(
-            f"""
-            UPDATE {self._table('core_contract')}
-            SET contract_status = %s,
-                cancelled_flag = %s,
-                updated_at = %s,
-                updated_by = %s
-            WHERE contract_id = %s
-            """,
-            ("cancelled", True, now, actor_user_principal, contract_id),
+        self._execute_file(
+            "updates/record_contract_cancellation_contract_update.sql",
+            params=("cancelled", True, now, actor_user_principal, contract_id),
+            core_contract=self._table("core_contract"),
         )
 
-        self.client.execute(
-            f"""
-            INSERT INTO {self._table('audit_entity_change')}
-              (change_event_id, entity_name, entity_id, action_type, before_json, after_json, actor_user_principal, event_ts, request_id)
-            VALUES
-              (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
+        self._execute_file(
+            "inserts/audit_entity_change.sql",
+            params=(
                 str(uuid.uuid4()),
                 "core_contract",
                 contract_id,
@@ -4720,6 +4366,7 @@ class VendorRepository:
                 now,
                 None,
             ),
+            audit_entity_change=self._table("audit_entity_change"),
         )
         return event_id
 
@@ -4727,38 +4374,30 @@ class VendorRepository:
         if self.config.use_mock:
             return mock_data.role_map()
         return self.client.query(
-            f"""
-            SELECT user_principal, role_code, active_flag, granted_by, granted_at, revoked_at
-            FROM {self._table('sec_user_role_map')}
-            ORDER BY granted_at DESC
-            LIMIT 1000
-            """
+            self._sql(
+                "reporting/list_role_grants.sql",
+                sec_user_role_map=self._table("sec_user_role_map"),
+            )
         )
 
     def list_scope_grants(self) -> pd.DataFrame:
         if self.config.use_mock:
             return mock_data.org_scope()
         return self.client.query(
-            f"""
-            SELECT user_principal, org_id, scope_level, active_flag, granted_at
-            FROM {self._table('sec_user_org_scope')}
-            ORDER BY granted_at DESC
-            LIMIT 1000
-            """
+            self._sql(
+                "reporting/list_scope_grants.sql",
+                sec_user_org_scope=self._table("sec_user_org_scope"),
+            )
         )
 
     def grant_role(self, target_user_principal: str, role_code: str, granted_by: str) -> None:
         if self.config.use_mock:
             return
         now = self._now()
-        self.client.execute(
-            f"""
-            INSERT INTO {self._table('sec_user_role_map')}
-              (user_principal, role_code, active_flag, granted_by, granted_at, revoked_at)
-            VALUES
-              (%s, %s, %s, %s, %s, %s)
-            """,
-            (target_user_principal, role_code, True, granted_by, now, None),
+        self._execute_file(
+            "inserts/grant_role.sql",
+            params=(target_user_principal, role_code, True, granted_by, now, None),
+            sec_user_role_map=self._table("sec_user_role_map"),
         )
         self._audit_access(
             actor_user_principal=granted_by,
@@ -4774,14 +4413,10 @@ class VendorRepository:
         if self.config.use_mock:
             return
         now = self._now()
-        self.client.execute(
-            f"""
-            INSERT INTO {self._table('sec_user_org_scope')}
-              (user_principal, org_id, scope_level, active_flag, granted_at)
-            VALUES
-              (%s, %s, %s, %s, %s)
-            """,
-            (target_user_principal, org_id, scope_level, True, now),
+        self._execute_file(
+            "inserts/grant_org_scope.sql",
+            params=(target_user_principal, org_id, scope_level, True, now),
+            sec_user_org_scope=self._table("sec_user_org_scope"),
         )
         self._audit_access(
             actor_user_principal=granted_by,
@@ -4801,14 +4436,9 @@ class VendorRepository:
     ) -> None:
         if self.config.use_mock:
             return
-        self.client.execute(
-            f"""
-            INSERT INTO {self._table('audit_access_event')}
-              (access_event_id, actor_user_principal, action_type, target_user_principal, target_role, event_ts, notes)
-            VALUES
-              (%s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
+        self._execute_file(
+            "inserts/audit_access.sql",
+            params=(
                 str(uuid.uuid4()),
                 actor_user_principal,
                 action_type,
@@ -4817,4 +4447,5 @@ class VendorRepository:
                 self._now(),
                 notes,
             ),
+            audit_access_event=self._table("audit_access_event"),
         )

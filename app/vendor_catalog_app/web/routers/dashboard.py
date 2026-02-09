@@ -64,5 +64,5 @@ def dashboard(request: Request, org: str = "all", months: int = 12, horizon_days
             "recent_cancellations": recent_cancellations.to_dict("records"),
         },
     )
-    return request.app.state.templates.TemplateResponse("dashboard.html", context)
+    return request.app.state.templates.TemplateResponse(request, "dashboard.html", context)
 

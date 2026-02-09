@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import pandas as pd
 from fastapi import APIRouter, Request
@@ -28,6 +28,20 @@ DEFAULT_VENDOR_FIELDS = [
     "risk_tier",
     "updated_at",
 ]
+DEFAULT_VENDOR_PAGE_SIZE = 25
+VENDOR_PAGE_SIZES = [1, 5, 10, 25, 50, 100]
+DEFAULT_VENDOR_SORT_BY = "vendor_name"
+DEFAULT_VENDOR_SORT_DIR = "asc"
+VENDOR_SORT_FIELDS = ["vendor_name", "vendor_id", "legal_name", "lifecycle_state", "owner_org_id", "risk_tier", "updated_at"]
+VENDOR_FIELD_SORT_MAP = {
+    "display_name": "vendor_name",
+    "vendor_id": "vendor_id",
+    "legal_name": "legal_name",
+    "lifecycle_state": "lifecycle_state",
+    "owner_org_id": "owner_org_id",
+    "risk_tier": "risk_tier",
+    "updated_at": "updated_at",
+}
 
 LIFECYCLE_STATES = ["draft", "submitted", "in_review", "approved", "active", "suspended", "retired"]
 RISK_TIERS = ["low", "medium", "high", "critical"]
@@ -119,6 +133,57 @@ def _load_visible_fields(repo, user_principal: str, available_fields: list[str])
         saved_fields = DEFAULT_VENDOR_FIELDS
     visible = [field for field in saved_fields if field in available_fields]
     return visible or available_fields
+
+
+def _merge_vendor360_settings(repo, user_principal: str, updates: dict) -> dict:
+    saved = repo.get_user_setting(user_principal, "vendor360_list")
+    merged = dict(saved) if isinstance(saved, dict) else {}
+    merged.update(updates)
+    repo.save_user_setting(user_principal=user_principal, setting_key="vendor360_list", setting_value=merged)
+    return merged
+
+
+def _normalize_vendor_sort(sort_by: str, sort_dir: str) -> tuple[str, str]:
+    normalized_sort_by = (sort_by or DEFAULT_VENDOR_SORT_BY).strip().lower()
+    if normalized_sort_by not in VENDOR_SORT_FIELDS:
+        normalized_sort_by = DEFAULT_VENDOR_SORT_BY
+    normalized_sort_dir = "desc" if (sort_dir or "").strip().lower() == "desc" else "asc"
+    return normalized_sort_by, normalized_sort_dir
+
+
+def _normalize_vendor_page(page: int, page_size: int) -> tuple[int, int]:
+    normalized_page_size = page_size if page_size in VENDOR_PAGE_SIZES else DEFAULT_VENDOR_PAGE_SIZE
+    normalized_page = max(1, int(page or 1))
+    return normalized_page, normalized_page_size
+
+
+def _vendor_list_url(
+    *,
+    q: str,
+    status: str,
+    owner: str,
+    risk: str,
+    group: str,
+    page: int,
+    page_size: int,
+    sort_by: str,
+    sort_dir: str,
+    show_settings: int,
+) -> str:
+    return "/vendors?" + urlencode(
+        {
+            "q": q,
+            "status": status,
+            "owner": owner,
+            "risk": risk,
+            "group": group,
+            "page": page,
+            "page_size": page_size,
+            "sort_by": sort_by,
+            "sort_dir": sort_dir,
+            "show_settings": show_settings,
+        }
+    )
 
 
 def _series_with_bar_pct(rows: list[dict], value_key: str) -> list[dict]:
@@ -221,31 +286,50 @@ def _write_blocked(user) -> bool:
     return bool(user.config.locked_mode)
 
 
-def _project_vendor_options(repo) -> list[dict[str, str]]:
-    out: list[dict[str, str]] = []
-    vendors = repo.search_vendors(search_text="", lifecycle_state="all").to_dict("records")
-    for row in vendors:
-        vendor_id = str(row.get("vendor_id") or "")
+def _dedupe_ordered(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for value in values:
+        cleaned = str(value or "").strip()
+        if cleaned and cleaned not in seen:
+            out.append(cleaned)
+            seen.add(cleaned)
+    return out
+
+
+def _selected_project_vendor_rows(repo, vendor_ids: list[str]) -> list[dict[str, str]]:
+    cleaned_ids = _dedupe_ordered(vendor_ids)
+    if not cleaned_ids:
+        return []
+    df = repo.get_vendors_by_ids(cleaned_ids)
+    by_id: dict[str, dict[str, str]] = {}
+    for row in df.to_dict("records"):
+        vendor_id = str(row.get("vendor_id") or "").strip()
+        if not vendor_id:
+            continue
         label = str(row.get("display_name") or row.get("legal_name") or vendor_id)
-        if vendor_id:
-            out.append({"vendor_id": vendor_id, "label": label})
-    return out
+        by_id[vendor_id] = {"vendor_id": vendor_id, "label": label}
+    return [by_id[vendor_id] for vendor_id in cleaned_ids if vendor_id in by_id]
 
 
-def _project_offering_options(repo) -> list[dict[str, str]]:
-    out: list[dict[str, str]] = []
-    for vendor in _project_vendor_options(repo):
-        for row in repo.get_vendor_offerings(vendor["vendor_id"]).to_dict("records"):
-            out.append(
-                {
-                    "offering_id": str(row.get("offering_id") or ""),
-                    "vendor_id": vendor["vendor_id"],
-                    "vendor_display_name": vendor["label"],
-                    "offering_name": str(row.get("offering_name") or row.get("offering_id") or ""),
-                }
-            )
-    out.sort(key=lambda x: (x["vendor_display_name"], x["offering_name"]))
-    return out
+def _selected_project_offering_rows(repo, offering_ids: list[str]) -> list[dict[str, str]]:
+    cleaned_ids = _dedupe_ordered(offering_ids)
+    if not cleaned_ids:
+        return []
+    df = repo.get_offerings_by_ids(cleaned_ids)
+    by_id: dict[str, dict[str, str]] = {}
+    for row in df.to_dict("records"):
+        offering_id = str(row.get("offering_id") or "").strip()
+        if not offering_id:
+            continue
+        offering_name = str(row.get("offering_name") or offering_id)
+        vendor_display = str(row.get("vendor_display_name") or row.get("vendor_id") or "Unassigned")
+        by_id[offering_id] = {
+            "offering_id": offering_id,
+            "vendor_id": str(row.get("vendor_id") or "").strip(),
+            "label": f"{offering_name} ({offering_id}) - {vendor_display}",
+        }
+    return [by_id[offering_id] for offering_id in cleaned_ids if offering_id in by_id]
 
 
 def _owner_org_options(repo) -> list[str]:
@@ -300,21 +384,22 @@ def _render_vendor_new_form(
             "form_error": form_error,
         },
     )
-    return request.app.state.templates.TemplateResponse(
-        "vendor_new.html",
-        context,
-        status_code=status_code,
-    )
+    return request.app.state.templates.TemplateResponse(request, "vendor_new.html", context, status_code=status_code)
 
 
 @router.get("")
 def vendor_list(
     request: Request,
+    q: str = "",
     search: str = "",
     status: str = "all",
     owner: str = "all",
     risk: str = "all",
     group: str = "none",
+    page: int = 1,
+    page_size: int = DEFAULT_VENDOR_PAGE_SIZE,
+    sort_by: str = DEFAULT_VENDOR_SORT_BY,
+    sort_dir: str = DEFAULT_VENDOR_SORT_DIR,
     show_settings: int = 0,
 ):
     repo = get_repo()
@@ -322,13 +407,60 @@ def vendor_list(
     ensure_session_started(request, user)
     log_page_view(request, user, "Vendor 360")
 
-    base_df = repo.search_vendors(search_text=search, lifecycle_state=status).copy()
-    if owner != "all" and "owner_org_id" in base_df.columns:
-        base_df = base_df[base_df["owner_org_id"] == owner]
-    if risk != "all" and "risk_tier" in base_df.columns:
-        base_df = base_df[base_df["risk_tier"] == risk]
+    saved_settings = repo.get_user_setting(user.user_principal, "vendor360_list")
+    saved_prefs = saved_settings.get("list_prefs", {}) if isinstance(saved_settings, dict) else {}
+    qp = request.query_params
 
-    vendors_df = base_df.reset_index(drop=True)
+    if "q" in qp:
+        resolved_q = q.strip()
+    elif "search" in qp:
+        resolved_q = search.strip()
+    else:
+        resolved_q = str(saved_prefs.get("q", "")).strip()
+
+    if "status" not in qp and str(saved_prefs.get("status", "")).strip():
+        status = str(saved_prefs.get("status", "all"))
+    if status not in ["all"] + LIFECYCLE_STATES:
+        status = "all"
+
+    if "owner" not in qp and str(saved_prefs.get("owner", "")).strip():
+        owner = str(saved_prefs.get("owner", "all"))
+    if owner != "all" and owner not in repo.available_orgs():
+        owner = "all"
+
+    if "risk" not in qp and str(saved_prefs.get("risk", "")).strip():
+        risk = str(saved_prefs.get("risk", "all"))
+    if risk != "all" and risk not in RISK_TIERS:
+        risk = "all"
+
+    if "group" not in qp and str(saved_prefs.get("group", "")).strip():
+        group = str(saved_prefs.get("group", "none"))
+
+    if "sort_by" not in qp and str(saved_prefs.get("sort_by", "")).strip():
+        sort_by = str(saved_prefs.get("sort_by", DEFAULT_VENDOR_SORT_BY))
+    if "sort_dir" not in qp and str(saved_prefs.get("sort_dir", "")).strip():
+        sort_dir = str(saved_prefs.get("sort_dir", DEFAULT_VENDOR_SORT_DIR))
+    sort_by, sort_dir = _normalize_vendor_sort(sort_by, sort_dir)
+
+    if "page_size" not in qp and saved_prefs.get("page_size"):
+        try:
+            page_size = int(saved_prefs.get("page_size"))
+        except Exception:
+            page_size = DEFAULT_VENDOR_PAGE_SIZE
+    page, page_size = _normalize_vendor_page(page, page_size)
+
+    vendors_df, total_rows = repo.list_vendors_page(
+        search_text=resolved_q,
+        lifecycle_state=status,
+        owner_org_id=owner,
+        risk_tier=risk,
+        page=page,
+        page_size=page_size,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
+    vendors_df = vendors_df.reset_index(drop=True)
+
     available_fields = vendors_df.columns.tolist() if not vendors_df.empty else DEFAULT_VENDOR_FIELDS
     visible_fields = _load_visible_fields(repo, user.user_principal, available_fields)
 
@@ -340,26 +472,39 @@ def vendor_list(
             .sort_values("vendor_count", ascending=False)
         )
 
-    owner_options = ["all"]
-    risk_options = ["all"]
-    if "owner_org_id" in vendors_df.columns:
-        owner_options += sorted(vendors_df["owner_org_id"].dropna().astype(str).unique().tolist())
-    if "risk_tier" in vendors_df.columns:
-        risk_options += sorted(vendors_df["risk_tier"].dropna().astype(str).unique().tolist())
+    owner_options = repo.available_orgs()
+    risk_options = ["all"] + RISK_TIERS
 
     group_options = ["none"] + [
-        c for c in ["lifecycle_state", "owner_org_id", "risk_tier", "source_system"] if c in available_fields
+        c for c in ["lifecycle_state", "owner_org_id", "risk_tier", "source_system"] if c in DEFAULT_VENDOR_FIELDS or c in available_fields
     ]
-    return_to = (
-        f"/vendors?search={quote(search)}&status={quote(status)}&owner={quote(owner)}"
-        f"&risk={quote(risk)}&group={quote(group)}&show_settings={show_settings}"
+    return_to = _vendor_list_url(
+        q=resolved_q,
+        status=status,
+        owner=owner,
+        risk=risk,
+        group=group,
+        page=page,
+        page_size=page_size,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+        show_settings=show_settings,
     )
 
     offering_map: dict[str, list[dict]] = {}
     vendor_ids = vendors_df["vendor_id"].astype(str).tolist() if "vendor_id" in vendors_df.columns else []
-    for vid in vendor_ids:
-        off = repo.get_vendor_offerings(vid)
-        offering_map[vid] = off[["offering_id", "offering_name", "lifecycle_state"]].to_dict("records")
+    offering_rows = repo.list_vendor_offerings_for_vendors(vendor_ids).to_dict("records")
+    for row in offering_rows:
+        vid = str(row.get("vendor_id") or "")
+        if vid not in offering_map:
+            offering_map[vid] = []
+        offering_map[vid].append(
+            {
+                "offering_id": str(row.get("offering_id") or ""),
+                "offering_name": str(row.get("offering_name") or row.get("offering_id") or ""),
+                "lifecycle_state": str(row.get("lifecycle_state") or ""),
+            }
+        )
 
     vendor_rows = vendors_df.to_dict("records")
     for row in vendor_rows:
@@ -374,26 +519,120 @@ def vendor_list(
             )
             row["_offerings"].append(entry)
 
+    page_count = max(1, (int(total_rows) + page_size - 1) // page_size)
+    if page > page_count:
+        page = page_count
+    prev_page = page - 1 if page > 1 else 1
+    next_page = page + 1 if page < page_count else page_count
+    sort_links: dict[str, str] = {}
+    for field in visible_fields:
+        mapped_sort = VENDOR_FIELD_SORT_MAP.get(field)
+        if not mapped_sort:
+            continue
+        next_dir = "desc" if sort_by == mapped_sort and sort_dir == "asc" else "asc"
+        sort_links[field] = _vendor_list_url(
+            q=resolved_q,
+            status=status,
+            owner=owner,
+            risk=risk,
+            group=group,
+            page=1,
+            page_size=page_size,
+            sort_by=mapped_sort,
+            sort_dir=next_dir,
+            show_settings=show_settings,
+        )
+
+    _merge_vendor360_settings(
+        repo,
+        user.user_principal,
+        {
+            "list_prefs": {
+                "q": resolved_q,
+                "status": status,
+                "owner": owner,
+                "risk": risk,
+                "group": group,
+                "page_size": page_size,
+                "sort_by": sort_by,
+                "sort_dir": sort_dir,
+            }
+        },
+    )
+
     context = base_template_context(
         request=request,
         context=user,
         title="Vendor 360",
         active_nav="vendors",
         extra={
-            "filters": {"search": search, "status": status, "owner": owner, "risk": risk, "group": group},
+            "filters": {
+                "q": resolved_q,
+                "search": resolved_q,
+                "status": status,
+                "owner": owner,
+                "risk": risk,
+                "group": group,
+                "page": page,
+                "page_size": page_size,
+                "sort_by": sort_by,
+                "sort_dir": sort_dir,
+            },
             "status_options": ["all"] + LIFECYCLE_STATES,
             "owner_options": owner_options,
             "risk_options": risk_options,
             "group_options": group_options,
             "grouped": grouped.to_dict("records"),
             "show_settings": bool(show_settings),
+            "page_sizes": VENDOR_PAGE_SIZES,
             "all_fields": available_fields,
             "visible_fields": visible_fields,
+            "sort_links": sort_links,
             "vendors": vendor_rows,
+            "total_rows": int(total_rows),
+            "page_count": page_count,
+            "show_from": ((page - 1) * page_size + 1) if total_rows else 0,
+            "show_to": min(page * page_size, int(total_rows)),
+            "prev_page_url": _vendor_list_url(
+                q=resolved_q,
+                status=status,
+                owner=owner,
+                risk=risk,
+                group=group,
+                page=prev_page,
+                page_size=page_size,
+                sort_by=sort_by,
+                sort_dir=sort_dir,
+                show_settings=show_settings,
+            ),
+            "next_page_url": _vendor_list_url(
+                q=resolved_q,
+                status=status,
+                owner=owner,
+                risk=risk,
+                group=group,
+                page=next_page,
+                page_size=page_size,
+                sort_by=sort_by,
+                sort_dir=sort_dir,
+                show_settings=show_settings,
+            ),
+            "settings_toggle_url": _vendor_list_url(
+                q=resolved_q,
+                status=status,
+                owner=owner,
+                risk=risk,
+                group=group,
+                page=page,
+                page_size=page_size,
+                sort_by=sort_by,
+                sort_dir=sort_dir,
+                show_settings=0 if show_settings else 1,
+            ),
             "return_to": return_to,
         },
     )
-    return request.app.state.templates.TemplateResponse("vendors_list.html", context)
+    return request.app.state.templates.TemplateResponse(request, "vendors_list.html", context)
 
 
 @router.post("/settings")
@@ -419,11 +658,7 @@ async def vendor_settings(request: Request):
     if not visible_fields:
         visible_fields = [field for field in DEFAULT_VENDOR_FIELDS if field in field_names] or field_names
 
-    repo.save_user_setting(
-        user_principal=user.user_principal,
-        setting_key="vendor360_list",
-        setting_value={"visible_fields": visible_fields},
-    )
+    _merge_vendor360_settings(repo, user.user_principal, {"visible_fields": visible_fields})
     repo.log_usage_event(
         user_principal=user.user_principal,
         page_name="vendor_360",
@@ -635,7 +870,7 @@ def vendor_summary_page(request: Request, vendor_id: str, return_to: str = "/ven
             "raw_fields": raw_fields,
         },
     )
-    return request.app.state.templates.TemplateResponse("vendor_section.html", context)
+    return request.app.state.templates.TemplateResponse(request, "vendor_section.html", context)
 
 
 @router.get("/{vendor_id}/ownership")
@@ -662,7 +897,7 @@ def vendor_ownership_page(request: Request, vendor_id: str, return_to: str = "/v
             "contacts": repo.get_vendor_contacts(vendor_id).to_dict("records"),
         },
     )
-    return request.app.state.templates.TemplateResponse("vendor_section.html", context)
+    return request.app.state.templates.TemplateResponse(request, "vendor_section.html", context)
 
 
 @router.get("/{vendor_id}/portfolio")
@@ -739,7 +974,7 @@ def vendor_offerings_page(request: Request, vendor_id: str, return_to: str = "/v
             "doc_types": DOC_TYPES,
         },
     )
-    return request.app.state.templates.TemplateResponse("vendor_offerings.html", context)
+    return request.app.state.templates.TemplateResponse(request, "vendor_offerings.html", context)
 
 
 @router.get("/{vendor_id}/offerings/new")
@@ -775,7 +1010,7 @@ def offering_new_form(request: Request, vendor_id: str, return_to: str = "/vendo
             "criticality_tiers": ["tier_1", "tier_2", "tier_3", "tier_4"],
         },
     )
-    return request.app.state.templates.TemplateResponse("offering_new.html", context)
+    return request.app.state.templates.TemplateResponse(request, "offering_new.html", context)
 
 
 @router.post("/{vendor_id}/offerings/new")
@@ -877,7 +1112,7 @@ def offering_detail_page(request: Request, vendor_id: str, offering_id: str, ret
             "doc_types": DOC_TYPES,
         },
     )
-    return request.app.state.templates.TemplateResponse("offering_detail.html", context)
+    return request.app.state.templates.TemplateResponse(request, "offering_detail.html", context)
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/update")
@@ -1314,7 +1549,7 @@ def vendor_projects_page(request: Request, vendor_id: str, return_to: str = "/ve
             "projects": projects,
         },
     )
-    return request.app.state.templates.TemplateResponse("vendor_projects.html", context)
+    return request.app.state.templates.TemplateResponse(request, "vendor_projects.html", context)
 
 
 @router.get("/{vendor_id}/projects/new")
@@ -1336,8 +1571,7 @@ def project_new_form(request: Request, vendor_id: str, return_to: str = "/vendor
             status_code=303,
         )
 
-    offerings = _project_offering_options(repo)
-    vendor_options = _project_vendor_options(repo)
+    selected_vendor_rows = _selected_project_vendor_rows(repo, [vendor_id])
     context = base_template_context(
         request=request,
         context=base["user"],
@@ -1349,13 +1583,12 @@ def project_new_form(request: Request, vendor_id: str, return_to: str = "/vendor
             "return_to": base["return_to"],
             "project_types": PROJECT_TYPES,
             "project_statuses": PROJECT_STATUSES,
-            "offerings": offerings,
-            "vendor_options": vendor_options,
-            "selected_vendor_ids": [vendor_id],
+            "selected_vendor_rows": selected_vendor_rows,
+            "selected_offering_rows": [],
             "form_action": f"/vendors/{vendor_id}/projects/new",
         },
     )
-    return request.app.state.templates.TemplateResponse("project_new.html", context)
+    return request.app.state.templates.TemplateResponse(request, "project_new.html", context)
 
 
 @router.post("/{vendor_id}/projects/new")
@@ -1372,10 +1605,17 @@ async def project_new_submit(request: Request, vendor_id: str):
         add_flash(request, "You do not have permission to create projects.", "error")
         return RedirectResponse(url=return_to, status_code=303)
 
-    linked_offerings = [str(x).strip() for x in form.getlist("linked_offerings") if str(x).strip()]
-    linked_vendors = [str(x).strip() for x in form.getlist("linked_vendors") if str(x).strip()]
+    linked_offerings = _dedupe_ordered([str(x).strip() for x in form.getlist("linked_offerings") if str(x).strip()])
+    linked_vendors = _dedupe_ordered([str(x).strip() for x in form.getlist("linked_vendors") if str(x).strip()])
     if vendor_id not in linked_vendors:
         linked_vendors.insert(0, vendor_id)
+    if linked_offerings:
+        offering_rows = repo.get_offerings_by_ids(linked_offerings).to_dict("records")
+        for row in offering_rows:
+            offering_vendor_id = str(row.get("vendor_id") or "").strip()
+            if offering_vendor_id and offering_vendor_id not in linked_vendors:
+                linked_vendors.append(offering_vendor_id)
+    linked_vendors = _dedupe_ordered(linked_vendors)
     try:
         project_id = repo.create_project(
             vendor_id=vendor_id,
@@ -1443,8 +1683,14 @@ def project_edit_form(request: Request, vendor_id: str, project_id: str, return_
             status_code=303,
         )
 
-    offerings = _project_offering_options(repo)
-    vendor_options = _project_vendor_options(repo)
+    project_vendor_ids = _dedupe_ordered([str(x).strip() for x in (project.get("vendor_ids") or []) if str(x).strip()])
+    project_offering_ids = _dedupe_ordered(
+        [str(x).strip() for x in (project.get("linked_offering_ids") or []) if str(x).strip()]
+    )
+    if vendor_id and vendor_id not in project_vendor_ids:
+        project_vendor_ids.insert(0, vendor_id)
+    selected_vendor_rows = _selected_project_vendor_rows(repo, project_vendor_ids)
+    selected_offering_rows = _selected_project_offering_rows(repo, project_offering_ids)
     context = base_template_context(
         request=request,
         context=base["user"],
@@ -1454,15 +1700,15 @@ def project_edit_form(request: Request, vendor_id: str, project_id: str, return_
             "vendor_id": vendor_id,
             "vendor_display_name": base["display_name"],
             "project": project,
-            "offerings": offerings,
-            "vendor_options": vendor_options,
+            "selected_vendor_rows": selected_vendor_rows,
+            "selected_offering_rows": selected_offering_rows,
             "return_to": base["return_to"],
             "project_types": PROJECT_TYPES,
             "project_statuses": PROJECT_STATUSES,
             "form_action": f"/vendors/{vendor_id}/projects/{project_id}/edit",
         },
     )
-    return request.app.state.templates.TemplateResponse("project_edit.html", context)
+    return request.app.state.templates.TemplateResponse(request, "project_edit.html", context)
 
 
 @router.post("/{vendor_id}/projects/{project_id}/edit")
@@ -1486,10 +1732,17 @@ async def project_edit_submit(request: Request, vendor_id: str, project_id: str)
             status_code=303,
         )
 
-    linked_offerings = [str(x).strip() for x in form.getlist("linked_offerings") if str(x).strip()]
-    linked_vendors = [str(x).strip() for x in form.getlist("linked_vendors") if str(x).strip()]
+    linked_offerings = _dedupe_ordered([str(x).strip() for x in form.getlist("linked_offerings") if str(x).strip()])
+    linked_vendors = _dedupe_ordered([str(x).strip() for x in form.getlist("linked_vendors") if str(x).strip()])
     if vendor_id not in linked_vendors:
         linked_vendors.insert(0, vendor_id)
+    if linked_offerings:
+        offering_rows = repo.get_offerings_by_ids(linked_offerings).to_dict("records")
+        for row in offering_rows:
+            offering_vendor_id = str(row.get("vendor_id") or "").strip()
+            if offering_vendor_id and offering_vendor_id not in linked_vendors:
+                linked_vendors.append(offering_vendor_id)
+    linked_vendors = _dedupe_ordered(linked_vendors)
     updates = {
         "project_name": str(form.get("project_name", "")).strip(),
         "project_type": str(form.get("project_type", "other")),
@@ -1585,7 +1838,7 @@ def project_demo_new_form(request: Request, vendor_id: str, project_id: str, ret
             "demo_map_options": _project_demo_select_options(vendor_demos),
         },
     )
-    return request.app.state.templates.TemplateResponse("project_demo_new.html", context)
+    return request.app.state.templates.TemplateResponse(request, "project_demo_new.html", context)
 
 
 @router.post("/{vendor_id}/projects/{project_id}/demos/new")
@@ -1981,7 +2234,7 @@ def vendor_contracts_page(request: Request, vendor_id: str, return_to: str = "/v
             "contract_events": repo.get_vendor_contract_events(vendor_id).to_dict("records"),
         },
     )
-    return request.app.state.templates.TemplateResponse("vendor_section.html", context)
+    return request.app.state.templates.TemplateResponse(request, "vendor_section.html", context)
 
 
 @router.get("/{vendor_id}/demos")
@@ -2008,7 +2261,7 @@ def vendor_demos_page(request: Request, vendor_id: str, return_to: str = "/vendo
             "demo_notes": repo.get_vendor_demo_notes(vendor_id).to_dict("records"),
         },
     )
-    return request.app.state.templates.TemplateResponse("vendor_section.html", context)
+    return request.app.state.templates.TemplateResponse(request, "vendor_section.html", context)
 
 
 @router.get("/{vendor_id}/lineage")
@@ -2035,7 +2288,7 @@ def vendor_lineage_page(request: Request, vendor_id: str, return_to: str = "/ven
             "audit_events": repo.get_vendor_audit_events(vendor_id).to_dict("records"),
         },
     )
-    return request.app.state.templates.TemplateResponse("vendor_section.html", context)
+    return request.app.state.templates.TemplateResponse(request, "vendor_section.html", context)
 
 
 @router.get("/{vendor_id}/changes")
@@ -2063,7 +2316,7 @@ def vendor_changes_page(request: Request, vendor_id: str, return_to: str = "/ven
             "risk_tiers": RISK_TIERS,
         },
     )
-    return request.app.state.templates.TemplateResponse("vendor_section.html", context)
+    return request.app.state.templates.TemplateResponse(request, "vendor_section.html", context)
 
 
 @router.post("/{vendor_id}/direct-update")

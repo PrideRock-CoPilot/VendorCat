@@ -3,6 +3,14 @@ setlocal
 
 cd /d "%~dp0"
 
+if "%TVENDOR_ENV_FILE%"=="" set "TVENDOR_ENV_FILE=app\config\tvendor.env"
+if exist "%TVENDOR_ENV_FILE%" (
+  echo Loading environment from %TVENDOR_ENV_FILE%
+  for /f "usebackq tokens=1* delims==" %%A in (`findstr /R /V "^[ ]*# ^[ ]*$" "%TVENDOR_ENV_FILE%"`) do (
+    if not defined %%A set "%%A=%%B"
+  )
+)
+
 if "%TVENDOR_USE_MOCK%"=="" set "TVENDOR_USE_MOCK=false"
 if "%TVENDOR_USE_LOCAL_DB%"=="" set "TVENDOR_USE_LOCAL_DB=true"
 if "%TVENDOR_LOCAL_DB_PATH%"=="" set "TVENDOR_LOCAL_DB_PATH=app\local_db\twvendor_local.db"

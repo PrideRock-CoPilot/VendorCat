@@ -30,7 +30,7 @@ def contracts(request: Request):
         active_nav="contracts",
         extra={"rows": repo.contract_cancellations().to_dict("records")},
     )
-    return request.app.state.templates.TemplateResponse("contracts.html", context)
+    return request.app.state.templates.TemplateResponse(request, "contracts.html", context)
 
 
 @router.post("/cancel")

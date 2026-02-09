@@ -145,3 +145,54 @@ def test_search_matches_related_contract_and_owner_data(client: TestClient) -> N
     by_owner = client.get("/vendors?search=cloud-platform@example.com")
     assert by_owner.status_code == 200
     assert "Microsoft" in by_owner.text
+
+
+def test_vendor_list_server_side_pagination_and_sort(client: TestClient) -> None:
+    page_one = client.get("/vendors?page=1&page_size=1&sort_by=vendor_name&sort_dir=asc")
+    assert page_one.status_code == 200
+    assert "Page 1 of 3" in page_one.text
+    assert "vnd-003" in page_one.text
+
+    page_two = client.get("/vendors?page=2&page_size=1&sort_by=vendor_name&sort_dir=asc")
+    assert page_two.status_code == 200
+    assert "Page 2 of 3" in page_two.text
+    assert "vnd-001" in page_two.text
+
+    page_desc = client.get("/vendors?page=1&page_size=1&sort_by=vendor_name&sort_dir=desc")
+    assert page_desc.status_code == 200
+    assert "vnd-002" in page_desc.text
+
+
+def test_vendor_list_uses_q_and_persists_list_preferences(client: TestClient) -> None:
+    by_q = client.get("/vendors?q=ctr-101")
+    assert by_q.status_code == 200
+    assert "Microsoft" in by_q.text
+
+    saved_pref = client.get("/vendors?page_size=10&sort_by=updated_at&sort_dir=desc")
+    assert saved_pref.status_code == 200
+
+    restored = client.get("/vendors")
+    assert restored.status_code == 200
+    assert 'name="sort_by" value="updated_at"' in restored.text
+    assert 'name="sort_dir" value="desc"' in restored.text
+    assert '<option value="10" selected' in restored.text
+
+
+def test_typeahead_vendor_offering_and_project_api(client: TestClient) -> None:
+    vendor_response = client.get("/api/vendors/search?q=micro&limit=5")
+    assert vendor_response.status_code == 200
+    vendor_payload = vendor_response.json()
+    vendor_ids = {row.get("vendor_id") for row in vendor_payload.get("items", [])}
+    assert "vnd-001" in vendor_ids
+
+    offering_response = client.get("/api/offerings/search?vendor_id=vnd-001&q=azure&limit=10")
+    assert offering_response.status_code == 200
+    offering_payload = offering_response.json()
+    offering_items = offering_payload.get("items", [])
+    assert any(str(row.get("offering_id")) == "off-002" for row in offering_items)
+    assert all(str(row.get("vendor_id")) == "vnd-001" for row in offering_items)
+
+    project_response = client.get("/api/projects/search?q=Defender&limit=10")
+    assert project_response.status_code == 200
+    project_payload = project_response.json()
+    assert any("Defender" in str(row.get("label", "")) for row in project_payload.get("items", []))

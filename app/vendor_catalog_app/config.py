@@ -21,6 +21,7 @@ class AppConfig:
     use_local_db: bool = False
     local_db_path: str = "app/local_db/twvendor_local.db"
     locked_mode: bool = False
+    schema_bootstrap_sql_path: str = "app/vendor_catalog_app/sql/bootstrap/001_create_databricks_schema.sql"
 
     @property
     def fq_schema(self) -> str:
@@ -40,4 +41,8 @@ class AppConfig:
             use_local_db=_as_bool(os.getenv("TVENDOR_USE_LOCAL_DB"), default=False),
             local_db_path=os.getenv("TVENDOR_LOCAL_DB_PATH", "app/local_db/twvendor_local.db"),
             locked_mode=_as_bool(os.getenv("TVENDOR_LOCKED_MODE"), default=False),
+            schema_bootstrap_sql_path=os.getenv(
+                "TVENDOR_SCHEMA_BOOTSTRAP_SQL",
+                "app/vendor_catalog_app/sql/bootstrap/001_create_databricks_schema.sql",
+            ),
         )

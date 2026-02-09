@@ -1,5 +1,61 @@
 # Changelog
 
+## 2026-02-09T21:48:09Z | VC-20260209-214809-5452
+- Added a centralized application SQL catalog under `app/vendor_catalog_app/sql/` with domain folders for:
+  - `ingestion/`
+  - `inserts/`
+  - `updates/`
+  - `reporting/`
+- Added repository SQL file execution helpers:
+  - `VendorRepository._sql(...)`
+  - `VendorRepository._query_file(...)`
+  - `VendorRepository._execute_file(...)`
+  - cached file loading via `_read_sql_file(...)`.
+- Refactored ingestion/insert/update/reporting paths in `VendorRepository` to execute SQL from external `.sql` files instead of embedding mutation/report SQL inline.
+- Migrated core mutation flows to file-backed SQL:
+  - vendor/offering create + update
+  - offering owner/contact add/remove
+  - contract/demo mapping
+  - project create/update and related mapping rows
+  - project demo create/update/remove
+  - project notes, document link create/update/remove
+  - change request + workflow event writes
+  - vendor profile apply flow (including history close/insert)
+  - contract cancellation record flow
+  - role/scope grants + access audit
+  - user settings + usage logging writes.
+- Migrated reporting/read aggregation SQL for dashboard and executive/report datasets to file-backed SQL (vendor inventory/project portfolio/supporting owner coverage data pulls, spend/renewal/risk rollups, demo outcomes, contract cancellations, grants lists).
+
+## 2026-02-09T21:26:44Z | VC-20260209-212644-6321
+- Implemented Step C typeahead API surface for large reference selection workloads:
+  - `GET /api/vendors/search`
+  - `GET /api/offerings/search`
+  - `GET /api/projects/search`
+- Reworked project create/edit forms to remove preloaded vendor/offering dropdowns and use on-demand typeahead selection (server-rendered Jinja + lightweight vanilla JS).
+- Reworked Project Offerings quick-attach controls to typeahead vendor/offering search with no full preload, while preserving auto-attach vendor behavior.
+- Updated project vendor filtering UI on `/projects` to use vendor typeahead instead of loading full vendor option lists.
+- Added backend helpers for selected entity hydration (`get_vendors_by_ids`, `get_offerings_by_ids`) and server-side dedupe/auto-attach behavior when offerings imply vendor linkage.
+- Added tests for new typeahead APIs covering vendor, offering, and project search paths in mock mode.
+
+## 2026-02-09T21:13:44Z | VC-20260209-211344-6816
+- Completed Step A stability fix: updated all router template rendering calls to the modern Starlette signature `TemplateResponse(request, template, context, ...)`, removing deprecation warnings.
+- Added server-side Vendor 360 list paging/sort/search controls with URL state:
+  - `q`, `page`, `page_size`, `sort_by`, `sort_dir`
+  - retained backward-compatible `search` query support.
+- Added repository-level paged vendor query method for mock/local/dbx modes:
+  - `list_vendors_page(...)` with validated sort columns and deterministic ordering.
+- Added batched offering lookup for current vendor page to avoid per-row offering queries:
+  - `list_vendor_offerings_for_vendors(...)`.
+- Persisted vendor list preferences in user settings (`vendor360_list.list_prefs`) for:
+  - search text, filters, page size, and sort state.
+- Updated Vendor 360 UI:
+  - page size selector
+  - sortable headers
+  - previous/next pager with row range summary
+  - stable settings toggle URL preserving list state.
+- Updated Vendor field-matrix save behavior to merge with existing vendor list preferences instead of overwriting them.
+- Added tests for Vendor 360 server-side pagination/sort behavior and preference persistence with `q` search.
+
 ## 2026-02-09T20:53:54Z | VC-20260209-205354-3900
 - Added a new root `README.md` with complete project overview, run modes, schema references, and validation commands.
 - Expanded `app/README.md` to reflect current modules (including Projects and Reports), runtime modes, and operational startup paths.

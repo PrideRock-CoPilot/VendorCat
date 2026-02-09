@@ -277,7 +277,7 @@ def reports_home(
             "download_url": download_url,
         },
     )
-    return request.app.state.templates.TemplateResponse("reports.html", context)
+    return request.app.state.templates.TemplateResponse(request, "reports.html", context)
 
 
 @router.get("/reports/download")

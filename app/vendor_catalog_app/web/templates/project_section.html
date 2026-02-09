@@ -159,24 +159,19 @@
   {% if can_edit and not locked_mode %}
   <form method="post" action="{{ add_offering_action }}" class="grid grid-5" style="margin-bottom:10px;" data-attach-offering-form>
     <input type="hidden" name="return_to" value="/projects/{{ project_id }}/offerings">
+    <input type="hidden" name="offering_id" data-selected-offering-id>
     <label>Vendor
-      <select name="offering_vendor_id" data-offering-vendor-filter>
-        <option value="">Select vendor</option>
-        {% for row in all_vendor_options %}
-        <option value="{{ row.vendor_id }}" data-linked="{{ row.linked }}" {% if row.vendor_id == vendor_id %}selected{% endif %}>{{ row.label }} ({{ row.vendor_id }})</option>
-        {% endfor %}
-      </select>
+      <input type="text" autocomplete="off" placeholder="Search vendor..." data-offering-vendor-filter>
+      <div class="typeahead-results hidden" data-vendor-results></div>
+      <div class="muted" data-selected-vendor-label>{% if vendor_id %}Selected: {{ vendor_display_name }} ({{ vendor_id }}){% else %}No vendor selected{% endif %}</div>
       <div style="margin-top:6px;">
         <a class="button-link subtle" href="/vendors/new?return_to=%2Fprojects%2F{{ project_id }}%2Fofferings">Add Vendor</a>
       </div>
     </label>
     <label>Offering
-      <select name="offering_id" required data-offering-select>
-        <option value="">Select offering to attach</option>
-        {% for row in attachable_offering_options %}
-        <option value="{{ row.offering_id }}" data-vendor-id="{{ row.vendor_id }}">{{ row.offering_name }} ({{ row.offering_id }}) - {{ row.vendor_display_name }}</option>
-        {% endfor %}
-      </select>
+      <input type="text" autocomplete="off" placeholder="Search offering to attach..." data-offering-select required>
+      <div class="typeahead-results hidden" data-offering-results></div>
+      <div class="muted" data-selected-offering-label>No offering selected</div>
       <div style="margin-top:6px;">
         <a class="button-link subtle" href="#" data-create-offering-link>Add Offering</a>
       </div>
@@ -193,7 +188,9 @@
     <input type="hidden" name="vendor_id" data-auto-vendor-id>
     <input type="hidden" name="reason" value="Auto attach from vendor selection">
   </form>
-  <div class="muted">When you select a vendor, it is attached automatically and offerings are filtered to that vendor.</div>
+  <div class="muted">Search vendors and offerings on demand. Selecting a vendor auto-attaches it when not already linked.</div>
+  <script id="project-linked-vendors" type="application/json">{{ linked_vendor_rows|tojson }}</script>
+  <script id="project-linked-offering-ids" type="application/json">{{ current_offering_ids|tojson }}</script>
   {% endif %}
   <table>
     <thead><tr><th>Vendor</th><th>Offering</th><th>Type</th><th>Lifecycle</th><th>Criticality</th><th>Open</th></tr></thead>
@@ -403,27 +400,68 @@ document.querySelectorAll("[data-doc-link-form]").forEach((form) => {
 const attachOfferingForm = document.querySelector("[data-attach-offering-form]");
 if (attachOfferingForm) {
   const vendorFilter = attachOfferingForm.querySelector("[data-offering-vendor-filter]");
-  const offeringSelect = attachOfferingForm.querySelector("[data-offering-select]");
+  const vendorResults = attachOfferingForm.querySelector("[data-vendor-results]");
+  const vendorLabel = attachOfferingForm.querySelector("[data-selected-vendor-label]");
+  const offeringInput = attachOfferingForm.querySelector("[data-offering-select]");
+  const offeringResults = attachOfferingForm.querySelector("[data-offering-results]");
+  const offeringLabel = attachOfferingForm.querySelector("[data-selected-offering-label]");
+  const offeringHidden = attachOfferingForm.querySelector("[data-selected-offering-id]");
   const createLink = attachOfferingForm.querySelector("[data-create-offering-link]");
   const autoVendorForm = document.querySelector("[data-auto-attach-vendor]");
   const autoVendorInput = autoVendorForm ? autoVendorForm.querySelector("[data-auto-vendor-id]") : null;
   const projectId = "{{ project_id }}";
+  const parseJson = (id) => {
+    const node = document.getElementById(id);
+    if (!node) return [];
+    try {
+      const parsed = JSON.parse(node.textContent || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+  const linkedVendors = new Map();
+  parseJson("project-linked-vendors").forEach((row) => {
+    const vendorId = (row.vendor_id || "").trim();
+    if (vendorId) linkedVendors.set(vendorId, row.label || vendorId);
+  });
+  const linkedOfferingIds = new Set(parseJson("project-linked-offering-ids").map((value) => String(value || "").trim()));
+  let selectedVendorId = {{ vendor_id|tojson }};
+  let selectedVendorLabel = {{ vendor_display_name|tojson }};
+  let selectedOffering = null;
+  let vendorTimer = null;
+  let offeringTimer = null;
 
-  const updateOfferingFilter = () => {
-    if (!vendorFilter || !offeringSelect) return;
-    const selectedVendor = vendorFilter.value || "";
-    Array.from(offeringSelect.options).forEach((opt, idx) => {
-      if (idx === 0) return;
-      const vendorId = opt.getAttribute("data-vendor-id") || "";
-      const keep = !selectedVendor || vendorId === selectedVendor;
-      opt.hidden = !keep;
-      if (!keep) {
-        opt.selected = false;
+  const hideResults = (node) => {
+    if (!node) return;
+    node.innerHTML = "";
+    node.classList.add("hidden");
+  };
+
+  const updateOfferingState = () => {
+    if (!offeringLabel || !offeringHidden) return;
+    if (selectedOffering && selectedOffering.offering_id) {
+      offeringLabel.textContent = selectedOffering.label || selectedOffering.offering_id;
+      offeringHidden.value = selectedOffering.offering_id;
+      offeringInput.value = selectedOffering.label || selectedOffering.offering_id;
+    } else {
+      offeringLabel.textContent = "No offering selected";
+      offeringHidden.value = "";
+    }
+  };
+
+  const updateVendorState = () => {
+    if (vendorLabel) {
+      if (selectedVendorId) {
+        const label = selectedVendorLabel || selectedVendorId;
+        vendorLabel.textContent = `Selected: ${label} (${selectedVendorId})`;
+      } else {
+        vendorLabel.textContent = "No vendor selected";
       }
-    });
+    }
     if (createLink) {
-      if (selectedVendor) {
-        createLink.href = `/projects/${projectId}/offerings/new?vendor_id=${encodeURIComponent(selectedVendor)}&return_to=/projects/${projectId}/offerings`;
+      if (selectedVendorId) {
+        createLink.href = `/projects/${projectId}/offerings/new?vendor_id=${encodeURIComponent(selectedVendorId)}&return_to=/projects/${projectId}/offerings`;
         createLink.classList.remove("disabled");
       } else {
         createLink.href = "#";
@@ -432,19 +470,138 @@ if (attachOfferingForm) {
     }
   };
 
+  const chooseVendor = (item) => {
+    selectedVendorId = (item.vendor_id || "").trim();
+    selectedVendorLabel = (item.label || item.vendor_id || "").trim();
+    updateVendorState();
+    const alreadyLinked = linkedVendors.has(selectedVendorId);
+    if (selectedVendorId && autoVendorForm && autoVendorInput && !alreadyLinked) {
+      autoVendorInput.value = selectedVendorId;
+      autoVendorForm.submit();
+    }
+  };
+
+  const runVendorSearch = async (query) => {
+    if (!vendorResults) return;
+    if (!query) {
+      hideResults(vendorResults);
+      return;
+    }
+    const response = await fetch(`/api/vendors/search?q=${encodeURIComponent(query)}&limit=10`);
+    if (!response.ok) {
+      hideResults(vendorResults);
+      return;
+    }
+    const payload = await response.json();
+    const items = (payload.items || []).filter((item) => item && item.vendor_id);
+    vendorResults.innerHTML = "";
+    if (!items.length) {
+      hideResults(vendorResults);
+      return;
+    }
+    items.forEach((item) => {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = "typeahead-option";
+      option.textContent = `${item.label || item.vendor_id} (${item.vendor_id})`;
+      option.addEventListener("click", () => {
+        chooseVendor(item);
+        vendorFilter.value = "";
+        hideResults(vendorResults);
+      });
+      vendorResults.appendChild(option);
+    });
+    vendorResults.classList.remove("hidden");
+  };
+
+  const runOfferingSearch = async (query) => {
+    if (!offeringResults) return;
+    if (!query) {
+      hideResults(offeringResults);
+      return;
+    }
+    const params = new URLSearchParams({ q: query, limit: "12" });
+    if (selectedVendorId) params.set("vendor_id", selectedVendorId);
+    const response = await fetch(`/api/offerings/search?${params.toString()}`);
+    if (!response.ok) {
+      hideResults(offeringResults);
+      return;
+    }
+    const payload = await response.json();
+    const items = (payload.items || []).filter((item) => {
+      const offeringId = String(item.offering_id || "").trim();
+      return offeringId && !linkedOfferingIds.has(offeringId);
+    });
+    offeringResults.innerHTML = "";
+    if (!items.length) {
+      hideResults(offeringResults);
+      return;
+    }
+    items.forEach((item) => {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = "typeahead-option";
+      option.textContent = item.label || item.offering_id;
+      option.addEventListener("click", () => {
+        selectedOffering = item;
+        updateOfferingState();
+        const offerVendorId = (item.vendor_id || "").trim();
+        if (offerVendorId && offerVendorId !== selectedVendorId) {
+          chooseVendor({
+            vendor_id: offerVendorId,
+            label: item.vendor_display_name || offerVendorId,
+          });
+        }
+        hideResults(offeringResults);
+      });
+      offeringResults.appendChild(option);
+    });
+    offeringResults.classList.remove("hidden");
+  };
+
   if (vendorFilter) {
-    vendorFilter.addEventListener("change", () => {
-      updateOfferingFilter();
-      const selectedVendor = vendorFilter.value || "";
-      const selectedOption = vendorFilter.options[vendorFilter.selectedIndex];
-      const alreadyLinked = selectedOption ? (selectedOption.getAttribute("data-linked") === "true") : false;
-      if (selectedVendor && autoVendorForm && autoVendorInput && !alreadyLinked) {
-        autoVendorInput.value = selectedVendor;
-        autoVendorForm.submit();
-      }
+    vendorFilter.addEventListener("input", () => {
+      if (vendorTimer) window.clearTimeout(vendorTimer);
+      vendorTimer = window.setTimeout(() => runVendorSearch((vendorFilter.value || "").trim()), 180);
     });
   }
-  updateOfferingFilter();
+  if (offeringInput) {
+    offeringInput.addEventListener("input", () => {
+      selectedOffering = null;
+      updateOfferingState();
+      if (offeringTimer) window.clearTimeout(offeringTimer);
+      offeringTimer = window.setTimeout(() => runOfferingSearch((offeringInput.value || "").trim()), 180);
+    });
+  }
+  document.addEventListener("click", (event) => {
+    if (vendorResults && !vendorResults.contains(event.target) && event.target !== vendorFilter) {
+      hideResults(vendorResults);
+    }
+    if (offeringResults && !offeringResults.contains(event.target) && event.target !== offeringInput) {
+      hideResults(offeringResults);
+    }
+  });
+
+  attachOfferingForm.addEventListener("submit", (event) => {
+    if (!offeringHidden || !offeringHidden.value) {
+      event.preventDefault();
+      if (offeringLabel) offeringLabel.textContent = "Select an offering before attaching.";
+      return;
+    }
+    if (selectedVendorId && autoVendorForm && autoVendorInput && !linkedVendors.has(selectedVendorId)) {
+      autoVendorInput.value = selectedVendorId;
+      autoVendorForm.submit();
+    }
+  });
+
+  if (selectedVendorId && selectedVendorLabel) {
+    updateVendorState();
+  } else {
+    selectedVendorId = "";
+    selectedVendorLabel = "";
+    updateVendorState();
+  }
+  updateOfferingState();
 }
 </script>
 {% endblock %}

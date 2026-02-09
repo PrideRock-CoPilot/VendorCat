@@ -22,16 +22,14 @@
   </label>
   <label>
     Vendor
-    <select name="vendor">
-      {% for option in vendor_options %}
-      <option value="{{ option.vendor_id }}" {% if option.vendor_id == filters.vendor %}selected{% endif %}>
-        {{ option.label }}
-      </option>
-      {% endfor %}
-    </select>
+    <input type="hidden" name="vendor" value="{{ filters.vendor }}" data-project-vendor-id>
+    <input type="text" value="{{ filters.vendor_label or '' }}" placeholder="Search vendor..." autocomplete="off" data-project-vendor-search>
+    <div class="typeahead-results hidden" data-project-vendor-results></div>
+    <small class="muted">Leave blank for all vendors.</small>
   </label>
   <div>
     <button type="submit">Apply Filters</button>
+    <button type="button" class="button-link subtle" data-clear-vendor-filter style="margin-left:6px;">Clear Vendor</button>
   </div>
 </form>
 
@@ -83,4 +81,74 @@
     </tbody>
   </table>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const vendorInput = document.querySelector("[data-project-vendor-search]");
+  const vendorHidden = document.querySelector("[data-project-vendor-id]");
+  const results = document.querySelector("[data-project-vendor-results]");
+  const clearBtn = document.querySelector("[data-clear-vendor-filter]");
+  if (!vendorInput || !vendorHidden || !results) return;
+
+  let timer = null;
+  const hideResults = () => {
+    results.innerHTML = "";
+    results.classList.add("hidden");
+  };
+  const search = async (query) => {
+    if (!query) {
+      hideResults();
+      return;
+    }
+    const response = await fetch(`/api/vendors/search?q=${encodeURIComponent(query)}&limit=10`);
+    if (!response.ok) {
+      hideResults();
+      return;
+    }
+    const payload = await response.json();
+    const items = payload.items || [];
+    results.innerHTML = "";
+    if (!items.length) {
+      hideResults();
+      return;
+    }
+    items.forEach((item) => {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = "typeahead-option";
+      option.textContent = `${item.label || item.vendor_id} (${item.vendor_id})`;
+      option.addEventListener("click", () => {
+        vendorInput.value = item.label || item.vendor_id;
+        vendorHidden.value = item.vendor_id || "all";
+        hideResults();
+      });
+      results.appendChild(option);
+    });
+    results.classList.remove("hidden");
+  };
+
+  vendorInput.addEventListener("input", () => {
+    const raw = (vendorInput.value || "").trim();
+    if (!raw) {
+      vendorHidden.value = "all";
+      hideResults();
+      return;
+    }
+    if (timer) window.clearTimeout(timer);
+    timer = window.setTimeout(() => search(raw), 180);
+  });
+  document.addEventListener("click", (event) => {
+    if (!results.contains(event.target) && event.target !== vendorInput) hideResults();
+  });
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      vendorInput.value = "";
+      vendorHidden.value = "all";
+      hideResults();
+    });
+  }
+})();
+</script>
 {% endblock %}

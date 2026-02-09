@@ -5,7 +5,7 @@
 <form method="get" action="/vendors" class="card grid grid-5">
   <label>
     Search related data
-    <input type="text" name="search" value="{{ filters.search }}" placeholder="Vendor, offering, contract, owner, contact, demo...">
+    <input type="text" name="q" value="{{ filters.q }}" placeholder="Vendor, offering, contract, owner, contact, demo...">
   </label>
   <label>
     Status
@@ -32,6 +32,14 @@
     </select>
   </label>
   <label>
+    Page Size
+    <select name="page_size">
+      {% for size in page_sizes %}
+      <option value="{{ size }}" {% if size == filters.page_size %}selected{% endif %}>{{ size }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
     Group By
     <select name="group">
       {% for option in group_options %}
@@ -39,6 +47,9 @@
       {% endfor %}
     </select>
   </label>
+  <input type="hidden" name="sort_by" value="{{ filters.sort_by }}">
+  <input type="hidden" name="sort_dir" value="{{ filters.sort_dir }}">
+  <input type="hidden" name="page" value="1">
   <input type="hidden" name="show_settings" value="{{ 1 if show_settings else 0 }}">
   <div>
     <button type="submit">Apply Filters</button>
@@ -69,7 +80,7 @@
     {% if can_edit and not locked_mode %}
     <a class="button-link" href="/vendors/new?return_to={{ return_to|urlencode }}">+ New Vendor</a>
     {% endif %}
-    <a class="button-link settings-toggle" href="{{ return_to.replace('show_settings=0', 'show_settings=1') if not show_settings else return_to.replace('show_settings=1', 'show_settings=0') }}">
+    <a class="button-link settings-toggle" href="{{ settings_toggle_url }}">
       {% if show_settings %}&#9881; Hide Fields{% else %}&#9881; Field Settings{% endif %}
     </a>
   </div>
@@ -110,7 +121,18 @@
     <thead>
       <tr>
         {% for field in visible_fields %}
-        <th>{{ field }}</th>
+        <th>
+          {% if sort_links.get(field) %}
+          <a href="{{ sort_links.get(field) }}">{{ field }}</a>
+          {% if filters.sort_by == 'vendor_name' and field == 'display_name' %}
+          <small>{{ '↑' if filters.sort_dir == 'asc' else '↓' }}</small>
+          {% elif filters.sort_by == field %}
+          <small>{{ '↑' if filters.sort_dir == 'asc' else '↓' }}</small>
+          {% endif %}
+          {% else %}
+          {{ field }}
+          {% endif %}
+        </th>
         {% endfor %}
         <th>actions</th>
         <th>offerings</th>
@@ -151,5 +173,13 @@
       {% endfor %}
     </tbody>
   </table>
+  <div class="section-header" style="margin-top:10px;">
+    <p>Showing {{ show_from }}-{{ show_to }} of {{ total_rows }} vendors.</p>
+    <div class="button-group">
+      <a class="button-link subtle {% if filters.page <= 1 %}disabled{% endif %}" href="{{ prev_page_url }}">Previous</a>
+      <span class="pill">Page {{ filters.page }} of {{ page_count }}</span>
+      <a class="button-link subtle {% if filters.page >= page_count %}disabled{% endif %}" href="{{ next_page_url }}">Next</a>
+    </div>
+  </div>
 </section>
 {% endblock %}

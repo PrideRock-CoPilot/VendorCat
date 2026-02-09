@@ -51,32 +51,50 @@ def _safe_vendor_id(repo, vendor_id: str | None) -> str | None:
     return cleaned
 
 
-def _vendor_options(repo) -> list[dict[str, str]]:
-    vendor_df = repo.search_vendors(search_text="", lifecycle_state="all")
-    options: list[dict[str, str]] = []
-    for row in vendor_df.to_dict("records"):
-        vendor_id = str(row.get("vendor_id") or "")
+def _dedupe_ordered(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for value in values:
+        cleaned = str(value or "").strip()
+        if cleaned and cleaned not in seen:
+            out.append(cleaned)
+            seen.add(cleaned)
+    return out
+
+
+def _selected_vendor_rows(repo, vendor_ids: list[str]) -> list[dict[str, str]]:
+    cleaned_ids = _dedupe_ordered(vendor_ids)
+    if not cleaned_ids:
+        return []
+    df = repo.get_vendors_by_ids(cleaned_ids)
+    by_id: dict[str, dict[str, str]] = {}
+    for row in df.to_dict("records"):
+        vendor_id = str(row.get("vendor_id") or "").strip()
+        if not vendor_id:
+            continue
         label = str(row.get("display_name") or row.get("legal_name") or vendor_id)
-        if vendor_id:
-            options.append({"vendor_id": vendor_id, "label": label})
-    return options
+        by_id[vendor_id] = {"vendor_id": vendor_id, "label": label}
+    return [by_id[vendor_id] for vendor_id in cleaned_ids if vendor_id in by_id]
 
 
-def _offering_options(repo) -> list[dict[str, str]]:
-    options: list[dict[str, str]] = []
-    for vendor in _vendor_options(repo):
-        offerings = repo.get_vendor_offerings(vendor["vendor_id"]).to_dict("records")
-        for row in offerings:
-            options.append(
-                {
-                    "offering_id": str(row.get("offering_id") or ""),
-                    "vendor_id": vendor["vendor_id"],
-                    "vendor_display_name": vendor["label"],
-                    "offering_name": str(row.get("offering_name") or row.get("offering_id") or ""),
-                }
-            )
-    options.sort(key=lambda x: (x["vendor_display_name"], x["offering_name"]))
-    return options
+def _selected_offering_rows(repo, offering_ids: list[str]) -> list[dict[str, str]]:
+    cleaned_ids = _dedupe_ordered(offering_ids)
+    if not cleaned_ids:
+        return []
+    df = repo.get_offerings_by_ids(cleaned_ids)
+    by_id: dict[str, dict[str, str]] = {}
+    for row in df.to_dict("records"):
+        offering_id = str(row.get("offering_id") or "").strip()
+        if not offering_id:
+            continue
+        offering_name = str(row.get("offering_name") or offering_id)
+        vendor_display = str(row.get("vendor_display_name") or row.get("vendor_id") or "Unassigned")
+        by_id[offering_id] = {
+            "offering_id": offering_id,
+            "vendor_id": str(row.get("vendor_id") or "").strip(),
+            "label": f"{offering_name} ({offering_id}) - {vendor_display}",
+        }
+    return [by_id[offering_id] for offering_id in cleaned_ids if offering_id in by_id]
 
 
 def _project_nav(project_id: str, return_to: str, active_key: str) -> list[dict]:
@@ -241,29 +259,17 @@ def _render_project_section(request: Request, base: dict, section: str):
         row["_demo_doc_link_action"] = f"/vendors/{demo_vendor_id}/projects/{project_id}/demos/{demo_id}/docs/link"
         row["_docs"] = repo.list_docs("demo", demo_id).to_dict("records")
 
-    current_vendor_ids = [str(row.get("vendor_id") or "") for row in base["project_vendors"] if str(row.get("vendor_id") or "")]
-    current_offering_ids = {
-        str(row.get("offering_id") or "") for row in base["all_offerings"] if str(row.get("offering_id") or "")
-    }
-    attachable_vendor_options = [v for v in _vendor_options(repo) if v["vendor_id"] not in current_vendor_ids]
-    all_vendor_options: list[dict[str, str]] = []
+    linked_vendor_rows: list[dict[str, str]] = []
     vendor_seen: set[str] = set()
     for row in base["project_vendors"]:
         vendor_id = str(row.get("vendor_id") or "")
         label = str(row.get("vendor_display_name") or vendor_id)
         if vendor_id and vendor_id not in vendor_seen:
-            all_vendor_options.append({"vendor_id": vendor_id, "label": label, "linked": "true"})
+            linked_vendor_rows.append({"vendor_id": vendor_id, "label": label})
             vendor_seen.add(vendor_id)
-    for row in attachable_vendor_options:
-        vendor_id = str(row.get("vendor_id") or "")
-        if vendor_id and vendor_id not in vendor_seen:
-            all_vendor_options.append(
-                {"vendor_id": vendor_id, "label": str(row.get("label") or vendor_id), "linked": "false"}
-            )
-            vendor_seen.add(vendor_id)
-    attachable_offering_options = [
-        o for o in _offering_options(repo) if o["offering_id"] and o["offering_id"] not in current_offering_ids
-    ]
+    current_offering_ids = _dedupe_ordered(
+        [str(row.get("offering_id") or "") for row in base["all_offerings"] if str(row.get("offering_id") or "").strip()]
+    )
 
     context = base_template_context(
         request=request,
@@ -289,15 +295,14 @@ def _render_project_section(request: Request, base: dict, section: str):
             "project_activity": base["activity"],
             "doc_types": DOC_TYPES,
             "demo_map_options": demo_map_options,
-            "attachable_vendor_options": attachable_vendor_options,
-            "all_vendor_options": all_vendor_options,
-            "attachable_offering_options": attachable_offering_options,
+            "linked_vendor_rows": linked_vendor_rows,
+            "current_offering_ids": current_offering_ids,
             "owner_update_action": f"/projects/{project_id}/owner/update",
             "add_vendor_action": f"/projects/{project_id}/vendors/add",
             "add_offering_action": f"/projects/{project_id}/offerings/add",
         },
     )
-    return request.app.state.templates.TemplateResponse("project_section.html", context)
+    return request.app.state.templates.TemplateResponse(request, "project_section.html", context)
 
 
 @router.get("")
@@ -307,12 +312,16 @@ def projects_home(request: Request, search: str = "", status: str = "all", vendo
     ensure_session_started(request, user)
     log_page_view(request, user, "Projects")
 
-    vendor_options = [{"vendor_id": "all", "label": "all"}, *_vendor_options(repo)]
-
     if status not in PROJECT_STATUSES:
         status = "all"
     if vendor != "all" and not _safe_vendor_id(repo, vendor):
         vendor = "all"
+    vendor_label = ""
+    if vendor != "all":
+        profile = repo.get_vendor_profile(vendor)
+        if not profile.empty:
+            row = profile.iloc[0].to_dict()
+            vendor_label = str(row.get("display_name") or row.get("legal_name") or vendor)
 
     rows = repo.list_all_projects(search_text=search, status=status, vendor_id=vendor).to_dict("records")
     for row in rows:
@@ -328,13 +337,12 @@ def projects_home(request: Request, search: str = "", status: str = "all", vendo
         title="Projects",
         active_nav="projects",
         extra={
-            "filters": {"search": search, "status": status, "vendor": vendor},
+            "filters": {"search": search, "status": status, "vendor": vendor, "vendor_label": vendor_label},
             "status_options": PROJECT_STATUSES,
-            "vendor_options": vendor_options,
             "rows": rows,
         },
     )
-    return request.app.state.templates.TemplateResponse("projects.html", context)
+    return request.app.state.templates.TemplateResponse(request, "projects.html", context)
 
 
 @router.get("/new")
@@ -355,6 +363,7 @@ def projects_new_form(request: Request, vendor_id: str = "", return_to: str = "/
     safe_vendor = _safe_vendor_id(repo, vendor_id)
     if safe_vendor:
         selected_vendor_ids = [safe_vendor]
+    selected_vendor_rows = _selected_vendor_rows(repo, selected_vendor_ids)
 
     context = base_template_context(
         request=request,
@@ -367,13 +376,12 @@ def projects_new_form(request: Request, vendor_id: str = "", return_to: str = "/
             "return_to": _safe_return_to(return_to),
             "project_types": PROJECT_TYPES,
             "project_statuses": PROJECT_STATUS_VALUES,
-            "offerings": _offering_options(repo),
-            "vendor_options": _vendor_options(repo),
-            "selected_vendor_ids": selected_vendor_ids,
+            "selected_vendor_rows": selected_vendor_rows,
+            "selected_offering_rows": [],
             "form_action": "/projects/new",
         },
     )
-    return request.app.state.templates.TemplateResponse("project_new.html", context)
+    return request.app.state.templates.TemplateResponse(request, "project_new.html", context)
 
 
 @router.post("/new")
@@ -390,8 +398,15 @@ async def projects_new_submit(request: Request):
         add_flash(request, "You do not have permission to create projects.", "error")
         return RedirectResponse(url=return_to, status_code=303)
 
-    linked_vendors = [str(x).strip() for x in form.getlist("linked_vendors") if str(x).strip()]
-    linked_offerings = [str(x).strip() for x in form.getlist("linked_offerings") if str(x).strip()]
+    linked_vendors = _dedupe_ordered([str(x).strip() for x in form.getlist("linked_vendors") if str(x).strip()])
+    linked_offerings = _dedupe_ordered([str(x).strip() for x in form.getlist("linked_offerings") if str(x).strip()])
+    if linked_offerings:
+        offering_rows = repo.get_offerings_by_ids(linked_offerings).to_dict("records")
+        for row in offering_rows:
+            offering_vendor_id = str(row.get("vendor_id") or "").strip()
+            if offering_vendor_id and offering_vendor_id not in linked_vendors:
+                linked_vendors.append(offering_vendor_id)
+    linked_vendors = _dedupe_ordered(linked_vendors)
     try:
         project_id = repo.create_project(
             vendor_id=None,
@@ -441,6 +456,11 @@ def project_edit_form(request: Request, project_id: str, return_to: str = "/proj
         add_flash(request, "Project not found.", "error")
         return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
 
+    project_vendor_ids = [str(x).strip() for x in (project.get("vendor_ids") or []) if str(x).strip()]
+    project_offering_ids = [str(x).strip() for x in (project.get("linked_offering_ids") or []) if str(x).strip()]
+    selected_vendor_rows = _selected_vendor_rows(repo, project_vendor_ids)
+    selected_offering_rows = _selected_offering_rows(repo, project_offering_ids)
+
     context = base_template_context(
         request=request,
         context=user,
@@ -450,15 +470,15 @@ def project_edit_form(request: Request, project_id: str, return_to: str = "/proj
             "vendor_id": str(project.get("vendor_id") or ""),
             "vendor_display_name": str(project.get("vendor_display_name") or ""),
             "project": project,
-            "offerings": _offering_options(repo),
-            "vendor_options": _vendor_options(repo),
+            "selected_vendor_rows": selected_vendor_rows,
+            "selected_offering_rows": selected_offering_rows,
             "return_to": _safe_return_to(return_to),
             "project_types": PROJECT_TYPES,
             "project_statuses": PROJECT_STATUS_VALUES,
             "form_action": f"/projects/{project_id}/edit",
         },
     )
-    return request.app.state.templates.TemplateResponse("project_edit.html", context)
+    return request.app.state.templates.TemplateResponse(request, "project_edit.html", context)
 
 
 @router.post("/{project_id}/edit")
@@ -476,8 +496,15 @@ async def project_edit_submit(request: Request, project_id: str):
         add_flash(request, "You do not have permission to edit projects.", "error")
         return RedirectResponse(url=f"/projects/{project_id}/summary?return_to={quote(return_to, safe='')}", status_code=303)
 
-    linked_vendors = [str(x).strip() for x in form.getlist("linked_vendors") if str(x).strip()]
-    linked_offerings = [str(x).strip() for x in form.getlist("linked_offerings") if str(x).strip()]
+    linked_vendors = _dedupe_ordered([str(x).strip() for x in form.getlist("linked_vendors") if str(x).strip()])
+    linked_offerings = _dedupe_ordered([str(x).strip() for x in form.getlist("linked_offerings") if str(x).strip()])
+    if linked_offerings:
+        offering_rows = repo.get_offerings_by_ids(linked_offerings).to_dict("records")
+        for row in offering_rows:
+            offering_vendor_id = str(row.get("vendor_id") or "").strip()
+            if offering_vendor_id and offering_vendor_id not in linked_vendors:
+                linked_vendors.append(offering_vendor_id)
+    linked_vendors = _dedupe_ordered(linked_vendors)
     updates = {
         "project_name": str(form.get("project_name", "")).strip(),
         "project_type": _normalize_project_type(str(form.get("project_type", "other"))),
@@ -611,13 +638,18 @@ async def project_add_vendor(request: Request, project_id: str):
     if not add_vendor_id:
         add_flash(request, "Select a vendor to add.", "error")
         return RedirectResponse(url=return_to, status_code=303)
+    safe_vendor_id = _safe_vendor_id(repo, add_vendor_id)
+    if not safe_vendor_id:
+        add_flash(request, "Selected vendor was not found.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    add_vendor_id = safe_vendor_id
 
     project = repo.get_project_by_id(project_id)
     if project is None:
         add_flash(request, "Project not found.", "error")
         return RedirectResponse(url=return_to, status_code=303)
 
-    vendor_ids = [str(x) for x in (project.get("vendor_ids") or []) if str(x).strip()]
+    vendor_ids = _dedupe_ordered([str(x) for x in (project.get("vendor_ids") or []) if str(x).strip()])
     if add_vendor_id not in vendor_ids:
         vendor_ids.append(add_vendor_id)
     try:
@@ -679,8 +711,16 @@ async def project_add_offering(request: Request, project_id: str):
         add_flash(request, "Project not found.", "error")
         return RedirectResponse(url=return_to, status_code=303)
 
-    vendor_ids = [str(x) for x in (project.get("vendor_ids") or []) if str(x).strip()]
-    offering_ids = [str(x) for x in (project.get("linked_offering_ids") or []) if str(x).strip()]
+    offering_rows = repo.get_offerings_by_ids([add_offering_id]).to_dict("records")
+    if not offering_rows:
+        add_flash(request, "Selected offering was not found.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    offering_vendor_id = str(offering_rows[0].get("vendor_id") or "").strip()
+
+    vendor_ids = _dedupe_ordered([str(x) for x in (project.get("vendor_ids") or []) if str(x).strip()])
+    offering_ids = _dedupe_ordered([str(x) for x in (project.get("linked_offering_ids") or []) if str(x).strip()])
+    if offering_vendor_id and offering_vendor_id not in vendor_ids:
+        vendor_ids.append(offering_vendor_id)
     if add_offering_id not in offering_ids:
         offering_ids.append(add_offering_id)
 

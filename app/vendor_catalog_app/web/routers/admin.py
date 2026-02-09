@@ -45,7 +45,7 @@ def admin(request: Request):
             "scope_rows": repo.list_scope_grants().to_dict("records"),
         },
     )
-    return request.app.state.templates.TemplateResponse("admin.html", context)
+    return request.app.state.templates.TemplateResponse(request, "admin.html", context)
 
 
 @router.post("/grant-role")

@@ -24,6 +24,10 @@ Databricks-compatible Vendor Catalog application with a complete `twvendor` data
 - Local DB mode (`TVENDOR_USE_LOCAL_DB=true`): SQLite-backed local schema
 - Databricks mode: SQL warehouse + Unity Catalog schema (`<catalog>.twvendor`)
 
+Databricks schema bootstrap is intentionally manual (security boundary). Use:
+- Environment config: `app/config/tvendor.env`
+- Bootstrap SQL: `app/vendor_catalog_app/sql/bootstrap/001_create_databricks_schema.sql`
+
 ## Quick Start
 1. Install dependencies:
 ```bash

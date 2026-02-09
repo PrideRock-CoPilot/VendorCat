@@ -12,7 +12,7 @@
 </div>
 
 <section class="card section-divider">
-  <form method="post" action="{{ form_action }}" class="grid grid-3">
+  <form method="post" action="{{ form_action }}" class="grid grid-3" data-project-link-picker>
     <input type="hidden" name="return_to" value="{{ return_to }}">
     <label>Project Name
       <input type="text" name="project_name" value="{{ project.project_name }}" required>
@@ -37,51 +37,204 @@
     <label class="full">Description
       <textarea name="description" rows="4">{{ project.description or '' }}</textarea>
     </label>
-    <label class="full">Linked Vendors
-      <select name="linked_vendors" multiple size="6">
-        {% for vendor in vendor_options %}
-        <option value="{{ vendor.vendor_id }}" {% if vendor.vendor_id in project.vendor_ids %}selected{% endif %}>
-          {{ vendor.label }} ({{ vendor.vendor_id }})
-        </option>
-        {% endfor %}
-      </select>
+
+    <div class="full">
+      <label>Linked Vendors</label>
+      <div class="typeahead-block">
+        <input type="text" placeholder="Search vendors..." autocomplete="off" data-vendor-search>
+        <div class="typeahead-results hidden" data-vendor-results></div>
+      </div>
+      <div class="chip-list" data-vendor-selected></div>
+      <div data-vendor-hidden-inputs></div>
       <small class="muted">Projects can be attached to multiple vendors.</small>
-    </label>
-    <label class="full">Linked Offerings
-      <select name="linked_offerings" multiple size="6" data-filtered-offerings>
-        {% for offering in offerings %}
-        <option value="{{ offering.offering_id }}" data-vendor-id="{{ offering.vendor_id }}" {% if offering.offering_id in project.linked_offering_ids %}selected{% endif %}>
-          {{ offering.offering_name }} ({{ offering.offering_id }}) - {{ offering.vendor_display_name }}
-        </option>
-        {% endfor %}
-      </select>
-    </label>
+    </div>
+
+    <div class="full">
+      <label>Linked Offerings</label>
+      <div class="typeahead-block">
+        <input type="text" placeholder="Search offerings..." autocomplete="off" data-offering-search>
+        <div class="typeahead-results hidden" data-offering-results></div>
+      </div>
+      <div class="chip-list" data-offering-selected></div>
+      <div data-offering-hidden-inputs></div>
+      <small class="muted">Selecting offerings auto-attaches their vendor(s).</small>
+    </div>
+
     <label class="full">Reason
       <input type="text" name="reason" placeholder="Why this update is needed" required>
     </label>
     <div><button type="submit">Save Project</button></div>
   </form>
 </section>
+
+<script id="project-initial-vendors" type="application/json">{{ selected_vendor_rows|tojson }}</script>
+<script id="project-initial-offerings" type="application/json">{{ selected_offering_rows|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
 <script>
 (() => {
-  const vendorSelect = document.querySelector('select[name="linked_vendors"]');
-  const offeringSelect = document.querySelector('[data-filtered-offerings]');
-  if (!vendorSelect || !offeringSelect) return;
+  const root = document.querySelector("[data-project-link-picker]");
+  if (!root) return;
 
-  const applyFilter = () => {
-    const selectedVendors = new Set(Array.from(vendorSelect.selectedOptions).map((opt) => opt.value));
-    const filterActive = selectedVendors.size > 0;
-    Array.from(offeringSelect.options).forEach((opt) => {
-      const vendorId = opt.getAttribute("data-vendor-id") || "";
-      const keep = !filterActive || selectedVendors.has(vendorId);
-      opt.hidden = !keep;
-      if (!keep) {
-        opt.selected = false;
-      }
-    });
+  const parseJson = (id) => {
+    const node = document.getElementById(id);
+    if (!node) return [];
+    try {
+      const parsed = JSON.parse(node.textContent || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
   };
-  vendorSelect.addEventListener("change", applyFilter);
-  applyFilter();
+
+  function buildMultiPicker(config) {
+    const state = new Map();
+    const input = config.input;
+    const results = config.results;
+    const selected = config.selected;
+    const hidden = config.hidden;
+    let timer = null;
+
+    const hideResults = () => {
+      results.innerHTML = "";
+      results.classList.add("hidden");
+    };
+
+    const syncHidden = () => {
+      hidden.innerHTML = "";
+      state.forEach((item, key) => {
+        const hiddenInput = document.createElement("input");
+        hiddenInput.type = "hidden";
+        hiddenInput.name = config.hiddenName;
+        hiddenInput.value = key;
+        hidden.appendChild(hiddenInput);
+      });
+    };
+
+    const renderSelected = () => {
+      selected.innerHTML = "";
+      state.forEach((item, key) => {
+        const chip = document.createElement("span");
+        chip.className = "item-chip";
+        const label = document.createElement("span");
+        label.textContent = config.renderLabel(item);
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "chip-remove";
+        remove.textContent = "x";
+        remove.addEventListener("click", () => {
+          state.delete(key);
+          renderSelected();
+          syncHidden();
+          if (config.onChange) config.onChange(item, "remove");
+        });
+        chip.appendChild(label);
+        chip.appendChild(remove);
+        selected.appendChild(chip);
+      });
+    };
+
+    const addItem = (item) => {
+      const key = config.getId(item);
+      if (!key || state.has(key)) return;
+      state.set(key, item);
+      renderSelected();
+      syncHidden();
+      if (config.onChange) config.onChange(item, "add");
+    };
+
+    const search = async () => {
+      const query = (input.value || "").trim();
+      if (!query) {
+        hideResults();
+        return;
+      }
+      const items = await config.fetchItems(query);
+      const filtered = items.filter((item) => {
+        const key = config.getId(item);
+        return key && !state.has(key);
+      });
+      results.innerHTML = "";
+      if (!filtered.length) {
+        hideResults();
+        return;
+      }
+      filtered.forEach((item) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "typeahead-option";
+        btn.textContent = config.renderLabel(item);
+        btn.addEventListener("click", () => {
+          addItem(item);
+          input.value = "";
+          hideResults();
+        });
+        results.appendChild(btn);
+      });
+      results.classList.remove("hidden");
+    };
+
+    input.addEventListener("input", () => {
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(search, 180);
+    });
+    document.addEventListener("click", (event) => {
+      if (!results.contains(event.target) && event.target !== input) hideResults();
+    });
+
+    config.initial.forEach(addItem);
+    return {
+      add: addItem,
+      ids: () => Array.from(state.keys()),
+    };
+  }
+
+  const vendorPicker = buildMultiPicker({
+    input: root.querySelector("[data-vendor-search]"),
+    results: root.querySelector("[data-vendor-results]"),
+    selected: root.querySelector("[data-vendor-selected]"),
+    hidden: root.querySelector("[data-vendor-hidden-inputs]"),
+    hiddenName: "linked_vendors",
+    initial: parseJson("project-initial-vendors"),
+    getId: (item) => (item.vendor_id || "").trim(),
+    renderLabel: (item) => `${item.label || item.vendor_id} (${item.vendor_id})`,
+    fetchItems: async (q) => {
+      const response = await fetch(`/api/vendors/search?q=${encodeURIComponent(q)}&limit=15`);
+      if (!response.ok) return [];
+      const payload = await response.json();
+      return payload.items || [];
+    },
+  });
+
+  buildMultiPicker({
+    input: root.querySelector("[data-offering-search]"),
+    results: root.querySelector("[data-offering-results]"),
+    selected: root.querySelector("[data-offering-selected]"),
+    hidden: root.querySelector("[data-offering-hidden-inputs]"),
+    hiddenName: "linked_offerings",
+    initial: parseJson("project-initial-offerings"),
+    getId: (item) => (item.offering_id || "").trim(),
+    renderLabel: (item) => item.label || item.offering_id || "",
+    fetchItems: async (q) => {
+      const vendorIds = vendorPicker ? vendorPicker.ids() : [];
+      const params = new URLSearchParams({ q, limit: "15" });
+      if (vendorIds.length === 1) params.set("vendor_id", vendorIds[0]);
+      const response = await fetch(`/api/offerings/search?${params.toString()}`);
+      if (!response.ok) return [];
+      const payload = await response.json();
+      return payload.items || [];
+    },
+    onChange: (item, action) => {
+      if (action !== "add" || !vendorPicker) return;
+      const vendorId = (item.vendor_id || "").trim();
+      if (!vendorId) return;
+      const vendorLabel = (item.vendor_display_name || vendorId).trim();
+      if (!vendorPicker.ids().includes(vendorId)) {
+        vendorPicker.add({ vendor_id: vendorId, label: vendorLabel });
+      }
+    },
+  });
 })();
 </script>
 {% endblock %}

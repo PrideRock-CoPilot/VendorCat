@@ -39,10 +39,27 @@ set TVENDOR_LOCAL_DB_PATH=app\local_db\twvendor_local.db
 ```bat
 set TVENDOR_USE_MOCK=false
 set TVENDOR_USE_LOCAL_DB=false
+set TVENDOR_CATALOG=vendor_dev
+set TVENDOR_SCHEMA=twvendor
 set DATABRICKS_SERVER_HOSTNAME=<workspace-host>
 set DATABRICKS_HTTP_PATH=<sql-warehouse-http-path>
 set DATABRICKS_TOKEN=<pat>
 ```
+
+For security, schema bootstrap is a manual step. The app does not create schemas/tables.
+
+## Databricks Schema Bootstrap (Manual)
+1. Configure environment values in:
+```text
+app/config/tvendor.env
+```
+2. Run this SQL manually in Databricks SQL editor (or approved deployment pipeline):
+```text
+app/vendor_catalog_app/sql/bootstrap/001_create_databricks_schema.sql
+```
+3. Start the app after bootstrap is complete.
+
+If required tables are missing or inaccessible, startup fails with a schema/bootstrap error.
 
 ## Local Start
 1. Install dependencies:

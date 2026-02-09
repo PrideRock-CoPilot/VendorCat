@@ -35,7 +35,7 @@ def demos(request: Request):
             "today": date.today().isoformat(),
         },
     )
-    return request.app.state.templates.TemplateResponse("demos.html", context)
+    return request.app.state.templates.TemplateResponse(request, "demos.html", context)
 
 
 @router.post("")
