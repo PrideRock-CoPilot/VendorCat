@@ -104,6 +104,8 @@ CREATE TABLE IF NOT EXISTS {fq_schema}.core_vendor_offering (
   vendor_id STRING NOT NULL,
   offering_name STRING NOT NULL,
   offering_type STRING,
+  lob STRING,
+  service_type STRING,
   lifecycle_state STRING NOT NULL,
   criticality_tier STRING,
   updated_at TIMESTAMP NOT NULL,
@@ -344,6 +346,21 @@ CREATE TABLE IF NOT EXISTS {fq_schema}.app_user_settings (
   updated_by STRING NOT NULL
 ) USING DELTA;
 
+CREATE TABLE IF NOT EXISTS {fq_schema}.app_lookup_option (
+  option_id STRING NOT NULL,
+  lookup_type STRING NOT NULL,
+  option_code STRING NOT NULL,
+  option_label STRING NOT NULL,
+  sort_order INT NOT NULL,
+  active_flag BOOLEAN NOT NULL,
+  valid_from_ts TIMESTAMP NOT NULL,
+  valid_to_ts TIMESTAMP,
+  is_current BOOLEAN NOT NULL,
+  deleted_flag BOOLEAN NOT NULL,
+  updated_at TIMESTAMP NOT NULL,
+  updated_by STRING NOT NULL
+) USING DELTA;
+
 CREATE TABLE IF NOT EXISTS {fq_schema}.app_usage_log (
   usage_event_id STRING NOT NULL,
   user_principal STRING NOT NULL,
@@ -421,6 +438,69 @@ CREATE TABLE IF NOT EXISTS {fq_schema}.app_project_note (
   project_id STRING NOT NULL,
   vendor_id STRING NOT NULL,
   note_text STRING NOT NULL,
+  active_flag BOOLEAN NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  created_by STRING NOT NULL,
+  updated_at TIMESTAMP NOT NULL,
+  updated_by STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS {fq_schema}.app_offering_profile (
+  offering_id STRING NOT NULL,
+  vendor_id STRING NOT NULL,
+  estimated_monthly_cost DOUBLE,
+  implementation_notes STRING,
+  data_sent STRING,
+  data_received STRING,
+  integration_method STRING,
+  inbound_method STRING,
+  inbound_landing_zone STRING,
+  inbound_identifiers STRING,
+  inbound_reporting_layer STRING,
+  inbound_ingestion_notes STRING,
+  outbound_method STRING,
+  outbound_creation_process STRING,
+  outbound_delivery_process STRING,
+  outbound_responsible_owner STRING,
+  outbound_notes STRING,
+  updated_at TIMESTAMP NOT NULL,
+  updated_by STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS {fq_schema}.app_offering_data_flow (
+  data_flow_id STRING NOT NULL,
+  offering_id STRING NOT NULL,
+  vendor_id STRING NOT NULL,
+  direction STRING NOT NULL,
+  flow_name STRING NOT NULL,
+  method STRING,
+  data_description STRING,
+  endpoint_details STRING,
+  identifiers STRING,
+  reporting_layer STRING,
+  creation_process STRING,
+  delivery_process STRING,
+  owner_user_principal STRING,
+  notes STRING,
+  active_flag BOOLEAN NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  created_by STRING NOT NULL,
+  updated_at TIMESTAMP NOT NULL,
+  updated_by STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS {fq_schema}.app_offering_ticket (
+  ticket_id STRING NOT NULL,
+  offering_id STRING NOT NULL,
+  vendor_id STRING NOT NULL,
+  ticket_system STRING,
+  external_ticket_id STRING,
+  title STRING NOT NULL,
+  status STRING NOT NULL,
+  priority STRING,
+  opened_date DATE,
+  closed_date DATE,
+  notes STRING,
   active_flag BOOLEAN NOT NULL,
   created_at TIMESTAMP NOT NULL,
   created_by STRING NOT NULL,

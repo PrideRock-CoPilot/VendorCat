@@ -1,9 +1,16 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Workflow Queue</h1>
+<h1>Pending Approvals</h1>
 
 <section class="card section-divider">
-  <form method="get" action="/workflows" class="inline-form">
+  <form method="get" action="/workflows" class="grid grid-5 form-grid">
+    <label>Queue
+      <select name="queue">
+        {% for value in queue_options %}
+        <option value="{{ value }}" {% if value == selected_queue %}selected{% endif %}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </label>
     <label>Status
       <select name="status">
         {% for value in status_options %}
@@ -11,7 +18,34 @@
         {% endfor %}
       </select>
     </label>
-    <div><button type="submit">Filter</button></div>
+    <label>LOB
+      <select name="lob">
+        <option value="all" {% if selected_lob == 'all' %}selected{% endif %}>all</option>
+        {% for value in lob_options %}
+        <option value="{{ value }}" {% if value == selected_lob %}selected{% endif %}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Requester
+      <select name="requestor">
+        <option value="all" {% if selected_requestor == 'all' %}selected{% endif %}>all</option>
+        {% for value in requestor_options %}
+        <option value="{{ value }}" {% if value == selected_requestor %}selected{% endif %}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Assignee
+      <select name="assignee">
+        <option value="all" {% if selected_assignee == 'all' %}selected{% endif %}>all</option>
+        {% for value in assignee_options %}
+        <option value="{{ value }}" {% if value == selected_assignee %}selected{% endif %}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="full">People Search
+      <input type="text" name="people" value="{{ selected_people }}" placeholder="Filter by person, type, vendor, or notes">
+    </label>
+    <div class="form-actions"><button type="submit">Apply Filters</button></div>
   </form>
 </section>
 
@@ -25,42 +59,30 @@
         <th>Requester</th>
         <th>Status</th>
         <th>Approval Level</th>
+        <th>LOB</th>
+        <th>Assignee</th>
+        <th>Summary</th>
         <th>Submitted</th>
-        <th>Action</th>
       </tr>
     </thead>
     <tbody>
       {% for row in rows %}
       <tr>
-        <td>{{ row.change_request_id }}</td>
+        <td>
+          <a href="/workflows/{{ row.change_request_id }}?return_to={{ current_view_url_encoded }}">{{ row.change_request_id }}</a>
+        </td>
         <td>{{ row._vendor_display }}</td>
         <td>{{ row.change_type }}</td>
         <td>{{ row.requestor_user_principal }}</td>
         <td>{{ row.status }}</td>
         <td>{{ row._approval_label }}</td>
+        <td>{{ row._lob_display }}</td>
+        <td>{{ row._assignee }}</td>
+        <td>{{ row._summary }}</td>
         <td>{{ row.submitted_at }}</td>
-        <td>
-          {% if row._can_decide and row.status not in ['approved', 'rejected'] and not locked_mode %}
-          <form method="post" action="/workflows/{{ row.change_request_id }}/decision" class="inline-form">
-            <input type="hidden" name="return_to" value="/workflows?status={{ selected_status }}">
-            <select name="decision">
-              <option value="approved">approve</option>
-              <option value="rejected">reject</option>
-            </select>
-            <input type="text" name="notes" placeholder="notes (optional)">
-            <button type="submit">Apply</button>
-          </form>
-          {% elif locked_mode %}
-          <span class="muted">locked</span>
-          {% elif row.status in ['approved', 'rejected'] %}
-          <span class="muted">final</span>
-          {% else %}
-          <span class="muted">insufficient level</span>
-          {% endif %}
-        </td>
       </tr>
       {% else %}
-      <tr><td colspan="8">No workflow requests.</td></tr>
+      <tr><td colspan="10">No approval requests.</td></tr>
       {% endfor %}
     </tbody>
   </table>

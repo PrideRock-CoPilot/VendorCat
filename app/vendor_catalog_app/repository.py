@@ -17,7 +17,10 @@ from vendor_catalog_app import mock_data
 from vendor_catalog_app.security import (
     CHANGE_APPROVAL_LEVELS,
     ROLE_ADMIN,
+    ROLE_APPROVER,
     ROLE_CHOICES,
+    ROLE_STEWARD,
+    ROLE_SYSTEM_ADMIN,
     ROLE_VIEWER,
     default_change_permissions_for_role,
     default_role_definitions,
@@ -26,26 +29,105 @@ from vendor_catalog_app.security import (
 
 UNKNOWN_USER_PRINCIPAL = "unknown_user"
 GLOBAL_CHANGE_VENDOR_ID = "__global__"
-OWNER_ROLE_CHOICES = {
-    "application_owner",
+LOOKUP_TYPE_DOC_SOURCE = "doc_source"
+LOOKUP_TYPE_DOC_TAG = "doc_tag"
+LOOKUP_TYPE_OWNER_ROLE = "owner_role"
+LOOKUP_TYPE_ASSIGNMENT_TYPE = "assignment_type"
+LOOKUP_TYPE_CONTACT_TYPE = "contact_type"
+LOOKUP_TYPE_PROJECT_TYPE = "project_type"
+LOOKUP_TYPE_OFFERING_TYPE = "offering_type"
+LOOKUP_TYPE_OFFERING_LOB = "offering_lob"
+LOOKUP_TYPE_OFFERING_SERVICE_TYPE = "offering_service_type"
+LOOKUP_TYPE_WORKFLOW_STATUS = "workflow_status"
+SUPPORTED_LOOKUP_TYPES = {
+    LOOKUP_TYPE_DOC_SOURCE,
+    LOOKUP_TYPE_DOC_TAG,
+    LOOKUP_TYPE_OWNER_ROLE,
+    LOOKUP_TYPE_ASSIGNMENT_TYPE,
+    LOOKUP_TYPE_CONTACT_TYPE,
+    LOOKUP_TYPE_PROJECT_TYPE,
+    LOOKUP_TYPE_OFFERING_TYPE,
+    LOOKUP_TYPE_OFFERING_LOB,
+    LOOKUP_TYPE_OFFERING_SERVICE_TYPE,
+    LOOKUP_TYPE_WORKFLOW_STATUS,
+}
+DEFAULT_DOC_SOURCE_OPTIONS = [
+    "sharepoint",
+    "onedrive",
+    "confluence",
+    "google_drive",
+    "box",
+    "dropbox",
+    "github",
+    "other",
+]
+DEFAULT_DOC_TAG_OPTIONS = [
+    "contract",
+    "msa",
+    "nda",
+    "sow",
+    "invoice",
+    "renewal",
+    "security",
+    "architecture",
+    "runbook",
+    "compliance",
+    "rfp",
+    "poc",
+    "notes",
+    "operations",
+    "folder",
+]
+DEFAULT_OWNER_ROLE_OPTIONS = [
     "business_owner",
     "executive_owner",
-    "legacy_owner",
-    "platform_owner",
-    "security_owner",
     "service_owner",
     "technical_owner",
-}
-ASSIGNMENT_TYPE_CHOICES = {"consumer", "primary", "secondary"}
-CONTACT_TYPE_CHOICES = {
-    "account_manager",
+    "security_owner",
+    "application_owner",
+    "platform_owner",
+    "legacy_owner",
+]
+DEFAULT_ASSIGNMENT_TYPE_OPTIONS = ["consumer", "primary", "secondary"]
+DEFAULT_CONTACT_TYPE_OPTIONS = [
     "business",
-    "customer_success",
-    "escalation",
-    "product_manager",
-    "security_specialist",
+    "account_manager",
     "support",
-}
+    "escalation",
+    "security_specialist",
+    "customer_success",
+    "product_manager",
+]
+DEFAULT_PROJECT_TYPE_OPTIONS = ["rfp", "poc", "renewal", "implementation", "other"]
+DEFAULT_WORKFLOW_STATUS_OPTIONS = ["submitted", "in_review", "approved", "rejected"]
+DEFAULT_OFFERING_TYPE_CHOICES = [
+    ("saas", "SaaS"),
+    ("cloud", "Cloud"),
+    ("paas", "PaaS"),
+    ("security", "Security"),
+    ("data", "Data"),
+    ("integration", "Integration"),
+    ("other", "Other"),
+]
+DEFAULT_OFFERING_LOB_CHOICES = [
+    ("enterprise", "Enterprise"),
+    ("finance", "Finance"),
+    ("hr", "HR"),
+    ("it", "IT"),
+    ("operations", "Operations"),
+    ("sales", "Sales"),
+    ("security", "Security"),
+]
+DEFAULT_OFFERING_SERVICE_TYPE_CHOICES = [
+    ("application", "Application"),
+    ("infrastructure", "Infrastructure"),
+    ("integration", "Integration"),
+    ("managed_service", "Managed Service"),
+    ("platform", "Platform"),
+    ("security", "Security"),
+    ("support", "Support"),
+    ("other", "Other"),
+]
 
 
 class SchemaBootstrapRequiredError(RuntimeError):
@@ -57,9 +139,14 @@ class VendorRepository:
         self.config = config
         self.client = DatabricksSQLClient(config)
         self._runtime_tables_ensured = False
+        self._local_lookup_table_ensured = False
+        self._local_offering_columns_ensured = False
+        self._local_offering_extension_tables_ensured = False
         self._mock_role_overrides: dict[str, set[str]] = {}
+        self._mock_scope_overrides: list[dict[str, Any]] = []
         self._mock_role_definitions: dict[str, dict[str, Any]] = self._default_role_definition_rows()
         self._mock_role_permissions: dict[str, set[str]] = self._default_role_permissions_by_role()
+        self._mock_lookup_options: list[dict[str, Any]] = self._default_lookup_option_rows()
         self._mock_user_directory: dict[str, dict[str, str]] = {}
         self._mock_user_settings: dict[tuple[str, str], dict[str, Any]] = {}
         self._mock_usage_events: list[dict[str, Any]] = []
@@ -90,6 +177,13 @@ class VendorRepository:
         self._mock_removed_project_demo_ids: set[str] = set()
         self._mock_new_project_notes: list[dict[str, Any]] = []
         self._mock_removed_project_note_ids: set[str] = set()
+        self._mock_offering_profile_overrides: dict[str, dict[str, Any]] = {}
+        self._mock_new_offering_data_flows: list[dict[str, Any]] = []
+        self._mock_offering_data_flow_overrides: dict[str, dict[str, Any]] = {}
+        self._mock_removed_offering_data_flow_ids: set[str] = set()
+        self._mock_new_offering_tickets: list[dict[str, Any]] = []
+        self._mock_offering_ticket_overrides: dict[str, dict[str, Any]] = {}
+        self._mock_new_offering_notes: list[dict[str, Any]] = []
         self._mock_new_doc_links: list[dict[str, Any]] = []
         self._mock_doc_link_overrides: dict[str, dict[str, Any]] = {}
         self._mock_removed_doc_link_ids: set[str] = set()
@@ -394,6 +488,276 @@ class VendorRepository:
         return {role_code: default_change_permissions_for_role(role_code) for role_code in ROLE_CHOICES}
 
     @staticmethod
+    def _lookup_label_from_code(option_code: str) -> str:
+        return re.sub(r"\s+", " ", str(option_code or "").replace("_", " ")).strip().title()
+
+    @staticmethod
+    def _default_lookup_option_rows() -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        now = datetime(1900, 1, 1, tzinfo=timezone.utc).isoformat()
+        open_end = datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc).isoformat()
+        groups: dict[str, list[str | tuple[str, str]]] = {
+            LOOKUP_TYPE_DOC_SOURCE: DEFAULT_DOC_SOURCE_OPTIONS,
+            LOOKUP_TYPE_DOC_TAG: DEFAULT_DOC_TAG_OPTIONS,
+            LOOKUP_TYPE_OWNER_ROLE: DEFAULT_OWNER_ROLE_OPTIONS,
+            LOOKUP_TYPE_ASSIGNMENT_TYPE: DEFAULT_ASSIGNMENT_TYPE_OPTIONS,
+            LOOKUP_TYPE_CONTACT_TYPE: DEFAULT_CONTACT_TYPE_OPTIONS,
+            LOOKUP_TYPE_PROJECT_TYPE: DEFAULT_PROJECT_TYPE_OPTIONS,
+            LOOKUP_TYPE_WORKFLOW_STATUS: DEFAULT_WORKFLOW_STATUS_OPTIONS,
+            LOOKUP_TYPE_OFFERING_TYPE: list(DEFAULT_OFFERING_TYPE_CHOICES),
+            LOOKUP_TYPE_OFFERING_LOB: list(DEFAULT_OFFERING_LOB_CHOICES),
+            LOOKUP_TYPE_OFFERING_SERVICE_TYPE: list(DEFAULT_OFFERING_SERVICE_TYPE_CHOICES),
+        }
+        for lookup_type, options in groups.items():
+            for sort_order, entry in enumerate(options, start=1):
+                if isinstance(entry, tuple):
+                    raw_code, raw_label = entry
+                else:
+                    raw_code, raw_label = entry, None
+                normalized_code = str(raw_code).strip().lower()
+                if not normalized_code:
+                    continue
+                label_value = str(raw_label or VendorRepository._lookup_label_from_code(normalized_code)).strip()
+                if not label_value:
+                    label_value = VendorRepository._lookup_label_from_code(normalized_code)
+                rows.append(
+                    {
+                    "option_id": f"lkp-{lookup_type}-{normalized_code}",
+                    "lookup_type": lookup_type,
+                    "option_code": normalized_code,
+                    "option_label": label_value,
+                    "sort_order": sort_order,
+                    "active_flag": True,
+                    "valid_from_ts": now,
+                    "valid_to_ts": open_end,
+                    "is_current": True,
+                    "deleted_flag": False,
+                    "updated_at": None,
+                    "updated_by": "bootstrap",
+                    }
+                )
+        return rows
+
+    @staticmethod
+    def _normalize_lookup_type(value: str) -> str:
+        lookup_type = str(value or "").strip().lower()
+        if lookup_type not in SUPPORTED_LOOKUP_TYPES:
+            raise ValueError(f"Lookup type must be one of: {', '.join(sorted(SUPPORTED_LOOKUP_TYPES))}")
+        return lookup_type
+
+    @staticmethod
+    def _normalize_lookup_code(value: str) -> str:
+        option_code = re.sub(r"\s+", "_", str(value or "").strip().lower())
+        option_code = re.sub(r"[^a-z0-9_-]", "_", option_code)
+        option_code = re.sub(r"_+", "_", option_code).strip("_")
+        if not option_code:
+            raise ValueError("Lookup code is required.")
+        return option_code
+
+    def _ensure_local_lookup_option_table(self) -> None:
+        if not self.config.use_local_db or self.config.use_mock:
+            return
+        if self._local_lookup_table_ensured:
+            return
+        self.client.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_lookup_option (
+              option_id TEXT PRIMARY KEY,
+              lookup_type TEXT NOT NULL,
+              option_code TEXT NOT NULL,
+              option_label TEXT NOT NULL,
+              sort_order INTEGER NOT NULL DEFAULT 100,
+              active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+              valid_from_ts TEXT NOT NULL,
+              valid_to_ts TEXT,
+              is_current INTEGER NOT NULL DEFAULT 1 CHECK (is_current IN (0, 1)),
+              deleted_flag INTEGER NOT NULL DEFAULT 0 CHECK (deleted_flag IN (0, 1)),
+              updated_at TEXT NOT NULL,
+              updated_by TEXT NOT NULL
+            )
+            """
+        )
+        table_info = self.client.query("PRAGMA table_info(app_lookup_option)")
+        present = {str(v).strip().lower() for v in table_info.get("name", pd.Series(dtype="object")).tolist()}
+        if "valid_from_ts" not in present:
+            self.client.execute("ALTER TABLE app_lookup_option ADD COLUMN valid_from_ts TEXT")
+        if "valid_to_ts" not in present:
+            self.client.execute("ALTER TABLE app_lookup_option ADD COLUMN valid_to_ts TEXT")
+        if "is_current" not in present:
+            self.client.execute("ALTER TABLE app_lookup_option ADD COLUMN is_current INTEGER DEFAULT 1")
+        if "deleted_flag" not in present:
+            self.client.execute("ALTER TABLE app_lookup_option ADD COLUMN deleted_flag INTEGER DEFAULT 0")
+
+        now = self._now().isoformat()
+        open_end = datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc).isoformat()
+        self.client.execute(
+            """
+            UPDATE app_lookup_option
+            SET
+              valid_from_ts = COALESCE(valid_from_ts, updated_at, ?),
+              valid_to_ts = CASE
+                WHEN COALESCE(valid_to_ts, '') = '' AND COALESCE(is_current, 1) IN (1, '1', 'true', 'TRUE') THEN ?
+                WHEN COALESCE(valid_to_ts, '') = '' THEN COALESCE(updated_at, ?)
+                ELSE valid_to_ts
+              END,
+              is_current = CASE
+                WHEN COALESCE(is_current, 1) IN (1, '1', 'true', 'TRUE') THEN 1
+                ELSE 0
+              END,
+              deleted_flag = CASE
+                WHEN COALESCE(deleted_flag, 0) IN (1, '1', 'true', 'TRUE') THEN 1
+                WHEN COALESCE(active_flag, 1) IN (0, '0', 'false', 'FALSE') THEN 1
+                ELSE 0
+              END
+            """
+            ,
+            (now, open_end, now),
+        )
+        self.client.execute(
+            "CREATE INDEX IF NOT EXISTS idx_app_lookup_type_code ON app_lookup_option(lookup_type, option_code)"
+        )
+        self.client.execute(
+            "CREATE INDEX IF NOT EXISTS idx_app_lookup_type_sort ON app_lookup_option(lookup_type, active_flag, sort_order)"
+        )
+        self.client.execute(
+            "CREATE INDEX IF NOT EXISTS idx_app_lookup_type_current ON app_lookup_option(lookup_type, is_current, sort_order)"
+        )
+        self.client.execute(
+            "CREATE INDEX IF NOT EXISTS idx_app_lookup_type_deleted ON app_lookup_option(lookup_type, deleted_flag, sort_order)"
+        )
+        self._local_lookup_table_ensured = True
+
+    def _ensure_local_offering_columns(self) -> None:
+        if not self.config.use_local_db or self.config.use_mock:
+            return
+        if self._local_offering_columns_ensured:
+            return
+        try:
+            table_info = self.client.query("PRAGMA table_info(core_vendor_offering)")
+        except Exception:
+            return
+        if table_info.empty or "name" not in table_info.columns:
+            return
+        present = {str(v).strip().lower() for v in table_info["name"].tolist() if str(v).strip()}
+        if "lob" not in present:
+            self.client.execute("ALTER TABLE core_vendor_offering ADD COLUMN lob TEXT")
+        if "service_type" not in present:
+            self.client.execute("ALTER TABLE core_vendor_offering ADD COLUMN service_type TEXT")
+        self._local_offering_columns_ensured = True
+
+    def _ensure_local_offering_extension_tables(self) -> None:
+        if not self.config.use_local_db or self.config.use_mock:
+            return
+        if self._local_offering_extension_tables_ensured:
+            return
+        self.client.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_offering_profile (
+              offering_id TEXT PRIMARY KEY,
+              vendor_id TEXT NOT NULL,
+              estimated_monthly_cost REAL,
+              implementation_notes TEXT,
+              data_sent TEXT,
+              data_received TEXT,
+              integration_method TEXT,
+              inbound_method TEXT,
+              inbound_landing_zone TEXT,
+              inbound_identifiers TEXT,
+              inbound_reporting_layer TEXT,
+              inbound_ingestion_notes TEXT,
+              outbound_method TEXT,
+              outbound_creation_process TEXT,
+              outbound_delivery_process TEXT,
+              outbound_responsible_owner TEXT,
+              outbound_notes TEXT,
+              updated_at TEXT NOT NULL,
+              updated_by TEXT NOT NULL
+            )
+            """
+        )
+        profile_table_info = self.client.query("PRAGMA table_info(app_offering_profile)")
+        profile_present = {
+            str(v).strip().lower() for v in profile_table_info.get("name", pd.Series(dtype="object")).tolist()
+        }
+        if "inbound_method" not in profile_present:
+            self.client.execute("ALTER TABLE app_offering_profile ADD COLUMN inbound_method TEXT")
+        if "inbound_landing_zone" not in profile_present:
+            self.client.execute("ALTER TABLE app_offering_profile ADD COLUMN inbound_landing_zone TEXT")
+        if "inbound_identifiers" not in profile_present:
+            self.client.execute("ALTER TABLE app_offering_profile ADD COLUMN inbound_identifiers TEXT")
+        if "inbound_reporting_layer" not in profile_present:
+            self.client.execute("ALTER TABLE app_offering_profile ADD COLUMN inbound_reporting_layer TEXT")
+        if "inbound_ingestion_notes" not in profile_present:
+            self.client.execute("ALTER TABLE app_offering_profile ADD COLUMN inbound_ingestion_notes TEXT")
+        if "outbound_method" not in profile_present:
+            self.client.execute("ALTER TABLE app_offering_profile ADD COLUMN outbound_method TEXT")
+        if "outbound_creation_process" not in profile_present:
+            self.client.execute("ALTER TABLE app_offering_profile ADD COLUMN outbound_creation_process TEXT")
+        if "outbound_delivery_process" not in profile_present:
+            self.client.execute("ALTER TABLE app_offering_profile ADD COLUMN outbound_delivery_process TEXT")
+        if "outbound_responsible_owner" not in profile_present:
+            self.client.execute("ALTER TABLE app_offering_profile ADD COLUMN outbound_responsible_owner TEXT")
+        if "outbound_notes" not in profile_present:
+            self.client.execute("ALTER TABLE app_offering_profile ADD COLUMN outbound_notes TEXT")
+        self.client.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_offering_ticket (
+              ticket_id TEXT PRIMARY KEY,
+              offering_id TEXT NOT NULL,
+              vendor_id TEXT NOT NULL,
+              ticket_system TEXT,
+              external_ticket_id TEXT,
+              title TEXT NOT NULL,
+              status TEXT NOT NULL,
+              priority TEXT,
+              opened_date TEXT,
+              closed_date TEXT,
+              notes TEXT,
+              active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+              created_at TEXT NOT NULL,
+              created_by TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              updated_by TEXT NOT NULL
+            )
+            """
+        )
+        self.client.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_offering_data_flow (
+              data_flow_id TEXT PRIMARY KEY,
+              offering_id TEXT NOT NULL,
+              vendor_id TEXT NOT NULL,
+              direction TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+              flow_name TEXT NOT NULL,
+              method TEXT,
+              data_description TEXT,
+              endpoint_details TEXT,
+              identifiers TEXT,
+              reporting_layer TEXT,
+              creation_process TEXT,
+              delivery_process TEXT,
+              owner_user_principal TEXT,
+              notes TEXT,
+              active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+              created_at TEXT NOT NULL,
+              created_by TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              updated_by TEXT NOT NULL
+            )
+            """
+        )
+        self.client.execute(
+            "CREATE INDEX IF NOT EXISTS idx_app_offering_ticket_offering ON app_offering_ticket(offering_id, active_flag, opened_date)"
+        )
+        self.client.execute(
+            "CREATE INDEX IF NOT EXISTS idx_app_offering_ticket_vendor ON app_offering_ticket(vendor_id, active_flag)"
+        )
+        self.client.execute(
+            "CREATE INDEX IF NOT EXISTS idx_app_offering_data_flow_offering ON app_offering_data_flow(offering_id, active_flag, direction)"
+        )
+        self._local_offering_extension_tables_ensured = True
+
+    @staticmethod
     def _as_bool(value: Any) -> bool:
         if isinstance(value, bool):
             return value
@@ -402,6 +766,60 @@ class VendorRepository:
         if isinstance(value, (int, float)):
             return int(value) != 0
         return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+    @staticmethod
+    def _parse_lookup_ts(value: Any, *, fallback: datetime) -> datetime:
+        if isinstance(value, datetime):
+            parsed = value
+        elif isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return fallback
+            try:
+                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            except Exception:
+                try:
+                    parsed = pd.to_datetime(raw, errors="raise", utc=True).to_pydatetime()
+                except Exception:
+                    return fallback
+        elif value is None:
+            return fallback
+        else:
+            return fallback
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    @classmethod
+    def _normalize_lookup_window(
+        cls,
+        valid_from_ts: Any,
+        valid_to_ts: Any,
+    ) -> tuple[datetime, datetime]:
+        start = cls._parse_lookup_ts(valid_from_ts, fallback=datetime(1900, 1, 1, tzinfo=timezone.utc))
+        end = cls._parse_lookup_ts(valid_to_ts, fallback=datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc))
+        if end < start:
+            raise ValueError("Valid To must be on or after Valid From.")
+        return start, end
+
+    @staticmethod
+    def _lookup_status_for_window(start: datetime, end: datetime, *, as_of: datetime) -> str:
+        start_date = start.date()
+        end_date = end.date()
+        as_of_date = as_of.date()
+        if end_date < as_of_date:
+            return "historical"
+        if start_date > as_of_date:
+            return "future"
+        return "active"
+
+    @staticmethod
+    def _lookup_windows_overlap(start_a: datetime, end_a: datetime, start_b: datetime, end_b: datetime) -> bool:
+        start_a_date = start_a.date()
+        end_a_date = end_a.date()
+        start_b_date = start_b.date()
+        end_b_date = end_b.date()
+        return start_a_date <= end_b_date and start_b_date <= end_a_date
 
     @staticmethod
     def _principal_to_display_name(user_principal: str) -> str:
@@ -846,6 +1264,135 @@ class VendorRepository:
             base = base[base["active_flag"].fillna(True) == True].copy()
         return base
 
+    def _mock_offering_profile_df(self) -> pd.DataFrame:
+        columns = [
+            "offering_id",
+            "vendor_id",
+            "estimated_monthly_cost",
+            "implementation_notes",
+            "data_sent",
+            "data_received",
+            "integration_method",
+            "inbound_method",
+            "inbound_landing_zone",
+            "inbound_identifiers",
+            "inbound_reporting_layer",
+            "inbound_ingestion_notes",
+            "outbound_method",
+            "outbound_creation_process",
+            "outbound_delivery_process",
+            "outbound_responsible_owner",
+            "outbound_notes",
+            "updated_at",
+            "updated_by",
+        ]
+        rows = []
+        for offering_id, overrides in self._mock_offering_profile_overrides.items():
+            rows.append(
+                {
+                    "offering_id": offering_id,
+                    "vendor_id": str(overrides.get("vendor_id") or ""),
+                    "estimated_monthly_cost": overrides.get("estimated_monthly_cost"),
+                    "implementation_notes": overrides.get("implementation_notes"),
+                    "data_sent": overrides.get("data_sent"),
+                    "data_received": overrides.get("data_received"),
+                    "integration_method": overrides.get("integration_method"),
+                    "inbound_method": overrides.get("inbound_method"),
+                    "inbound_landing_zone": overrides.get("inbound_landing_zone"),
+                    "inbound_identifiers": overrides.get("inbound_identifiers"),
+                    "inbound_reporting_layer": overrides.get("inbound_reporting_layer"),
+                    "inbound_ingestion_notes": overrides.get("inbound_ingestion_notes"),
+                    "outbound_method": overrides.get("outbound_method"),
+                    "outbound_creation_process": overrides.get("outbound_creation_process"),
+                    "outbound_delivery_process": overrides.get("outbound_delivery_process"),
+                    "outbound_responsible_owner": overrides.get("outbound_responsible_owner"),
+                    "outbound_notes": overrides.get("outbound_notes"),
+                    "updated_at": overrides.get("updated_at"),
+                    "updated_by": overrides.get("updated_by"),
+                }
+            )
+        if not rows:
+            return pd.DataFrame(columns=columns)
+        return pd.DataFrame(rows, columns=columns)
+
+    def _mock_offering_data_flow_df(self) -> pd.DataFrame:
+        columns = [
+            "data_flow_id",
+            "offering_id",
+            "vendor_id",
+            "direction",
+            "flow_name",
+            "method",
+            "data_description",
+            "endpoint_details",
+            "identifiers",
+            "reporting_layer",
+            "creation_process",
+            "delivery_process",
+            "owner_user_principal",
+            "notes",
+            "active_flag",
+            "created_at",
+            "created_by",
+            "updated_at",
+            "updated_by",
+        ]
+        base = (
+            pd.DataFrame(self._mock_new_offering_data_flows, columns=columns)
+            if self._mock_new_offering_data_flows
+            else pd.DataFrame(columns=columns)
+        )
+        base = self._apply_row_overrides(base, self._mock_offering_data_flow_overrides, "data_flow_id")
+        if "data_flow_id" in base.columns and self._mock_removed_offering_data_flow_ids:
+            base = base[~base["data_flow_id"].astype(str).isin(self._mock_removed_offering_data_flow_ids)].copy()
+        if "active_flag" in base.columns:
+            base = base[base["active_flag"].fillna(True) == True].copy()
+        return base
+
+    def _mock_offering_tickets_df(self) -> pd.DataFrame:
+        columns = [
+            "ticket_id",
+            "offering_id",
+            "vendor_id",
+            "ticket_system",
+            "external_ticket_id",
+            "title",
+            "status",
+            "priority",
+            "opened_date",
+            "closed_date",
+            "notes",
+            "active_flag",
+            "created_at",
+            "created_by",
+            "updated_at",
+            "updated_by",
+        ]
+        base = pd.DataFrame(self._mock_new_offering_tickets, columns=columns) if self._mock_new_offering_tickets else pd.DataFrame(columns=columns)
+        base = self._apply_row_overrides(base, self._mock_offering_ticket_overrides, "ticket_id")
+        if "active_flag" in base.columns:
+            base = base[base["active_flag"].fillna(True) == True].copy()
+        return base
+
+    def _mock_offering_notes_df(self) -> pd.DataFrame:
+        columns = ["note_id", "entity_name", "entity_id", "note_type", "note_text", "created_at", "created_by"]
+        if not self._mock_new_offering_notes:
+            return pd.DataFrame(columns=columns)
+        rows = []
+        for row in self._mock_new_offering_notes:
+            rows.append(
+                {
+                    "note_id": row.get("note_id"),
+                    "entity_name": "offering",
+                    "entity_id": row.get("entity_id"),
+                    "note_type": row.get("note_type"),
+                    "note_text": row.get("note_text"),
+                    "created_at": row.get("created_at"),
+                    "created_by": row.get("created_by"),
+                }
+            )
+        return pd.DataFrame(rows, columns=columns)
+
     def _mock_doc_links_df(self) -> pd.DataFrame:
         base = mock_data.document_links().copy()
         if self._mock_new_doc_links:
@@ -868,6 +1415,7 @@ class VendorRepository:
             "sec_user_role_map",
             "app_user_settings",
             "app_user_directory",
+            "app_lookup_option",
         )
         missing_or_blocked: list[str] = []
         for table_name in required_tables:
@@ -876,10 +1424,30 @@ class VendorRepository:
             except Exception:
                 missing_or_blocked.append(self._table(table_name))
 
+        try:
+            self.client.query(
+                f"SELECT lob, service_type FROM {self._table('core_vendor_offering')} LIMIT 1"
+            )
+        except Exception:
+            missing_or_blocked.append(f"{self._table('core_vendor_offering')}.lob")
+            missing_or_blocked.append(f"{self._table('core_vendor_offering')}.service_type")
+        try:
+            self.client.query(
+                f"SELECT valid_from_ts, valid_to_ts, is_current, deleted_flag FROM {self._table('app_lookup_option')} LIMIT 1"
+            )
+        except Exception:
+            missing_or_blocked.append(f"{self._table('app_lookup_option')}.valid_from_ts")
+            missing_or_blocked.append(f"{self._table('app_lookup_option')}.valid_to_ts")
+            missing_or_blocked.append(f"{self._table('app_lookup_option')}.is_current")
+            missing_or_blocked.append(f"{self._table('app_lookup_option')}.deleted_flag")
+
         if missing_or_blocked:
             raise SchemaBootstrapRequiredError(
                 "Databricks schema is not initialized or access is blocked. "
-                f"Run the bootstrap SQL manually before starting the app: {self.config.schema_bootstrap_sql_path}. "
+                "Run the bootstrap SQL and migrations manually before starting the app: "
+                f"{self.config.schema_bootstrap_sql_path}, "
+                "setup/databricks/002_add_offering_lob_service_type.sql, "
+                "setup/databricks/003_add_lookup_scd_columns.sql. "
                 f"Configured schema: {self.config.fq_schema}. "
                 f"Missing/inaccessible objects: {', '.join(missing_or_blocked)}"
             )
@@ -1810,7 +2378,15 @@ class VendorRepository:
         return out[columns].sort_values(["owner_principal", "entity_type", "entity_name"]).head(limit)
 
     def list_vendor_offerings_for_vendors(self, vendor_ids: list[str]) -> pd.DataFrame:
-        columns = ["offering_id", "vendor_id", "offering_name", "lifecycle_state"]
+        columns = [
+            "offering_id",
+            "vendor_id",
+            "offering_name",
+            "offering_type",
+            "lob",
+            "service_type",
+            "lifecycle_state",
+        ]
         cleaned_ids = [str(v).strip() for v in vendor_ids if str(v).strip()]
         if not cleaned_ids:
             return pd.DataFrame(columns=columns)
@@ -1820,9 +2396,10 @@ class VendorRepository:
             offerings = offerings[offerings["vendor_id"].astype(str).isin(cleaned_ids)].copy()
             if offerings.empty:
                 return pd.DataFrame(columns=columns)
-            out = offerings[["offering_id", "vendor_id", "offering_name", "lifecycle_state"]].copy()
+            out = offerings[columns].copy()
             return out.sort_values(["vendor_id", "offering_name"], ascending=[True, True])
 
+        self._ensure_local_offering_columns()
         placeholders = ", ".join(["%s"] * len(cleaned_ids))
         return self._query_file(
             "ingestion/select_vendor_offerings_for_vendor_ids.sql",
@@ -1859,6 +2436,8 @@ class VendorRepository:
             "vendor_id",
             "offering_name",
             "offering_type",
+            "lob",
+            "service_type",
             "lifecycle_state",
             "criticality_tier",
             "vendor_display_name",
@@ -1878,6 +2457,7 @@ class VendorRepository:
                 if col not in offerings.columns:
                     offerings[col] = None
             return offerings[columns]
+        self._ensure_local_offering_columns()
         placeholders = ", ".join(["%s"] * len(cleaned_ids))
         return self._query_file(
             "ingestion/select_offerings_by_ids.sql",
@@ -1937,6 +2517,8 @@ class VendorRepository:
             "vendor_id",
             "offering_name",
             "offering_type",
+            "lob",
+            "service_type",
             "lifecycle_state",
             "vendor_display_name",
             "label",
@@ -1961,6 +2543,8 @@ class VendorRepository:
                                 "offering_id",
                                 "offering_name",
                                 "offering_type",
+                                "lob",
+                                "service_type",
                                 "vendor_id",
                                 "vendor_display_name",
                             ]
@@ -1992,11 +2576,14 @@ class VendorRepository:
                 "lower(o.offering_id) LIKE lower(%s)"
                 " OR lower(coalesce(o.offering_name, '')) LIKE lower(%s)"
                 " OR lower(coalesce(o.offering_type, '')) LIKE lower(%s)"
+                " OR lower(coalesce(o.lob, '')) LIKE lower(%s)"
+                " OR lower(coalesce(o.service_type, '')) LIKE lower(%s)"
                 " OR lower(coalesce(v.display_name, v.legal_name, o.vendor_id)) LIKE lower(%s)"
                 ")"
             )
-            params.extend([like, like, like, like])
+            params.extend([like, like, like, like, like, like])
         where = " AND ".join(where_parts) if where_parts else "1 = 1"
+        self._ensure_local_offering_columns()
         return self._query_file(
             "reporting/search_offerings_typeahead.sql",
             params=tuple(params) if params else None,
@@ -2104,6 +2691,7 @@ class VendorRepository:
                     page_df[col] = None
             return page_df[columns], total
 
+        self._ensure_local_offering_columns()
         where_parts = ["1 = 1"]
         params: list[Any] = []
         if lifecycle_state != "all":
@@ -2130,7 +2718,7 @@ class VendorRepository:
                     app_project=self._table("app_project"),
                 )
             )
-            params.extend([like] * 37)
+            params.extend([like] * 39)
 
         where_clause = " AND ".join(where_parts)
 
@@ -2201,7 +2789,14 @@ class VendorRepository:
                 for row in offerings.to_dict("records"):
                     if any(
                         self._matches_needle(row.get(field), needle)
-                        for field in ["offering_id", "offering_name", "offering_type", "lifecycle_state"]
+                        for field in [
+                            "offering_id",
+                            "offering_name",
+                            "offering_type",
+                            "lob",
+                            "service_type",
+                            "lifecycle_state",
+                        ]
                     ):
                         matched_vendor_ids.add(str(row.get("vendor_id")))
 
@@ -2272,6 +2867,7 @@ class VendorRepository:
                 df = df[df["vendor_id"].astype(str).isin(matched_vendor_ids)]
             return df.sort_values("display_name")
 
+        self._ensure_local_offering_columns()
         state_clause = ""
         params: list[str] = []
         if lifecycle_state != "all":
@@ -2287,7 +2883,7 @@ class VendorRepository:
             )
 
         like = f"%{search_text.strip()}%"
-        broad_params = [like] * 37 + params
+        broad_params = [like] * 39 + params
 
         try:
             return self._query_file(
@@ -2324,6 +2920,7 @@ class VendorRepository:
     def get_vendor_offerings(self, vendor_id: str) -> pd.DataFrame:
         if self.config.use_mock:
             return self._mock_offerings_df().query("vendor_id == @vendor_id")
+        self._ensure_local_offering_columns()
         return self._query_file(
             "ingestion/select_vendor_offerings.sql",
             params=(vendor_id,),
@@ -2508,6 +3105,8 @@ class VendorRepository:
     def get_vendor_change_requests(self, vendor_id: str) -> pd.DataFrame:
         if self.config.use_mock:
             out = self._mock_change_requests_df().query("vendor_id == @vendor_id").sort_values("submitted_at", ascending=False)
+            if "requestor_user_principal" in out.columns and "requestor_user_principal_raw" not in out.columns:
+                out["requestor_user_principal_raw"] = out["requestor_user_principal"]
             return self._decorate_user_columns(out, ["requestor_user_principal"])
         out = self._query_file(
             "ingestion/select_vendor_change_requests.sql",
@@ -2524,6 +3123,8 @@ class VendorRepository:
             ],
             app_vendor_change_request=self._table("app_vendor_change_request"),
         )
+        if "requestor_user_principal" in out.columns and "requestor_user_principal_raw" not in out.columns:
+            out["requestor_user_principal_raw"] = out["requestor_user_principal"]
         return self._decorate_user_columns(out, ["requestor_user_principal"])
 
     def list_change_requests(self, *, status: str = "all") -> pd.DataFrame:
@@ -2534,6 +3135,8 @@ class VendorRepository:
                 rows = rows[rows["status"].astype(str).str.lower() == normalized_status].copy()
             if "submitted_at" in rows.columns:
                 rows = rows.sort_values("submitted_at", ascending=False)
+            if "requestor_user_principal" in rows.columns and "requestor_user_principal_raw" not in rows.columns:
+                rows["requestor_user_principal_raw"] = rows["requestor_user_principal"]
             return self._decorate_user_columns(rows, ["requestor_user_principal"])
 
         where_clause = ""
@@ -2557,6 +3160,8 @@ class VendorRepository:
             where_clause=where_clause,
             app_vendor_change_request=self._table("app_vendor_change_request"),
         )
+        if "requestor_user_principal" in out.columns and "requestor_user_principal_raw" not in out.columns:
+            out["requestor_user_principal_raw"] = out["requestor_user_principal"]
         return self._decorate_user_columns(out, ["requestor_user_principal"])
 
     def get_change_request_by_id(self, change_request_id: str) -> dict[str, Any] | None:
@@ -2571,6 +3176,8 @@ class VendorRepository:
             if match.empty:
                 return None
             out = self._decorate_user_columns(match.tail(1), ["requestor_user_principal"])
+            if "requestor_user_principal_raw" not in out and "requestor_user_principal" in out:
+                out["requestor_user_principal_raw"] = match.tail(1)["requestor_user_principal"].tolist()
             return out.iloc[-1].to_dict()
         df = self._query_file(
             "ingestion/select_vendor_change_request_by_id.sql",
@@ -2589,6 +3196,8 @@ class VendorRepository:
         )
         if df.empty:
             return None
+        if "requestor_user_principal" in df.columns and "requestor_user_principal_raw" not in df.columns:
+            df["requestor_user_principal_raw"] = df["requestor_user_principal"]
         out = self._decorate_user_columns(df, ["requestor_user_principal"])
         return out.iloc[0].to_dict()
 
@@ -2604,8 +3213,9 @@ class VendorRepository:
         target_status = str(new_status or "").strip().lower()
         if not request_id:
             raise ValueError("Change request ID is required.")
-        if target_status not in {"submitted", "in_review", "approved", "rejected"}:
-            raise ValueError("Unsupported change request status.")
+        allowed_statuses = {str(item).strip().lower() for item in self.list_workflow_status_options() if str(item).strip()}
+        if target_status not in allowed_statuses:
+            raise ValueError(f"Unsupported change request status: {target_status}.")
 
         current = self.get_change_request_by_id(request_id)
         if not current:
@@ -2739,7 +3349,7 @@ class VendorRepository:
             months_back=(months - 1),
         )
 
-    def vendor_summary(self, vendor_id: str, months: int = 12) -> dict[str, float]:
+    def vendor_summary(self, vendor_id: str, months: int = 12) -> dict[str, Any]:
         profile = self.get_vendor_profile(vendor_id)
         offerings = self.get_vendor_offerings(vendor_id)
         contracts = self.get_vendor_contracts(vendor_id)
@@ -2756,6 +3366,31 @@ class VendorRepository:
             selected_demos = int((demos["selection_outcome"] == "selected").sum())
             not_selected_demos = int((demos["selection_outcome"] == "not_selected").sum())
 
+        active_offerings = offerings.copy()
+        if "lifecycle_state" in active_offerings.columns:
+            active_offerings = active_offerings[
+                active_offerings["lifecycle_state"].astype(str).str.lower() == "active"
+            ].copy()
+        active_lob_values: list[str] = []
+        active_service_type_values: list[str] = []
+        if not active_offerings.empty:
+            if "lob" in active_offerings.columns:
+                active_lob_values = sorted(
+                    {
+                        str(value).strip()
+                        for value in active_offerings["lob"].tolist()
+                        if str(value).strip()
+                    }
+                )
+            if "service_type" in active_offerings.columns:
+                active_service_type_values = sorted(
+                    {
+                        str(value).strip()
+                        for value in active_offerings["service_type"].tolist()
+                        if str(value).strip()
+                    }
+                )
+
         return {
             "lifecycle_state": str(profile.iloc[0]["lifecycle_state"]) if not profile.empty else "unknown",
             "risk_tier": str(profile.iloc[0]["risk_tier"]) if not profile.empty else "unknown",
@@ -2763,6 +3398,8 @@ class VendorRepository:
             "active_contract_count": float(active_contracts),
             "demos_selected": float(selected_demos),
             "demos_not_selected": float(not_selected_demos),
+            "active_lob_values": active_lob_values,
+            "active_service_type_values": active_service_type_values,
             "total_spend_window": float(spend["total_spend"].sum()) if "total_spend" in spend else 0.0,
         }
 
@@ -2784,6 +3421,974 @@ class VendorRepository:
         if matched.empty:
             return None
         return matched.iloc[0].to_dict()
+
+    def get_offering_profile(self, vendor_id: str, offering_id: str) -> dict[str, Any]:
+        default = {
+            "offering_id": offering_id,
+            "vendor_id": vendor_id,
+            "estimated_monthly_cost": None,
+            "implementation_notes": None,
+            "data_sent": None,
+            "data_received": None,
+            "integration_method": None,
+            "inbound_method": None,
+            "inbound_landing_zone": None,
+            "inbound_identifiers": None,
+            "inbound_reporting_layer": None,
+            "inbound_ingestion_notes": None,
+            "outbound_method": None,
+            "outbound_creation_process": None,
+            "outbound_delivery_process": None,
+            "outbound_responsible_owner": None,
+            "outbound_notes": None,
+            "updated_at": None,
+            "updated_by": None,
+        }
+        if self.config.use_mock:
+            rows = self._mock_offering_profile_df()
+            if rows.empty:
+                return default
+            match = rows[rows["offering_id"].astype(str) == str(offering_id)]
+            if match.empty:
+                return default
+            row = match.iloc[-1].to_dict()
+            out = dict(default)
+            out.update(row)
+            return out
+
+        self._ensure_local_offering_extension_tables()
+        rows = self._query_file(
+            "ingestion/select_offering_profile.sql",
+            params=(offering_id, vendor_id),
+            columns=[
+                "offering_id",
+                "vendor_id",
+                "estimated_monthly_cost",
+                "implementation_notes",
+                "data_sent",
+                "data_received",
+                "integration_method",
+                "inbound_method",
+                "inbound_landing_zone",
+                "inbound_identifiers",
+                "inbound_reporting_layer",
+                "inbound_ingestion_notes",
+                "outbound_method",
+                "outbound_creation_process",
+                "outbound_delivery_process",
+                "outbound_responsible_owner",
+                "outbound_notes",
+                "updated_at",
+                "updated_by",
+            ],
+            app_offering_profile=self._table("app_offering_profile"),
+        )
+        if rows.empty:
+            return default
+        row = rows.iloc[0].to_dict()
+        out = dict(default)
+        out.update(row)
+        return out
+
+    def save_offering_profile(
+        self,
+        *,
+        vendor_id: str,
+        offering_id: str,
+        actor_user_principal: str,
+        updates: dict[str, Any],
+        reason: str,
+    ) -> dict[str, str]:
+        if not reason.strip():
+            raise ValueError("Reason is required.")
+        if not self.offering_belongs_to_vendor(vendor_id, offering_id):
+            raise ValueError("Offering does not belong to this vendor.")
+
+        allowed = {
+            "estimated_monthly_cost",
+            "implementation_notes",
+            "data_sent",
+            "data_received",
+            "integration_method",
+            "inbound_method",
+            "inbound_landing_zone",
+            "inbound_identifiers",
+            "inbound_reporting_layer",
+            "inbound_ingestion_notes",
+            "outbound_method",
+            "outbound_creation_process",
+            "outbound_delivery_process",
+            "outbound_responsible_owner",
+            "outbound_notes",
+        }
+        clean_updates = {k: v for k, v in updates.items() if k in allowed}
+        if not clean_updates:
+            raise ValueError("No profile fields were provided.")
+        if "outbound_responsible_owner" in clean_updates:
+            candidate_owner = str(clean_updates.get("outbound_responsible_owner") or "").strip()
+            if candidate_owner:
+                resolved_owner = self.resolve_user_login_identifier(candidate_owner)
+                if not resolved_owner:
+                    raise ValueError("Outbound responsible owner must exist in the app user directory.")
+                clean_updates["outbound_responsible_owner"] = resolved_owner
+            else:
+                clean_updates["outbound_responsible_owner"] = None
+
+        current = self.get_offering_profile(vendor_id, offering_id)
+        had_existing = any(current.get(field) not in (None, "") for field in allowed)
+        before = dict(current)
+        after = dict(current)
+        after.update(clean_updates)
+
+        now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
+        request_id = str(uuid.uuid4())
+        payload = {
+            "offering_id": offering_id,
+            "vendor_id": vendor_id,
+            "estimated_monthly_cost": after.get("estimated_monthly_cost"),
+            "implementation_notes": after.get("implementation_notes"),
+            "data_sent": after.get("data_sent"),
+            "data_received": after.get("data_received"),
+            "integration_method": after.get("integration_method"),
+            "inbound_method": after.get("inbound_method"),
+            "inbound_landing_zone": after.get("inbound_landing_zone"),
+            "inbound_identifiers": after.get("inbound_identifiers"),
+            "inbound_reporting_layer": after.get("inbound_reporting_layer"),
+            "inbound_ingestion_notes": after.get("inbound_ingestion_notes"),
+            "outbound_method": after.get("outbound_method"),
+            "outbound_creation_process": after.get("outbound_creation_process"),
+            "outbound_delivery_process": after.get("outbound_delivery_process"),
+            "outbound_responsible_owner": after.get("outbound_responsible_owner"),
+            "outbound_notes": after.get("outbound_notes"),
+            "updated_at": now.isoformat(),
+            "updated_by": actor_ref,
+        }
+
+        if self.config.use_mock:
+            self._mock_offering_profile_overrides[offering_id] = payload
+            action_type = "update" if had_existing else "insert"
+            change_event_id = self._write_audit_entity_change(
+                entity_name="app_offering_profile",
+                entity_id=offering_id,
+                action_type=action_type,
+                actor_user_principal=actor_user_principal,
+                before_json=before if had_existing else None,
+                after_json=payload,
+                request_id=request_id,
+            )
+            return {"request_id": request_id, "change_event_id": change_event_id}
+
+        self._ensure_local_offering_extension_tables()
+        existing = self._query_file(
+            "ingestion/select_offering_profile.sql",
+            params=(offering_id, vendor_id),
+            columns=["offering_id"],
+            app_offering_profile=self._table("app_offering_profile"),
+        )
+        if existing.empty:
+            self._execute_file(
+                "inserts/create_offering_profile.sql",
+                params=(
+                    offering_id,
+                    vendor_id,
+                    payload["estimated_monthly_cost"],
+                    payload["implementation_notes"],
+                    payload["data_sent"],
+                    payload["data_received"],
+                    payload["integration_method"],
+                    payload["inbound_method"],
+                    payload["inbound_landing_zone"],
+                    payload["inbound_identifiers"],
+                    payload["inbound_reporting_layer"],
+                    payload["inbound_ingestion_notes"],
+                    payload["outbound_method"],
+                    payload["outbound_creation_process"],
+                    payload["outbound_delivery_process"],
+                    payload["outbound_responsible_owner"],
+                    payload["outbound_notes"],
+                    now,
+                    actor_ref,
+                ),
+                app_offering_profile=self._table("app_offering_profile"),
+            )
+            action_type = "insert"
+            before_json = None
+        else:
+            self._execute_file(
+                "updates/update_offering_profile.sql",
+                params=(
+                    payload["estimated_monthly_cost"],
+                    payload["implementation_notes"],
+                    payload["data_sent"],
+                    payload["data_received"],
+                    payload["integration_method"],
+                    payload["inbound_method"],
+                    payload["inbound_landing_zone"],
+                    payload["inbound_identifiers"],
+                    payload["inbound_reporting_layer"],
+                    payload["inbound_ingestion_notes"],
+                    payload["outbound_method"],
+                    payload["outbound_creation_process"],
+                    payload["outbound_delivery_process"],
+                    payload["outbound_responsible_owner"],
+                    payload["outbound_notes"],
+                    now,
+                    actor_ref,
+                    offering_id,
+                    vendor_id,
+                ),
+                app_offering_profile=self._table("app_offering_profile"),
+            )
+            action_type = "update"
+            before_json = before
+
+        change_event_id = self._write_audit_entity_change(
+            entity_name="app_offering_profile",
+            entity_id=offering_id,
+            action_type=action_type,
+            actor_user_principal=actor_user_principal,
+            before_json=before_json,
+            after_json=payload,
+            request_id=request_id,
+        )
+        return {"request_id": request_id, "change_event_id": change_event_id}
+
+    def list_offering_data_flows(self, vendor_id: str, offering_id: str) -> pd.DataFrame:
+        if self.config.use_mock:
+            rows = self._mock_offering_data_flow_df()
+            if rows.empty:
+                return rows
+            rows = rows[
+                (rows["offering_id"].astype(str) == str(offering_id))
+                & (rows["vendor_id"].astype(str) == str(vendor_id))
+            ].copy()
+            if "direction" in rows.columns:
+                rows["direction_sort"] = rows["direction"].astype(str).str.lower().map({"inbound": 0, "outbound": 1}).fillna(9)
+            else:
+                rows["direction_sort"] = 9
+            if "updated_at" in rows.columns:
+                rows = rows.sort_values(["direction_sort", "updated_at"], ascending=[True, False])
+            rows = rows.drop(columns=["direction_sort"], errors="ignore")
+            return self._decorate_user_columns(rows, ["owner_user_principal", "created_by", "updated_by"])
+
+        self._ensure_local_offering_extension_tables()
+        rows = self._query_file(
+            "ingestion/select_offering_data_flows.sql",
+            params=(offering_id, vendor_id),
+            columns=[
+                "data_flow_id",
+                "offering_id",
+                "vendor_id",
+                "direction",
+                "flow_name",
+                "method",
+                "data_description",
+                "endpoint_details",
+                "identifiers",
+                "reporting_layer",
+                "creation_process",
+                "delivery_process",
+                "owner_user_principal",
+                "notes",
+                "active_flag",
+                "created_at",
+                "created_by",
+                "updated_at",
+                "updated_by",
+            ],
+            app_offering_data_flow=self._table("app_offering_data_flow"),
+        )
+        return self._decorate_user_columns(rows, ["owner_user_principal", "created_by", "updated_by"])
+
+    def get_offering_data_flow(self, *, vendor_id: str, offering_id: str, data_flow_id: str) -> dict[str, Any] | None:
+        if self.config.use_mock:
+            rows = self._mock_offering_data_flow_df()
+            if rows.empty:
+                return None
+            match = rows[
+                (rows["data_flow_id"].astype(str) == str(data_flow_id))
+                & (rows["offering_id"].astype(str) == str(offering_id))
+                & (rows["vendor_id"].astype(str) == str(vendor_id))
+            ]
+            if match.empty:
+                return None
+            return match.iloc[0].to_dict()
+
+        self._ensure_local_offering_extension_tables()
+        rows = self._query_file(
+            "ingestion/select_offering_data_flow_by_id.sql",
+            params=(data_flow_id, offering_id, vendor_id),
+            columns=[
+                "data_flow_id",
+                "offering_id",
+                "vendor_id",
+                "direction",
+                "flow_name",
+                "method",
+                "data_description",
+                "endpoint_details",
+                "identifiers",
+                "reporting_layer",
+                "creation_process",
+                "delivery_process",
+                "owner_user_principal",
+                "notes",
+                "active_flag",
+                "created_at",
+                "created_by",
+                "updated_at",
+                "updated_by",
+            ],
+            app_offering_data_flow=self._table("app_offering_data_flow"),
+        )
+        if rows.empty:
+            return None
+        return rows.iloc[0].to_dict()
+
+    def add_offering_data_flow(
+        self,
+        *,
+        vendor_id: str,
+        offering_id: str,
+        direction: str,
+        flow_name: str,
+        method: str | None,
+        data_description: str | None,
+        endpoint_details: str | None,
+        identifiers: str | None,
+        reporting_layer: str | None,
+        creation_process: str | None,
+        delivery_process: str | None,
+        owner_user_principal: str | None,
+        notes: str | None,
+        actor_user_principal: str,
+    ) -> str:
+        if not self.offering_belongs_to_vendor(vendor_id, offering_id):
+            raise ValueError("Offering does not belong to this vendor.")
+        clean_direction = str(direction or "").strip().lower()
+        if clean_direction not in {"inbound", "outbound"}:
+            raise ValueError("Direction must be inbound or outbound.")
+        clean_flow_name = str(flow_name or "").strip()
+        if not clean_flow_name:
+            raise ValueError("Data flow name is required.")
+        clean_method = str(method or "").strip().lower() or None
+        clean_data_description = str(data_description or "").strip() or None
+        clean_endpoint_details = str(endpoint_details or "").strip() or None
+        clean_identifiers = str(identifiers or "").strip() or None
+        clean_reporting_layer = str(reporting_layer or "").strip() or None
+        clean_creation_process = str(creation_process or "").strip() or None
+        clean_delivery_process = str(delivery_process or "").strip() or None
+        clean_notes = str(notes or "").strip() or None
+        clean_owner = str(owner_user_principal or "").strip()
+        resolved_owner: str | None = None
+        if clean_owner:
+            resolved_owner = self.resolve_user_login_identifier(clean_owner)
+            if not resolved_owner:
+                raise ValueError("Owner must exist in the app user directory.")
+
+        data_flow_id = self._new_id("odf")
+        now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
+        row = {
+            "data_flow_id": data_flow_id,
+            "offering_id": offering_id,
+            "vendor_id": vendor_id,
+            "direction": clean_direction,
+            "flow_name": clean_flow_name,
+            "method": clean_method,
+            "data_description": clean_data_description,
+            "endpoint_details": clean_endpoint_details,
+            "identifiers": clean_identifiers,
+            "reporting_layer": clean_reporting_layer,
+            "creation_process": clean_creation_process,
+            "delivery_process": clean_delivery_process,
+            "owner_user_principal": resolved_owner,
+            "notes": clean_notes,
+            "active_flag": True,
+            "created_at": now.isoformat(),
+            "created_by": actor_ref,
+            "updated_at": now.isoformat(),
+            "updated_by": actor_ref,
+        }
+        if self.config.use_mock:
+            self._mock_new_offering_data_flows.append(row)
+            self._write_audit_entity_change(
+                entity_name="app_offering_data_flow",
+                entity_id=data_flow_id,
+                action_type="insert",
+                actor_user_principal=actor_user_principal,
+                before_json=None,
+                after_json=row,
+                request_id=None,
+            )
+            return data_flow_id
+
+        self._ensure_local_offering_extension_tables()
+        self._execute_file(
+            "inserts/create_offering_data_flow.sql",
+            params=(
+                data_flow_id,
+                offering_id,
+                vendor_id,
+                clean_direction,
+                clean_flow_name,
+                clean_method,
+                clean_data_description,
+                clean_endpoint_details,
+                clean_identifiers,
+                clean_reporting_layer,
+                clean_creation_process,
+                clean_delivery_process,
+                resolved_owner,
+                clean_notes,
+                True,
+                now,
+                actor_ref,
+                now,
+                actor_ref,
+            ),
+            app_offering_data_flow=self._table("app_offering_data_flow"),
+        )
+        self._write_audit_entity_change(
+            entity_name="app_offering_data_flow",
+            entity_id=data_flow_id,
+            action_type="insert",
+            actor_user_principal=actor_user_principal,
+            before_json=None,
+            after_json=row,
+            request_id=None,
+        )
+        return data_flow_id
+
+    def remove_offering_data_flow(
+        self,
+        *,
+        vendor_id: str,
+        offering_id: str,
+        data_flow_id: str,
+        actor_user_principal: str,
+    ) -> None:
+        current = self.get_offering_data_flow(
+            vendor_id=vendor_id,
+            offering_id=offering_id,
+            data_flow_id=data_flow_id,
+        )
+        if current is None:
+            raise ValueError("Offering data flow was not found.")
+        actor_ref = self._actor_ref(actor_user_principal)
+        if self.config.use_mock:
+            self._mock_removed_offering_data_flow_ids.add(str(data_flow_id))
+            self._write_audit_entity_change(
+                entity_name="app_offering_data_flow",
+                entity_id=data_flow_id,
+                action_type="delete",
+                actor_user_principal=actor_user_principal,
+                before_json=current,
+                after_json=None,
+                request_id=None,
+            )
+            return
+        try:
+            self._execute_file(
+                "updates/remove_offering_data_flow_soft.sql",
+                params=(self._now(), actor_ref, data_flow_id, offering_id, vendor_id),
+                app_offering_data_flow=self._table("app_offering_data_flow"),
+            )
+        except Exception:
+            self._execute_file(
+                "updates/remove_offering_data_flow_delete.sql",
+                params=(data_flow_id, offering_id, vendor_id),
+                app_offering_data_flow=self._table("app_offering_data_flow"),
+            )
+        self._write_audit_entity_change(
+            entity_name="app_offering_data_flow",
+            entity_id=data_flow_id,
+            action_type="delete",
+            actor_user_principal=actor_user_principal,
+            before_json=current,
+            after_json=None,
+            request_id=None,
+        )
+
+    def update_offering_data_flow(
+        self,
+        *,
+        vendor_id: str,
+        offering_id: str,
+        data_flow_id: str,
+        actor_user_principal: str,
+        updates: dict[str, Any],
+        reason: str,
+    ) -> dict[str, str]:
+        if not reason.strip():
+            raise ValueError("Reason is required.")
+        if not self.offering_belongs_to_vendor(vendor_id, offering_id):
+            raise ValueError("Offering does not belong to this vendor.")
+        current = self.get_offering_data_flow(
+            vendor_id=vendor_id,
+            offering_id=offering_id,
+            data_flow_id=data_flow_id,
+        )
+        if current is None:
+            raise ValueError("Offering data flow was not found.")
+
+        allowed = {
+            "direction",
+            "flow_name",
+            "method",
+            "data_description",
+            "endpoint_details",
+            "identifiers",
+            "reporting_layer",
+            "creation_process",
+            "delivery_process",
+            "owner_user_principal",
+            "notes",
+        }
+        clean_updates = {k: v for k, v in updates.items() if k in allowed}
+        if not clean_updates:
+            raise ValueError("No data flow fields were provided.")
+
+        if "direction" in clean_updates:
+            direction = str(clean_updates.get("direction") or "").strip().lower()
+            if direction not in {"inbound", "outbound"}:
+                raise ValueError("Direction must be inbound or outbound.")
+            clean_updates["direction"] = direction
+        if "flow_name" in clean_updates:
+            flow_name = str(clean_updates.get("flow_name") or "").strip()
+            if not flow_name:
+                raise ValueError("Data flow name is required.")
+            clean_updates["flow_name"] = flow_name
+        if "method" in clean_updates:
+            clean_updates["method"] = str(clean_updates.get("method") or "").strip().lower() or None
+        for optional_text_key in {
+            "data_description",
+            "endpoint_details",
+            "identifiers",
+            "reporting_layer",
+            "creation_process",
+            "delivery_process",
+            "notes",
+        }:
+            if optional_text_key in clean_updates:
+                clean_updates[optional_text_key] = str(clean_updates.get(optional_text_key) or "").strip() or None
+        if "owner_user_principal" in clean_updates:
+            owner_candidate = str(clean_updates.get("owner_user_principal") or "").strip()
+            if owner_candidate:
+                resolved_owner = self.resolve_user_login_identifier(owner_candidate)
+                if not resolved_owner:
+                    raise ValueError("Owner must exist in the app user directory.")
+                clean_updates["owner_user_principal"] = resolved_owner
+            else:
+                clean_updates["owner_user_principal"] = None
+
+        before = dict(current)
+        after = dict(current)
+        after.update(clean_updates)
+        request_id = str(uuid.uuid4())
+        now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
+        clean_updates["updated_at"] = now.isoformat()
+        clean_updates["updated_by"] = actor_ref
+
+        if self.config.use_mock:
+            self._mock_offering_data_flow_overrides[data_flow_id] = {
+                **self._mock_offering_data_flow_overrides.get(data_flow_id, {}),
+                **clean_updates,
+            }
+        else:
+            set_clause = ", ".join(
+                [f"{key} = %s" for key in clean_updates.keys() if key not in {"updated_at", "updated_by"}]
+            )
+            params = [clean_updates[key] for key in clean_updates.keys() if key not in {"updated_at", "updated_by"}]
+            self._execute_file(
+                "updates/update_offering_data_flow.sql",
+                params=tuple(params + [now, actor_ref, data_flow_id, offering_id, vendor_id]),
+                app_offering_data_flow=self._table("app_offering_data_flow"),
+                set_clause=set_clause,
+            )
+
+        after.update(clean_updates)
+        change_event_id = self._write_audit_entity_change(
+            entity_name="app_offering_data_flow",
+            entity_id=data_flow_id,
+            action_type="update",
+            actor_user_principal=actor_user_principal,
+            before_json=before,
+            after_json=after,
+            request_id=request_id,
+        )
+        return {"request_id": request_id, "change_event_id": change_event_id}
+
+    def list_offering_tickets(self, vendor_id: str, offering_id: str) -> pd.DataFrame:
+        if self.config.use_mock:
+            rows = self._mock_offering_tickets_df()
+            if rows.empty:
+                return rows
+            rows = rows[
+                (rows["offering_id"].astype(str) == str(offering_id))
+                & (rows["vendor_id"].astype(str) == str(vendor_id))
+            ].copy()
+            if "opened_date" in rows.columns:
+                rows = rows.sort_values("opened_date", ascending=False)
+            return self._decorate_user_columns(rows, ["created_by", "updated_by"])
+
+        self._ensure_local_offering_extension_tables()
+        rows = self._query_file(
+            "ingestion/select_offering_tickets.sql",
+            params=(offering_id, vendor_id),
+            columns=[
+                "ticket_id",
+                "offering_id",
+                "vendor_id",
+                "ticket_system",
+                "external_ticket_id",
+                "title",
+                "status",
+                "priority",
+                "opened_date",
+                "closed_date",
+                "notes",
+                "active_flag",
+                "created_at",
+                "created_by",
+                "updated_at",
+                "updated_by",
+            ],
+            app_offering_ticket=self._table("app_offering_ticket"),
+        )
+        return self._decorate_user_columns(rows, ["created_by", "updated_by"])
+
+    def add_offering_ticket(
+        self,
+        *,
+        vendor_id: str,
+        offering_id: str,
+        title: str,
+        ticket_system: str | None,
+        external_ticket_id: str | None,
+        status: str,
+        priority: str | None,
+        opened_date: str | None,
+        notes: str | None,
+        actor_user_principal: str,
+    ) -> str:
+        if not self.offering_belongs_to_vendor(vendor_id, offering_id):
+            raise ValueError("Offering does not belong to this vendor.")
+        clean_title = str(title or "").strip()
+        clean_status = str(status or "").strip().lower() or "open"
+        if not clean_title:
+            raise ValueError("Ticket title is required.")
+
+        ticket_id = self._new_id("otk")
+        now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
+        row = {
+            "ticket_id": ticket_id,
+            "offering_id": offering_id,
+            "vendor_id": vendor_id,
+            "ticket_system": str(ticket_system or "").strip() or None,
+            "external_ticket_id": str(external_ticket_id or "").strip() or None,
+            "title": clean_title,
+            "status": clean_status,
+            "priority": str(priority or "").strip().lower() or None,
+            "opened_date": str(opened_date or "").strip() or None,
+            "closed_date": None,
+            "notes": str(notes or "").strip() or None,
+            "active_flag": True,
+            "created_at": now.isoformat(),
+            "created_by": actor_ref,
+            "updated_at": now.isoformat(),
+            "updated_by": actor_ref,
+        }
+
+        if self.config.use_mock:
+            self._mock_new_offering_tickets.append(row)
+            self._write_audit_entity_change(
+                entity_name="app_offering_ticket",
+                entity_id=ticket_id,
+                action_type="insert",
+                actor_user_principal=actor_user_principal,
+                before_json=None,
+                after_json=row,
+                request_id=None,
+            )
+            return ticket_id
+
+        self._ensure_local_offering_extension_tables()
+        self._execute_file(
+            "inserts/create_offering_ticket.sql",
+            params=(
+                ticket_id,
+                offering_id,
+                vendor_id,
+                row["ticket_system"],
+                row["external_ticket_id"],
+                clean_title,
+                clean_status,
+                row["priority"],
+                row["opened_date"],
+                row["closed_date"],
+                row["notes"],
+                True,
+                now,
+                actor_ref,
+                now,
+                actor_ref,
+            ),
+            app_offering_ticket=self._table("app_offering_ticket"),
+        )
+        self._write_audit_entity_change(
+            entity_name="app_offering_ticket",
+            entity_id=ticket_id,
+            action_type="insert",
+            actor_user_principal=actor_user_principal,
+            before_json=None,
+            after_json=row,
+            request_id=None,
+        )
+        return ticket_id
+
+    def update_offering_ticket(
+        self,
+        *,
+        vendor_id: str,
+        offering_id: str,
+        ticket_id: str,
+        actor_user_principal: str,
+        updates: dict[str, Any],
+        reason: str,
+    ) -> dict[str, str]:
+        if not reason.strip():
+            raise ValueError("Reason is required.")
+        if not self.offering_belongs_to_vendor(vendor_id, offering_id):
+            raise ValueError("Offering does not belong to this vendor.")
+
+        allowed = {
+            "ticket_system",
+            "external_ticket_id",
+            "title",
+            "status",
+            "priority",
+            "opened_date",
+            "closed_date",
+            "notes",
+        }
+        clean_updates = {k: v for k, v in updates.items() if k in allowed}
+        if not clean_updates:
+            raise ValueError("No ticket fields were provided.")
+
+        if self.config.use_mock:
+            rows = self._mock_offering_tickets_df()
+            match = rows[rows["ticket_id"].astype(str) == str(ticket_id)] if not rows.empty else pd.DataFrame()
+        else:
+            self._ensure_local_offering_extension_tables()
+            match = self._query_file(
+                "ingestion/select_offering_ticket_by_id.sql",
+                params=(ticket_id, offering_id, vendor_id),
+                columns=[
+                    "ticket_id",
+                    "offering_id",
+                    "vendor_id",
+                    "ticket_system",
+                    "external_ticket_id",
+                    "title",
+                    "status",
+                    "priority",
+                    "opened_date",
+                    "closed_date",
+                    "notes",
+                    "active_flag",
+                    "created_at",
+                    "created_by",
+                    "updated_at",
+                    "updated_by",
+                ],
+                app_offering_ticket=self._table("app_offering_ticket"),
+            )
+
+        if match.empty:
+            raise ValueError("Ticket not found for this offering.")
+        current = match.iloc[0].to_dict()
+        before = dict(current)
+        after = dict(current)
+        after.update(clean_updates)
+        request_id = str(uuid.uuid4())
+        now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
+        clean_updates["updated_at"] = now.isoformat()
+        clean_updates["updated_by"] = actor_ref
+
+        if self.config.use_mock:
+            self._mock_offering_ticket_overrides[ticket_id] = {
+                **self._mock_offering_ticket_overrides.get(ticket_id, {}),
+                **clean_updates,
+            }
+        else:
+            set_clause = ", ".join([f"{key} = %s" for key in clean_updates.keys() if key not in {"updated_at", "updated_by"}])
+            params = [clean_updates[key] for key in clean_updates.keys() if key not in {"updated_at", "updated_by"}]
+            self._execute_file(
+                "updates/update_offering_ticket.sql",
+                params=tuple(params + [now, actor_ref, ticket_id, offering_id, vendor_id]),
+                app_offering_ticket=self._table("app_offering_ticket"),
+                set_clause=set_clause,
+            )
+
+        after.update(clean_updates)
+        change_event_id = self._write_audit_entity_change(
+            entity_name="app_offering_ticket",
+            entity_id=ticket_id,
+            action_type="update",
+            actor_user_principal=actor_user_principal,
+            before_json=before,
+            after_json=after,
+            request_id=request_id,
+        )
+        return {"request_id": request_id, "change_event_id": change_event_id}
+
+    def list_offering_notes(self, offering_id: str, note_type: str | None = None) -> pd.DataFrame:
+        normalized_type = str(note_type or "").strip().lower()
+        if self.config.use_mock:
+            rows = self._mock_offering_notes_df()
+            if rows.empty:
+                return rows
+            rows = rows[rows["entity_id"].astype(str) == str(offering_id)].copy()
+            if normalized_type:
+                rows = rows[rows["note_type"].astype(str).str.lower() == normalized_type].copy()
+            if "created_at" in rows.columns:
+                rows = rows.sort_values("created_at", ascending=False)
+            return self._decorate_user_columns(rows, ["created_by"])
+
+        note_type_clause = "AND lower(note_type) = lower(%s)" if normalized_type else ""
+        params: tuple[Any, ...] = (offering_id, normalized_type) if normalized_type else (offering_id,)
+        rows = self._query_file(
+            "ingestion/select_offering_notes.sql",
+            params=params,
+            columns=["note_id", "entity_name", "entity_id", "note_type", "note_text", "created_at", "created_by"],
+            note_type_clause=note_type_clause,
+            app_note=self._table("app_note"),
+        )
+        return self._decorate_user_columns(rows, ["created_by"])
+
+    def add_offering_note(
+        self,
+        *,
+        vendor_id: str,
+        offering_id: str,
+        note_type: str,
+        note_text: str,
+        actor_user_principal: str,
+    ) -> str:
+        if not self.offering_belongs_to_vendor(vendor_id, offering_id):
+            raise ValueError("Offering does not belong to this vendor.")
+        clean_note_type = str(note_type or "").strip().lower() or "general"
+        clean_note_text = str(note_text or "").strip()
+        if not clean_note_text:
+            raise ValueError("Note text is required.")
+
+        note_id = self._new_id("ont")
+        now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
+        row = {
+            "note_id": note_id,
+            "entity_name": "offering",
+            "entity_id": offering_id,
+            "note_type": clean_note_type,
+            "note_text": clean_note_text,
+            "created_at": now.isoformat(),
+            "created_by": actor_ref,
+        }
+        if self.config.use_mock:
+            self._mock_new_offering_notes.append(row)
+            self._write_audit_entity_change(
+                entity_name="app_note",
+                entity_id=note_id,
+                action_type="insert",
+                actor_user_principal=actor_user_principal,
+                before_json=None,
+                after_json=row,
+                request_id=None,
+            )
+            return note_id
+
+        self._execute_file(
+            "inserts/add_offering_note.sql",
+            params=(
+                note_id,
+                "offering",
+                offering_id,
+                clean_note_type,
+                clean_note_text,
+                now,
+                actor_ref,
+            ),
+            app_note=self._table("app_note"),
+        )
+        self._write_audit_entity_change(
+            entity_name="app_note",
+            entity_id=note_id,
+            action_type="insert",
+            actor_user_principal=actor_user_principal,
+            before_json=None,
+            after_json=row,
+            request_id=None,
+        )
+        return note_id
+
+    def get_offering_activity(self, vendor_id: str, offering_id: str) -> pd.DataFrame:
+        if self.config.use_mock:
+            events = self._mock_audit_changes_df().copy()
+            data_flow_rows = self.list_offering_data_flows(vendor_id, offering_id)
+            ticket_rows = self.list_offering_tickets(vendor_id, offering_id)
+            note_rows = self.list_offering_notes(offering_id)
+            doc_rows = self.list_docs("offering", offering_id)
+            data_flow_ids = (
+                data_flow_rows["data_flow_id"].astype(str).tolist()
+                if not data_flow_rows.empty and "data_flow_id" in data_flow_rows.columns
+                else []
+            )
+            ticket_ids = (
+                ticket_rows["ticket_id"].astype(str).tolist()
+                if not ticket_rows.empty and "ticket_id" in ticket_rows.columns
+                else []
+            )
+            note_ids = (
+                note_rows["note_id"].astype(str).tolist()
+                if not note_rows.empty and "note_id" in note_rows.columns
+                else []
+            )
+            doc_ids = doc_rows["doc_id"].astype(str).tolist() if not doc_rows.empty and "doc_id" in doc_rows.columns else []
+            ids = {str(offering_id), *data_flow_ids, *ticket_ids, *note_ids, *doc_ids}
+            filtered = events[events["entity_id"].astype(str).isin(ids)].copy()
+            if "event_ts" in filtered.columns:
+                filtered = filtered.sort_values("event_ts", ascending=False)
+            filtered = self._with_audit_change_summaries(filtered)
+            return self._decorate_user_columns(filtered, ["actor_user_principal"])
+
+        self._ensure_local_offering_extension_tables()
+        out = self._query_file(
+            "ingestion/select_offering_activity.sql",
+            params=(offering_id, offering_id, offering_id, offering_id, offering_id),
+            columns=[
+                "change_event_id",
+                "entity_name",
+                "entity_id",
+                "action_type",
+                "before_json",
+                "after_json",
+                "event_ts",
+                "actor_user_principal",
+                "request_id",
+            ],
+            audit_entity_change=self._table("audit_entity_change"),
+            app_offering_data_flow=self._table("app_offering_data_flow"),
+            app_offering_ticket=self._table("app_offering_ticket"),
+            app_note=self._table("app_note"),
+            app_document_link=self._table("app_document_link"),
+        )
+        out = self._with_audit_change_summaries(out)
+        return self._decorate_user_columns(out, ["actor_user_principal"])
 
     def offering_belongs_to_vendor(self, vendor_id: str, offering_id: str) -> bool:
         if not offering_id:
@@ -2895,6 +4500,8 @@ class VendorRepository:
         actor_user_principal: str,
         offering_name: str,
         offering_type: str | None = None,
+        lob: str | None = None,
+        service_type: str | None = None,
         lifecycle_state: str = "draft",
         criticality_tier: str | None = None,
     ) -> str:
@@ -2911,6 +4518,8 @@ class VendorRepository:
             "vendor_id": vendor_id,
             "offering_name": offering_name,
             "offering_type": (offering_type or "").strip() or None,
+            "lob": (lob or "").strip() or None,
+            "service_type": (service_type or "").strip() or None,
             "lifecycle_state": lifecycle_state,
             "criticality_tier": (criticality_tier or "").strip() or None,
         }
@@ -2928,6 +4537,7 @@ class VendorRepository:
             )
             return offering_id
 
+        self._ensure_local_offering_columns()
         self._execute_file(
             "inserts/create_offering.sql",
             params=(
@@ -2935,6 +4545,8 @@ class VendorRepository:
                 vendor_id,
                 row["offering_name"],
                 row["offering_type"],
+                row["lob"],
+                row["service_type"],
                 row["lifecycle_state"],
                 row["criticality_tier"],
             ),
@@ -2960,7 +4572,7 @@ class VendorRepository:
         updates: dict[str, Any],
         reason: str,
     ) -> dict[str, str]:
-        allowed = {"offering_name", "offering_type", "lifecycle_state", "criticality_tier"}
+        allowed = {"offering_name", "offering_type", "lob", "service_type", "lifecycle_state", "criticality_tier"}
         clean_updates = {k: v for k, v in updates.items() if k in allowed}
         if not clean_updates:
             raise ValueError("No editable fields were provided.")
@@ -3005,6 +4617,7 @@ class VendorRepository:
 
         set_clause = ", ".join([f"{k} = %s" for k in clean_updates.keys()])
         params = list(clean_updates.values()) + [offering_id, vendor_id]
+        self._ensure_local_offering_columns()
         self._execute_file(
             "updates/update_offering_fields.sql",
             params=tuple(params),
@@ -3171,11 +4784,12 @@ class VendorRepository:
         owner_principal = owner_user_principal.strip()
         if not owner_principal:
             raise ValueError("Owner principal is required.")
+        owner_role_options = self.list_owner_role_options() or ["business_owner"]
         owner_role_value = self._normalize_choice(
             owner_role,
             field_name="Owner role",
-            allowed=OWNER_ROLE_CHOICES,
-            default="business_owner",
+            allowed=set(owner_role_options),
+            default=owner_role_options[0],
         )
         owner_id = self._new_id("vown")
         now = self._now()
@@ -3238,11 +4852,12 @@ class VendorRepository:
         org_value = org_id.strip()
         if not org_value:
             raise ValueError("Org ID is required.")
+        assignment_options = self.list_assignment_type_options() or ["consumer"]
         assignment_type_value = self._normalize_choice(
             assignment_type,
             field_name="Assignment type",
-            allowed=ASSIGNMENT_TYPE_CHOICES,
-            default="consumer",
+            allowed=set(assignment_options),
+            default=assignment_options[0],
         )
         assignment_id = self._new_id("voa")
         now = self._now()
@@ -3307,11 +4922,12 @@ class VendorRepository:
         contact_name = full_name.strip()
         if not contact_name:
             raise ValueError("Contact name is required.")
+        contact_type_options = self.list_contact_type_options() or ["business"]
         contact_type_value = self._normalize_choice(
             contact_type,
             field_name="Contact type",
-            allowed=CONTACT_TYPE_CHOICES,
-            default="business",
+            allowed=set(contact_type_options),
+            default=contact_type_options[0],
         )
         contact_id = self._new_id("con")
         now = self._now()
@@ -3378,11 +4994,12 @@ class VendorRepository:
             raise ValueError("Offering does not belong to vendor.")
         if not owner_user_principal.strip():
             raise ValueError("Owner principal is required.")
+        owner_role_options = self.list_owner_role_options() or ["business_owner"]
         owner_role_value = self._normalize_choice(
             owner_role,
             field_name="Owner role",
-            allowed=OWNER_ROLE_CHOICES,
-            default="business_owner",
+            allowed=set(owner_role_options),
+            default=owner_role_options[0],
         )
         owner_id = self._new_id("oown")
         row = {
@@ -3480,11 +5097,12 @@ class VendorRepository:
             raise ValueError("Offering does not belong to vendor.")
         if not full_name.strip():
             raise ValueError("Contact name is required.")
+        contact_type_options = self.list_contact_type_options() or ["business"]
         contact_type_value = self._normalize_choice(
             contact_type,
             field_name="Contact type",
-            allowed=CONTACT_TYPE_CHOICES,
-            default="business",
+            allowed=set(contact_type_options),
+            default=contact_type_options[0],
         )
         contact_id = self._new_id("ocon")
         row = {
@@ -3879,6 +5497,7 @@ class VendorRepository:
 
         vendor_clause = "AND m.vendor_id = %s" if vendor_id else ""
         params: tuple[Any, ...] = (project_id, vendor_id) if vendor_id else (project_id,)
+        self._ensure_local_offering_columns()
         return self._query_file(
             "ingestion/select_project_offerings.sql",
             params=params,
@@ -3887,6 +5506,8 @@ class VendorRepository:
                 "vendor_id",
                 "offering_name",
                 "offering_type",
+                "lob",
+                "service_type",
                 "lifecycle_state",
                 "criticality_tier",
             ],
@@ -5302,6 +6923,629 @@ class VendorRepository:
             )
         )
 
+    @staticmethod
+    def _lookup_columns() -> list[str]:
+        return [
+            "option_id",
+            "lookup_type",
+            "option_code",
+            "option_label",
+            "sort_order",
+            "active_flag",
+            "valid_from_ts",
+            "valid_to_ts",
+            "is_current",
+            "deleted_flag",
+            "updated_at",
+            "updated_by",
+        ]
+
+    def _lookup_versions_frame(self, lookup_type: str | None = None) -> pd.DataFrame:
+        columns = self._lookup_columns()
+        normalized_lookup_type = self._normalize_lookup_type(lookup_type) if lookup_type else None
+        default_rows = [
+            row
+            for row in self._default_lookup_option_rows()
+            if not normalized_lookup_type or str(row.get("lookup_type") or "") == normalized_lookup_type
+        ]
+
+        if self.config.use_mock:
+            records = [
+                dict(row)
+                for row in self._mock_lookup_options
+                if not normalized_lookup_type or str(row.get("lookup_type") or "") == normalized_lookup_type
+            ]
+            if not records:
+                records = [dict(row) for row in default_rows]
+            out = pd.DataFrame(records, columns=columns)
+        else:
+            self._ensure_local_lookup_option_table()
+            rows = self._query_file(
+                "reporting/list_lookup_options.sql",
+                params=(normalized_lookup_type, normalized_lookup_type),
+                columns=columns,
+                app_lookup_option=self._table("app_lookup_option"),
+            )
+            records = rows.to_dict("records")
+            if not records:
+                records = [dict(row) for row in default_rows]
+            out = pd.DataFrame(records, columns=columns)
+
+        if out.empty:
+            return out
+        out["sort_order"] = pd.to_numeric(out["sort_order"], errors="coerce").fillna(999).astype(int)
+        if "active_flag" not in out.columns:
+            out["active_flag"] = True
+        if "is_current" not in out.columns:
+            out["is_current"] = True
+        if "deleted_flag" not in out.columns:
+            out["deleted_flag"] = False
+        out["active_flag"] = out["active_flag"].map(self._as_bool)
+        out["is_current"] = out["is_current"].map(self._as_bool)
+        out["deleted_flag"] = out["deleted_flag"].map(self._as_bool)
+        return out.reset_index(drop=True)
+
+    def _lookup_rows_with_status(self, rows: pd.DataFrame, *, as_of_ts: Any) -> pd.DataFrame:
+        if rows.empty:
+            out = rows.copy()
+            out["status"] = pd.Series(dtype="object")
+            return out
+
+        as_of = self._parse_lookup_ts(as_of_ts, fallback=self._now())
+        statuses: list[str] = []
+        normalized_from: list[str] = []
+        normalized_to: list[str] = []
+        for row in rows.to_dict("records"):
+            start, end = self._normalize_lookup_window(row.get("valid_from_ts"), row.get("valid_to_ts"))
+            statuses.append(self._lookup_status_for_window(start, end, as_of=as_of))
+            normalized_from.append(start.isoformat())
+            normalized_to.append(end.isoformat())
+        out = rows.copy()
+        out["status"] = statuses
+        out["valid_from_ts"] = normalized_from
+        out["valid_to_ts"] = normalized_to
+        return out
+
+    def list_lookup_option_versions(
+        self,
+        lookup_type: str,
+        *,
+        as_of_ts: Any = None,
+        status_filter: str = "all",
+        include_deleted: bool = False,
+    ) -> pd.DataFrame:
+        lookup_key = self._normalize_lookup_type(lookup_type)
+        out = self._lookup_versions_frame(lookup_key)
+        if out.empty:
+            return pd.DataFrame(columns=self._lookup_columns() + ["status"])
+        out = out[out["is_current"]].copy()
+        if not include_deleted:
+            out = out[~out["deleted_flag"]].copy()
+        out = self._lookup_rows_with_status(out, as_of_ts=as_of_ts)
+        filter_value = str(status_filter or "all").strip().lower()
+        if filter_value in {"active", "historical", "future"}:
+            out = out[out["status"].astype(str) == filter_value].copy()
+        return out.sort_values(
+            ["sort_order", "option_label", "valid_from_ts", "option_code"],
+            kind="stable",
+        ).reset_index(drop=True)
+
+    def list_lookup_options(
+        self,
+        lookup_type: str | None = None,
+        *,
+        active_only: bool = False,
+        as_of_ts: Any = None,
+    ) -> pd.DataFrame:
+        out = self._lookup_versions_frame(lookup_type)
+        if out.empty:
+            return out
+        out = out[out["is_current"]].copy()
+        out = out[~out["deleted_flag"]].copy()
+        out = self._lookup_rows_with_status(out, as_of_ts=as_of_ts)
+        if active_only:
+            out = out[out["status"].astype(str) == "active"].copy()
+        return out.sort_values(
+            ["lookup_type", "sort_order", "option_label", "option_code"],
+            kind="stable",
+        ).reset_index(drop=True)
+
+    def list_doc_source_options(self) -> list[str]:
+        rows = self.list_lookup_options(LOOKUP_TYPE_DOC_SOURCE, active_only=True)
+        if rows.empty:
+            return list(DEFAULT_DOC_SOURCE_OPTIONS)
+        values: list[str] = []
+        seen: set[str] = set()
+        for raw in rows["option_code"].tolist():
+            value = str(raw).strip().lower()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            values.append(value)
+        return values or list(DEFAULT_DOC_SOURCE_OPTIONS)
+
+    def list_doc_tag_options(self) -> list[str]:
+        rows = self.list_lookup_options(LOOKUP_TYPE_DOC_TAG, active_only=True)
+        if rows.empty:
+            return list(DEFAULT_DOC_TAG_OPTIONS)
+        values: list[str] = []
+        seen: set[str] = set()
+        for raw in rows["option_code"].tolist():
+            value = str(raw).strip().lower()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            values.append(value)
+        return values or list(DEFAULT_DOC_TAG_OPTIONS)
+
+    def list_owner_role_options(self) -> list[str]:
+        rows = self.list_lookup_options(LOOKUP_TYPE_OWNER_ROLE, active_only=True)
+        if rows.empty:
+            return list(DEFAULT_OWNER_ROLE_OPTIONS)
+        values: list[str] = []
+        seen: set[str] = set()
+        for raw in rows["option_code"].tolist():
+            value = str(raw).strip().lower()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            values.append(value)
+        return values or list(DEFAULT_OWNER_ROLE_OPTIONS)
+
+    def list_assignment_type_options(self) -> list[str]:
+        rows = self.list_lookup_options(LOOKUP_TYPE_ASSIGNMENT_TYPE, active_only=True)
+        if rows.empty:
+            return list(DEFAULT_ASSIGNMENT_TYPE_OPTIONS)
+        values: list[str] = []
+        seen: set[str] = set()
+        for raw in rows["option_code"].tolist():
+            value = str(raw).strip().lower()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            values.append(value)
+        return values or list(DEFAULT_ASSIGNMENT_TYPE_OPTIONS)
+
+    def list_contact_type_options(self) -> list[str]:
+        rows = self.list_lookup_options(LOOKUP_TYPE_CONTACT_TYPE, active_only=True)
+        if rows.empty:
+            return list(DEFAULT_CONTACT_TYPE_OPTIONS)
+        values: list[str] = []
+        seen: set[str] = set()
+        for raw in rows["option_code"].tolist():
+            value = str(raw).strip().lower()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            values.append(value)
+        return values or list(DEFAULT_CONTACT_TYPE_OPTIONS)
+
+    def list_project_type_options(self) -> list[str]:
+        rows = self.list_lookup_options(LOOKUP_TYPE_PROJECT_TYPE, active_only=True)
+        if rows.empty:
+            return list(DEFAULT_PROJECT_TYPE_OPTIONS)
+        values: list[str] = []
+        seen: set[str] = set()
+        for raw in rows["option_code"].tolist():
+            value = str(raw).strip().lower()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            values.append(value)
+        return values or list(DEFAULT_PROJECT_TYPE_OPTIONS)
+
+    def list_workflow_status_options(self) -> list[str]:
+        rows = self.list_lookup_options(LOOKUP_TYPE_WORKFLOW_STATUS, active_only=True)
+        if rows.empty:
+            return list(DEFAULT_WORKFLOW_STATUS_OPTIONS)
+        values: list[str] = []
+        seen: set[str] = set()
+        for raw in rows["option_code"].tolist():
+            value = str(raw).strip().lower()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            values.append(value)
+        return values or list(DEFAULT_WORKFLOW_STATUS_OPTIONS)
+
+    def list_offering_type_options(self) -> list[str]:
+        rows = self.list_lookup_options(LOOKUP_TYPE_OFFERING_TYPE, active_only=True)
+        if rows.empty:
+            return [label for _, label in DEFAULT_OFFERING_TYPE_CHOICES]
+        out: list[str] = []
+        for row in rows.to_dict("records"):
+            label = str(row.get("option_label") or "").strip()
+            code = str(row.get("option_code") or "").strip().lower()
+            value = label or self._lookup_label_from_code(code)
+            if value and value not in out:
+                out.append(value)
+        return out or [label for _, label in DEFAULT_OFFERING_TYPE_CHOICES]
+
+    def list_offering_lob_options(self) -> list[str]:
+        rows = self.list_lookup_options(LOOKUP_TYPE_OFFERING_LOB, active_only=True)
+        if rows.empty:
+            return [label for _, label in DEFAULT_OFFERING_LOB_CHOICES]
+        out: list[str] = []
+        for row in rows.to_dict("records"):
+            label = str(row.get("option_label") or "").strip()
+            code = str(row.get("option_code") or "").strip().lower()
+            value = label or self._lookup_label_from_code(code)
+            if value and value not in out:
+                out.append(value)
+        return out or [label for _, label in DEFAULT_OFFERING_LOB_CHOICES]
+
+    def list_offering_service_type_options(self) -> list[str]:
+        rows = self.list_lookup_options(LOOKUP_TYPE_OFFERING_SERVICE_TYPE, active_only=True)
+        if rows.empty:
+            return [label for _, label in DEFAULT_OFFERING_SERVICE_TYPE_CHOICES]
+        out: list[str] = []
+        for row in rows.to_dict("records"):
+            label = str(row.get("option_label") or "").strip()
+            code = str(row.get("option_code") or "").strip().lower()
+            value = label or self._lookup_label_from_code(code)
+            if value and value not in out:
+                out.append(value)
+        return out or [label for _, label in DEFAULT_OFFERING_SERVICE_TYPE_CHOICES]
+
+    def save_lookup_option(
+        self,
+        *,
+        option_id: str | None,
+        lookup_type: str,
+        option_code: str,
+        option_label: str | None,
+        sort_order: int,
+        valid_from_ts: Any,
+        valid_to_ts: Any,
+        updated_by: str,
+    ) -> None:
+        lookup_key = self._normalize_lookup_type(lookup_type)
+        code = self._normalize_lookup_code(option_code)
+        label = str(option_label or "").strip() or self._lookup_label_from_code(code)
+        safe_sort_order = max(1, int(sort_order or 1))
+        start_ts, end_ts = self._normalize_lookup_window(valid_from_ts, valid_to_ts)
+        now = self._now()
+        actor_ref = self._actor_ref(updated_by)
+        current_rows = self.list_lookup_options(lookup_key, active_only=False).to_dict("records")
+
+        selected_row: dict[str, Any] | None = None
+        selected_id = str(option_id or "").strip()
+        if selected_id:
+            selected_row = next(
+                (row for row in current_rows if str(row.get("option_id") or "") == selected_id),
+                None,
+            )
+            if selected_row is None:
+                raise ValueError("The selected option is no longer available for update.")
+        else:
+            matching_code_rows = [
+                row
+                for row in current_rows
+                if self._normalize_lookup_code(str(row.get("option_code") or "")) == code
+            ]
+            if len(matching_code_rows) == 1:
+                selected_row = matching_code_rows[0]
+
+        for row in current_rows:
+            if selected_row and str(row.get("option_id") or "") == str(selected_row.get("option_id") or ""):
+                continue
+            row_label = str(row.get("option_label") or "").strip().lower()
+            if row_label != label.lower():
+                continue
+            row_start, row_end = self._normalize_lookup_window(row.get("valid_from_ts"), row.get("valid_to_ts"))
+            if self._lookup_windows_overlap(start_ts, end_ts, row_start, row_end):
+                raise ValueError("Label already exists in the selected active window.")
+
+        overlapping_rows: list[dict[str, Any]] = []
+        for row in current_rows:
+            if selected_row and str(row.get("option_id") or "") == str(selected_row.get("option_id") or ""):
+                continue
+            row_start, row_end = self._normalize_lookup_window(row.get("valid_from_ts"), row.get("valid_to_ts"))
+            if self._lookup_windows_overlap(start_ts, end_ts, row_start, row_end):
+                overlapping_rows.append(row)
+        overlapping_rows.sort(
+            key=lambda item: (
+                int(item.get("sort_order") or 999),
+                str(item.get("option_label") or "").lower(),
+                str(item.get("option_id") or ""),
+            )
+        )
+
+        target = {
+            "option_id": str(selected_row.get("option_id") or "") if selected_row else "",
+            "lookup_type": lookup_key,
+            "option_code": code,
+            "option_label": label,
+            "sort_order": safe_sort_order,
+            "active_flag": True,
+            "valid_from_ts": start_ts.isoformat(),
+            "valid_to_ts": end_ts.isoformat(),
+            "is_current": True,
+            "deleted_flag": False,
+            "updated_at": now.isoformat(),
+            "updated_by": actor_ref,
+        }
+        target_index = min(safe_sort_order, len(overlapping_rows) + 1) - 1
+        ordered = [dict(item) for item in overlapping_rows]
+        ordered.insert(target_index, target)
+        for idx, row in enumerate(ordered, start=1):
+            row["sort_order"] = idx
+
+        rows_to_close: dict[str, dict[str, Any]] = {}
+        rows_to_insert: list[dict[str, Any]] = []
+        overlap_by_id = {str(row.get("option_id") or ""): row for row in overlapping_rows}
+
+        for row in ordered:
+            row_id = str(row.get("option_id") or "")
+            if row_id and row_id in overlap_by_id:
+                prior = overlap_by_id[row_id]
+                if int(prior.get("sort_order") or 0) == int(row.get("sort_order") or 0):
+                    continue
+                rows_to_close[row_id] = prior
+                rows_to_insert.append(
+                    {
+                        "lookup_type": lookup_key,
+                        "option_code": self._normalize_lookup_code(str(prior.get("option_code") or "")),
+                        "option_label": str(prior.get("option_label") or "").strip()
+                        or self._lookup_label_from_code(str(prior.get("option_code") or "")),
+                        "sort_order": int(row.get("sort_order") or 1),
+                        "active_flag": True,
+                        "valid_from_ts": str(prior.get("valid_from_ts") or start_ts.isoformat()),
+                        "valid_to_ts": str(prior.get("valid_to_ts") or end_ts.isoformat()),
+                        "is_current": True,
+                        "deleted_flag": False,
+                    }
+                )
+                continue
+
+            if selected_row:
+                prior = selected_row
+                changed = (
+                    self._normalize_lookup_code(str(prior.get("option_code") or "")) != code
+                    or str(prior.get("option_label") or "").strip() != label
+                    or int(prior.get("sort_order") or 0) != int(row.get("sort_order") or 0)
+                    or str(prior.get("valid_from_ts") or "") != start_ts.isoformat()
+                    or str(prior.get("valid_to_ts") or "") != end_ts.isoformat()
+                )
+                if not changed:
+                    continue
+                rows_to_close[str(prior.get("option_id") or "")] = prior
+            rows_to_insert.append(
+                {
+                    "lookup_type": lookup_key,
+                    "option_code": code,
+                    "option_label": label,
+                    "sort_order": int(row.get("sort_order") or 1),
+                    "active_flag": True,
+                    "valid_from_ts": start_ts.isoformat(),
+                    "valid_to_ts": end_ts.isoformat(),
+                    "is_current": True,
+                    "deleted_flag": False,
+                }
+            )
+
+        if not rows_to_close and not rows_to_insert:
+            return
+
+        if self.config.use_mock:
+            for close_row in rows_to_close.values():
+                close_id = str(close_row.get("option_id") or "")
+                for entry in self._mock_lookup_options:
+                    if str(entry.get("option_id") or "") != close_id:
+                        continue
+                    entry["is_current"] = False
+                    entry["valid_to_ts"] = now.isoformat()
+                    entry["updated_at"] = now.isoformat()
+                    entry["updated_by"] = actor_ref
+                    break
+            for row in rows_to_insert:
+                self._mock_lookup_options.append(
+                    {
+                        "option_id": f"lkp-{lookup_key}-{row['option_code']}-{uuid.uuid4().hex[:12]}",
+                        "lookup_type": row["lookup_type"],
+                        "option_code": row["option_code"],
+                        "option_label": row["option_label"],
+                        "sort_order": int(row["sort_order"]),
+                        "active_flag": True,
+                        "valid_from_ts": row["valid_from_ts"],
+                        "valid_to_ts": row["valid_to_ts"],
+                        "is_current": True,
+                        "deleted_flag": False,
+                        "updated_at": now.isoformat(),
+                        "updated_by": actor_ref,
+                    }
+                )
+            return
+
+        self._ensure_local_lookup_option_table()
+        for close_row in rows_to_close.values():
+            self._execute_file(
+                "updates/close_lookup_option_version.sql",
+                params=(now, False, now, actor_ref, str(close_row.get("option_id") or "")),
+                app_lookup_option=self._table("app_lookup_option"),
+            )
+        for row in rows_to_insert:
+            self._execute_file(
+                "inserts/create_lookup_option.sql",
+                params=(
+                    f"lkp-{lookup_key}-{row['option_code']}-{uuid.uuid4().hex[:12]}",
+                    row["lookup_type"],
+                    row["option_code"],
+                    row["option_label"],
+                    row["sort_order"],
+                    row["active_flag"],
+                    row["valid_from_ts"],
+                    row["valid_to_ts"],
+                    row["is_current"],
+                    row["deleted_flag"],
+                    now,
+                    actor_ref,
+                ),
+                app_lookup_option=self._table("app_lookup_option"),
+            )
+
+    def delete_lookup_option(
+        self,
+        *,
+        lookup_type: str,
+        option_id: str,
+        updated_by: str = "system",
+    ) -> None:
+        lookup_key = self._normalize_lookup_type(lookup_type)
+        target_id = str(option_id or "").strip()
+        if not target_id:
+            raise ValueError("Lookup option id is required.")
+        current_rows = self.list_lookup_options(lookup_key, active_only=False).to_dict("records")
+        target = next((row for row in current_rows if str(row.get("option_id") or "") == target_id), None)
+        if target is None:
+            raise ValueError("The selected option is no longer available for removal.")
+        now = self._now()
+        actor_ref = self._actor_ref(updated_by)
+
+        if self.config.use_mock:
+            for row in self._mock_lookup_options:
+                if str(row.get("option_id") or "") != target_id:
+                    continue
+                row["is_current"] = False
+                row["valid_to_ts"] = now.isoformat()
+                row["updated_at"] = now.isoformat()
+                row["updated_by"] = actor_ref
+                break
+            self._mock_lookup_options.append(
+                {
+                    "option_id": f"lkp-{lookup_key}-{self._normalize_lookup_code(str(target.get('option_code') or 'removed'))}-{uuid.uuid4().hex[:12]}",
+                    "lookup_type": lookup_key,
+                    "option_code": self._normalize_lookup_code(str(target.get("option_code") or "removed")),
+                    "option_label": str(target.get("option_label") or ""),
+                    "sort_order": int(target.get("sort_order") or 999),
+                    "active_flag": False,
+                    "valid_from_ts": now.isoformat(),
+                    "valid_to_ts": datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc).isoformat(),
+                    "is_current": True,
+                    "deleted_flag": True,
+                    "updated_at": now.isoformat(),
+                    "updated_by": actor_ref,
+                }
+            )
+        else:
+            self._ensure_local_lookup_option_table()
+            self._execute_file(
+                "updates/close_lookup_option_version.sql",
+                params=(now, False, now, actor_ref, target_id),
+                app_lookup_option=self._table("app_lookup_option"),
+            )
+            self._execute_file(
+                "inserts/create_lookup_option.sql",
+                params=(
+                    f"lkp-{lookup_key}-{self._normalize_lookup_code(str(target.get('option_code') or 'removed'))}-{uuid.uuid4().hex[:12]}",
+                    lookup_key,
+                    self._normalize_lookup_code(str(target.get("option_code") or "removed")),
+                    str(target.get("option_label") or ""),
+                    int(target.get("sort_order") or 999),
+                    False,
+                    now,
+                    datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc),
+                    True,
+                    True,
+                    now,
+                    actor_ref,
+                ),
+                app_lookup_option=self._table("app_lookup_option"),
+            )
+
+        target_start, target_end = self._normalize_lookup_window(
+            target.get("valid_from_ts"),
+            target.get("valid_to_ts"),
+        )
+        remaining = self.list_lookup_options(lookup_key, active_only=False).to_dict("records")
+        overlapping: list[dict[str, Any]] = []
+        for row in remaining:
+            row_start, row_end = self._normalize_lookup_window(row.get("valid_from_ts"), row.get("valid_to_ts"))
+            if self._lookup_windows_overlap(target_start, target_end, row_start, row_end):
+                overlapping.append(row)
+        overlapping.sort(
+            key=lambda item: (
+                int(item.get("sort_order") or 999),
+                str(item.get("option_label") or "").lower(),
+                str(item.get("option_id") or ""),
+            )
+        )
+        rows_to_close: list[dict[str, Any]] = []
+        rows_to_insert: list[dict[str, Any]] = []
+        for idx, row in enumerate(overlapping, start=1):
+            if int(row.get("sort_order") or 0) == idx:
+                continue
+            rows_to_close.append(row)
+            rows_to_insert.append(
+                {
+                    "lookup_type": lookup_key,
+                    "option_code": self._normalize_lookup_code(str(row.get("option_code") or "")),
+                    "option_label": str(row.get("option_label") or "").strip()
+                    or self._lookup_label_from_code(str(row.get("option_code") or "")),
+                    "sort_order": idx,
+                    "active_flag": True,
+                    "valid_from_ts": str(row.get("valid_from_ts") or now.isoformat()),
+                    "valid_to_ts": str(row.get("valid_to_ts") or datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc).isoformat()),
+                    "is_current": True,
+                    "deleted_flag": False,
+                }
+            )
+        if self.config.use_mock:
+            for close_row in rows_to_close:
+                close_id = str(close_row.get("option_id") or "")
+                for entry in self._mock_lookup_options:
+                    if str(entry.get("option_id") or "") != close_id:
+                        continue
+                    entry["is_current"] = False
+                    entry["valid_to_ts"] = now.isoformat()
+                    entry["updated_at"] = now.isoformat()
+                    entry["updated_by"] = actor_ref
+                    break
+            for row in rows_to_insert:
+                self._mock_lookup_options.append(
+                    {
+                        "option_id": f"lkp-{lookup_key}-{row['option_code']}-{uuid.uuid4().hex[:12]}",
+                        "lookup_type": row["lookup_type"],
+                        "option_code": row["option_code"],
+                        "option_label": row["option_label"],
+                        "sort_order": int(row["sort_order"]),
+                        "active_flag": True,
+                        "valid_from_ts": row["valid_from_ts"],
+                        "valid_to_ts": row["valid_to_ts"],
+                        "is_current": True,
+                        "deleted_flag": False,
+                        "updated_at": now.isoformat(),
+                        "updated_by": actor_ref,
+                    }
+                )
+            return
+
+        for close_row in rows_to_close:
+            self._execute_file(
+                "updates/close_lookup_option_version.sql",
+                params=(now, False, now, actor_ref, str(close_row.get("option_id") or "")),
+                app_lookup_option=self._table("app_lookup_option"),
+            )
+        for row in rows_to_insert:
+            self._execute_file(
+                "inserts/create_lookup_option.sql",
+                params=(
+                    f"lkp-{lookup_key}-{row['option_code']}-{uuid.uuid4().hex[:12]}",
+                    row["lookup_type"],
+                    row["option_code"],
+                    row["option_label"],
+                    row["sort_order"],
+                    row["active_flag"],
+                    row["valid_from_ts"],
+                    row["valid_to_ts"],
+                    row["is_current"],
+                    row["deleted_flag"],
+                    now,
+                    actor_ref,
+                ),
+                app_lookup_option=self._table("app_lookup_option"),
+            )
+
     def record_contract_cancellation(
         self, contract_id: str, reason_code: str, notes: str, actor_user_principal: str
     ) -> str:
@@ -5479,6 +7723,10 @@ class VendorRepository:
         can_edit = any(self._as_bool(item.get("can_edit")) for item in selected_defs)
         can_report = any(self._as_bool(item.get("can_report")) for item in selected_defs)
         can_direct_apply = any(self._as_bool(item.get("can_direct_apply")) for item in selected_defs)
+        can_submit_requests = can_edit or (ROLE_VIEWER in active_roles)
+        can_approve_requests = bool(
+            {ROLE_ADMIN, ROLE_APPROVER, ROLE_STEWARD}.intersection(active_roles)
+        ) or (can_edit and int(approval_level) > 0)
 
         permissions = self.list_role_permissions()
         allowed_actions: set[str] = set()
@@ -5499,8 +7747,17 @@ class VendorRepository:
             can_edit = True
             can_report = True
             can_direct_apply = True
+            can_submit_requests = True
+            can_approve_requests = True
             approval_level = max(approval_level, 3)
             allowed_actions = set(CHANGE_APPROVAL_LEVELS.keys())
+
+        if ROLE_SYSTEM_ADMIN in active_roles and ROLE_ADMIN not in active_roles:
+            can_edit = False
+            can_direct_apply = False
+            can_submit_requests = False
+            can_approve_requests = False
+            approval_level = 0
 
         if not allowed_actions:
             allowed_actions = {
@@ -5511,6 +7768,8 @@ class VendorRepository:
             "roles": sorted(active_roles),
             "can_edit": bool(can_edit),
             "can_report": bool(can_report),
+            "can_submit_requests": bool(can_submit_requests),
+            "can_approve_requests": bool(can_approve_requests),
             "can_direct_apply": bool(can_direct_apply),
             "approval_level": int(approval_level),
             "allowed_change_actions": sorted(allowed_actions),
@@ -5627,7 +7886,19 @@ class VendorRepository:
 
     def list_scope_grants(self) -> pd.DataFrame:
         if self.config.use_mock:
-            return mock_data.org_scope()
+            base = mock_data.org_scope().copy()
+            if self._mock_scope_overrides:
+                base = pd.concat([base, pd.DataFrame(self._mock_scope_overrides)], ignore_index=True)
+            columns = ["user_principal", "org_id", "scope_level", "active_flag", "granted_at"]
+            for column in columns:
+                if column not in base.columns:
+                    base[column] = None
+            if base.empty:
+                return pd.DataFrame(columns=columns)
+            base["user_principal"] = base["user_principal"].astype(str)
+            base["org_id"] = base["org_id"].astype(str)
+            base = base.sort_values("granted_at").drop_duplicates(subset=["user_principal", "org_id"], keep="last")
+            return base[columns]
         return self.client.query(
             self._sql(
                 "reporting/list_scope_grants.sql",
@@ -5663,6 +7934,19 @@ class VendorRepository:
         self, target_user_principal: str, org_id: str, scope_level: str, granted_by: str
     ) -> None:
         if self.config.use_mock:
+            target = str(target_user_principal or "").strip()
+            org = str(org_id or "").strip()
+            level = str(scope_level or "").strip().lower()
+            if target and org and level:
+                self._mock_scope_overrides.append(
+                    {
+                        "user_principal": target,
+                        "org_id": org,
+                        "scope_level": level,
+                        "active_flag": True,
+                        "granted_at": self._now().isoformat(),
+                    }
+                )
             return
         self._ensure_user_directory_entry(target_user_principal)
         self._ensure_user_directory_entry(granted_by)

@@ -79,3 +79,102 @@ def test_admin_can_grant_custom_role_to_user(client: TestClient) -> None:
     assert admin_page.status_code == 200
     assert "custom.user@example.com" in admin_page.text
     assert "vendor_custom_reporter" in admin_page.text
+
+
+def test_admin_can_add_doc_lookup_tag_and_use_in_doc_link(client: TestClient) -> None:
+    save_lookup = client.post(
+        "/admin/lookup/save",
+        data={
+            "lookup_type": "doc_tag",
+            "option_code": "qbr",
+            "option_label": "Quarterly Business Review",
+            "sort_order": "55",
+            "valid_from_ts": "2026-01-01",
+            "valid_to_ts": "9999-12-31",
+        },
+        follow_redirects=False,
+    )
+    assert save_lookup.status_code == 303
+
+    admin_page = client.get("/admin")
+    assert admin_page.status_code == 200
+    assert "qbr" in admin_page.text
+
+    add_doc = client.post(
+        "/vendors/vnd-001/docs/link",
+        data={
+            "return_to": "/vendors",
+            "doc_url": "https://contoso.sharepoint.com/sites/vendors/qbr-2026.pdf",
+            "doc_type": "sharepoint",
+            "doc_title": "QBR 2026",
+            "tags": ["qbr"],
+            "owner": "admin@example.com",
+        },
+        follow_redirects=False,
+    )
+    assert add_doc.status_code == 303
+
+    summary = client.get("/vendors/vnd-001/summary?return_to=%2Fvendors")
+    assert summary.status_code == 200
+    assert "QBR 2026" in summary.text
+    assert "qbr" in summary.text
+
+
+def test_admin_defaults_section_resequences_sort_order(client: TestClient) -> None:
+    defaults_page = client.get("/admin?section=defaults&lookup_type=doc_tag")
+    assert defaults_page.status_code == 200
+    assert "Defaults Catalog" in defaults_page.text
+    assert "Owner Roles" in defaults_page.text
+    assert "Offering Types" in defaults_page.text
+
+    create = client.post(
+        "/admin/lookup/save",
+        data={
+            "lookup_type": "doc_tag",
+            "option_code": "priority_review",
+            "option_label": "Priority Review",
+            "sort_order": "2",
+            "valid_from_ts": "2026-01-01",
+            "valid_to_ts": "9999-12-31",
+        },
+        follow_redirects=False,
+    )
+    assert create.status_code == 303
+    assert "section=defaults" in create.headers["location"]
+
+    repo = get_repo()
+    rows = repo.list_lookup_options("doc_tag", active_only=True)
+    assert rows["sort_order"].tolist() == list(range(1, len(rows) + 1))
+    priority_row = rows[rows["option_code"].astype(str) == "priority_review"].iloc[0]
+    assert int(priority_row["sort_order"]) == 2
+
+    move = client.post(
+        "/admin/lookup/save",
+        data={
+            "lookup_type": "doc_tag",
+            "option_id": str(priority_row["option_id"]),
+            "option_code": "priority_review",
+            "option_label": "Priority Review",
+            "sort_order": "5",
+            "valid_from_ts": "2026-01-01",
+            "valid_to_ts": "9999-12-31",
+        },
+        follow_redirects=False,
+    )
+    assert move.status_code == 303
+
+    moved = repo.list_lookup_options("doc_tag", active_only=True)
+    assert moved["sort_order"].tolist() == list(range(1, len(moved) + 1))
+    moved_priority = moved[moved["option_code"].astype(str) == "priority_review"].iloc[0]
+    assert int(moved_priority["sort_order"]) == 5
+
+    remove = client.post(
+        "/admin/lookup/delete",
+        data={"lookup_type": "doc_tag", "option_id": str(moved_priority["option_id"])},
+        follow_redirects=False,
+    )
+    assert remove.status_code == 303
+
+    active_rows = repo.list_lookup_options("doc_tag", active_only=True)
+    assert "priority_review" not in active_rows["option_code"].tolist()
+    assert active_rows["sort_order"].tolist() == list(range(1, len(active_rows) + 1))

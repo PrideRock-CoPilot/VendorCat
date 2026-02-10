@@ -25,6 +25,22 @@
         {% endfor %}
       </select>
     </label>
+    <label>Line of Business (LOB)
+      <select name="lob">
+        <option value="">none</option>
+        {% for option in offering_lob_options %}
+        <option value="{{ option }}">{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Service Type
+      <select name="service_type">
+        <option value="">none</option>
+        {% for option in offering_service_type_options %}
+        <option value="{{ option }}">{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
     <label>Lifecycle State
       <select name="lifecycle_state">
         {% for state in lifecycle_states %}

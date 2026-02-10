@@ -44,7 +44,6 @@ def test_normalize_doc_tags_includes_detected_type_and_fqdn() -> None:
     tags = normalize_doc_tags(["contract", "renewal"], doc_type="sharepoint", fqdn="contoso.sharepoint.com")
     assert "contract" in tags
     assert "renewal" in tags
-    assert "sharepoint" in tags
     assert "fqdn:contoso.sharepoint.com" in tags
 
 

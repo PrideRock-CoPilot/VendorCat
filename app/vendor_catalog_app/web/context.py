@@ -4,11 +4,14 @@ from dataclasses import dataclass
 
 from vendor_catalog_app.config import AppConfig
 from vendor_catalog_app.security import (
+    ADMIN_PORTAL_ROLES,
     ROLE_ADMIN,
     CHANGE_APPROVAL_LEVELS,
+    can_approve_requests,
     required_approval_level,
     can_apply_change,
     can_review_change,
+    can_submit_change_requests,
     approval_level_for_roles,
 )
 
@@ -28,7 +31,7 @@ class UserContext:
 
     @property
     def has_admin_rights(self) -> bool:
-        return ROLE_ADMIN in self.raw_roles
+        return bool(set(ADMIN_PORTAL_ROLES).intersection(self.raw_roles))
 
     @property
     def can_edit(self) -> bool:
@@ -41,6 +44,22 @@ class UserContext:
         if self.role_policy is not None and "can_report" in self.role_policy:
             return bool(self.role_policy.get("can_report"))
         return bool({"vendor_admin", "vendor_editor", "vendor_steward", "vendor_auditor"}.intersection(self.roles))
+
+    @property
+    def can_submit_requests(self) -> bool:
+        if self.role_policy is not None and "can_submit_requests" in self.role_policy:
+            return bool(self.role_policy.get("can_submit_requests"))
+        return can_submit_change_requests(self.roles)
+
+    @property
+    def can_approve_requests(self) -> bool:
+        if self.role_policy is not None and "can_approve_requests" in self.role_policy:
+            return bool(self.role_policy.get("can_approve_requests"))
+        return can_approve_requests(self.roles)
+
+    @property
+    def can_access_workflows(self) -> bool:
+        return self.can_edit or self.can_submit_requests or self.can_approve_requests
 
     @property
     def can_direct_apply(self) -> bool:
@@ -72,6 +91,8 @@ class UserContext:
         return can_apply_change(self.roles, change_type)
 
     def can_review_level(self, required_level: int) -> bool:
+        if not self.can_approve_requests:
+            return False
         if self.role_policy is not None:
             return self.approval_level >= int(required_level or 0)
         return can_review_change(self.roles, required_level)

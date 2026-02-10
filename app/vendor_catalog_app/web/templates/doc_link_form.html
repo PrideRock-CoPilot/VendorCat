@@ -5,11 +5,11 @@
     <input type="url" name="doc_url" placeholder="https://contoso.sharepoint.com/sites/vendor/docs/contract.docx" required data-doc-url>
     <small class="muted">Links only. VendorCat stores metadata and URL, not files.</small>
   </label>
-  <label>Type <span class="field-error">*</span>
+  <label>Source <span class="field-error">*</span>
     <select name="doc_type" data-doc-type required>
-      <option value="" disabled selected>Select type</option>
-      {% for type in doc_types %}
-      <option value="{{ type }}">{{ type }}</option>
+      <option value="" disabled selected>Select source</option>
+      {% for source in doc_source_options %}
+      <option value="{{ source }}">{{ source|replace('_', ' ')|title }}</option>
       {% endfor %}
     </select>
   </label>
@@ -28,24 +28,14 @@
   <label>Tags
     <select name="tags" multiple size="4" data-doc-tags>
       {% for tag in doc_tag_options %}
-      <option value="{{ tag }}">{{ tag }}</option>
+      <option value="{{ tag }}">{{ tag|replace('_', ' ')|title }}</option>
       {% endfor %}
     </select>
     <small class="muted">Use Ctrl/Cmd to multi-select.</small>
   </label>
-  <label>Additional Tags
-    <input type="text" name="tag_new" placeholder="comma-separated, e.g., legal, renewal_q4" data-doc-tags-custom>
-  </label>
   <label>Expiration Date
     <input type="date" name="expires_on">
   </label>
-  {% if has_admin_rights %}
-  <label>New Owner (Optional)
-    <input type="text" name="owner_new" placeholder="email or network ID" data-doc-owner-input>
-    <small class="muted">If provided, owner will be added during submit.</small>
-  </label>
-  <input type="hidden" name="allow_owner_create" value="1" data-allow-owner-create>
-  {% endif %}
-  <div><button type="submit">{{ submit_label }}</button></div>
+  <div class="form-actions"><button type="submit">{{ submit_label }}</button></div>
 </form>
 {%- endmacro %}

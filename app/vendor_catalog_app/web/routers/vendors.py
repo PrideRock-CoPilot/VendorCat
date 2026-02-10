@@ -7,8 +7,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
 from vendor_catalog_app.repository import GLOBAL_CHANGE_VENDOR_ID
+from vendor_catalog_app.security import required_approval_level
 from vendor_catalog_app.web.utils.doc_links import (
-    DOC_TYPES,
     extract_doc_fqdn,
     normalize_doc_tags,
     suggest_doc_title,
@@ -53,10 +53,35 @@ VENDOR_FIELD_SORT_MAP = {
 LIFECYCLE_STATES = ["draft", "submitted", "in_review", "approved", "active", "suspended", "retired"]
 RISK_TIERS = ["low", "medium", "high", "critical"]
 PROJECT_STATUSES = ["draft", "active", "blocked", "complete", "cancelled"]
-PROJECT_TYPES = ["rfp", "poc", "renewal", "implementation", "other"]
+PROJECT_TYPES_FALLBACK = ["rfp", "poc", "renewal", "implementation", "other"]
 PROJECT_DEMO_TYPES = ["live", "recorded", "workshop", "sandbox"]
 PROJECT_DEMO_OUTCOMES = ["unknown", "selected", "not_selected", "follow_up"]
-OFFERING_TYPES = ["SaaS", "Cloud", "PaaS", "Security", "Data", "Integration", "Other"]
+OFFERING_TYPES_FALLBACK = ["SaaS", "Cloud", "PaaS", "Security", "Data", "Integration", "Other"]
+OFFERING_LOB_FALLBACK = ["Enterprise", "Finance", "HR", "IT", "Operations", "Sales", "Security"]
+OFFERING_SERVICE_TYPE_FALLBACK = [
+    "Application",
+    "Infrastructure",
+    "Integration",
+    "Managed Service",
+    "Platform",
+    "Security",
+    "Support",
+    "Other",
+]
+OFFERING_SECTIONS = [
+    ("summary", "Summary"),
+    ("profile", "Profile"),
+    ("dataflow", "Data Flow"),
+    ("ownership", "Ownership"),
+    ("delivery", "Delivery"),
+    ("tickets", "Tickets"),
+    ("notes", "Notes"),
+    ("documents", "Documents"),
+]
+OFFERING_TICKET_STATUSES = ["open", "in_progress", "blocked", "resolved", "closed"]
+OFFERING_TICKET_PRIORITIES = ["low", "medium", "high", "critical"]
+OFFERING_NOTE_TYPES = ["general", "issue", "implementation", "cost", "data_flow", "misc", "risk", "decision"]
+OFFERING_DATA_METHOD_OPTIONS = ["api", "file_transfer", "cloud_to_cloud", "event_stream", "manual", "other"]
 
 VENDOR_SECTIONS = [
     ("summary", "Summary"),
@@ -92,37 +117,98 @@ def _normalize_project_status(value: str) -> str:
     return status
 
 
-def _normalize_project_type(value: str) -> str:
+def _project_type_options(repo) -> list[str]:
+    options = [str(item).strip().lower() for item in repo.list_project_type_options() if str(item).strip()]
+    return options or list(PROJECT_TYPES_FALLBACK)
+
+
+def _offering_type_options(repo) -> list[str]:
+    options = [str(item).strip() for item in repo.list_offering_type_options() if str(item).strip()]
+    return options or list(OFFERING_TYPES_FALLBACK)
+
+
+def _offering_lob_options(repo) -> list[str]:
+    options = [str(item).strip() for item in repo.list_offering_lob_options() if str(item).strip()]
+    return options or list(OFFERING_LOB_FALLBACK)
+
+
+def _offering_service_type_options(repo) -> list[str]:
+    options = [str(item).strip() for item in repo.list_offering_service_type_options() if str(item).strip()]
+    return options or list(OFFERING_SERVICE_TYPE_FALLBACK)
+
+
+def _normalize_project_type(repo, value: str) -> str:
+    allowed = _project_type_options(repo)
     project_type = value.strip().lower() if value else "other"
-    if project_type not in PROJECT_TYPES:
-        raise ValueError(f"Project type must be one of: {', '.join(PROJECT_TYPES)}")
+    if project_type not in set(allowed):
+        raise ValueError(f"Project type must be one of: {', '.join(allowed)}")
     return project_type
 
 
-def _normalize_doc_type(value: str) -> str:
-    doc_type = (value or "").strip().lower()
-    if not doc_type:
-        return ""
-    if doc_type not in DOC_TYPES:
-        raise ValueError(f"Document type must be one of: {', '.join(DOC_TYPES)}")
-    return doc_type
-
-
-def _normalize_offering_type(value: str, *, allow_blank: bool = True, extra_allowed: set[str] | None = None) -> str:
+def _normalize_offering_type(repo, value: str, *, allow_blank: bool = True, extra_allowed: set[str] | None = None) -> str:
+    allowed = _offering_type_options(repo)
     offering_type = (value or "").strip()
     if not offering_type:
-        return "" if allow_blank else OFFERING_TYPES[0]
-    canonical_by_lower = {item.lower(): item for item in OFFERING_TYPES}
+        return "" if allow_blank else allowed[0]
+    canonical_by_lower = {item.lower(): item for item in allowed}
     canonical = canonical_by_lower.get(offering_type.lower())
     if canonical:
         return canonical
     if extra_allowed and offering_type in extra_allowed:
         return offering_type
-    raise ValueError(f"Offering type must be one of: {', '.join(OFFERING_TYPES)}")
+    raise ValueError(f"Offering type must be one of: {', '.join(allowed)}")
 
 
-def _to_bool(value: object) -> bool:
-    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+def _normalize_offering_lob(repo, value: str, *, allow_blank: bool = True, extra_allowed: set[str] | None = None) -> str:
+    allowed = _offering_lob_options(repo)
+    lob = (value or "").strip()
+    if not lob:
+        return "" if allow_blank else allowed[0]
+    canonical_by_lower = {item.lower(): item for item in allowed}
+    canonical = canonical_by_lower.get(lob.lower())
+    if canonical:
+        return canonical
+    if extra_allowed and lob in extra_allowed:
+        return lob
+    raise ValueError(f"LOB must be one of: {', '.join(allowed)}")
+
+
+def _normalize_offering_service_type(
+    repo,
+    value: str,
+    *,
+    allow_blank: bool = True,
+    extra_allowed: set[str] | None = None,
+) -> str:
+    allowed = _offering_service_type_options(repo)
+    service_type = (value or "").strip()
+    if not service_type:
+        return "" if allow_blank else allowed[0]
+    canonical_by_lower = {item.lower(): item for item in allowed}
+    canonical = canonical_by_lower.get(service_type.lower())
+    if canonical:
+        return canonical
+    if extra_allowed and service_type in extra_allowed:
+        return service_type
+    raise ValueError(f"Service type must be one of: {', '.join(allowed)}")
+
+
+def _normalize_doc_source(repo, value: str, *, doc_url: str = "") -> str:
+    allowed = {str(item).strip().lower() for item in repo.list_doc_source_options() if str(item).strip()}
+    if not allowed:
+        raise ValueError("Document source lookup options are not configured.")
+    source = str(value or "").strip().lower()
+    if source:
+        if source not in allowed:
+            raise ValueError(f"Source must be one of: {', '.join(sorted(allowed))}")
+        return source
+
+    inferred = suggest_doc_type(doc_url).strip().lower()
+    if inferred in allowed:
+        return inferred
+    if "other" in allowed:
+        return "other"
+    return sorted(allowed)[0]
 
 
 def _prepare_doc_payload(
@@ -130,21 +216,16 @@ def _prepare_doc_payload(
     form_data: dict[str, object],
     *,
     actor_user_principal: str,
-    allow_owner_create: bool = False,
 ) -> dict[str, str]:
     doc_url = str(form_data.get("doc_url", "")).strip()
-    doc_type = _normalize_doc_type(str(form_data.get("doc_type", "")))
+    doc_type = _normalize_doc_source(repo, str(form_data.get("doc_type", "")), doc_url=doc_url)
     doc_title = str(form_data.get("doc_title", "")).strip()
     raw_tags = form_data.get("tags")
-    raw_new_tag = form_data.get("tag_new")
-    owner_new = str(form_data.get("owner_new", "")).strip()
-    owner = owner_new or str(form_data.get("owner", "")).strip() or str(actor_user_principal or "").strip()
+    owner = str(form_data.get("owner", "")).strip() or str(actor_user_principal or "").strip()
     doc_fqdn = extract_doc_fqdn(doc_url)
 
     if not doc_url:
         raise ValueError("Document link is required.")
-    if not doc_type:
-        doc_type = suggest_doc_type(doc_url)
     if not doc_title:
         doc_title = suggest_doc_title(doc_url)
     if not doc_title:
@@ -152,9 +233,6 @@ def _prepare_doc_payload(
     if len(doc_title) > 120:
         doc_title = doc_title[:120].rstrip()
     owner_login = repo.resolve_user_login_identifier(owner)
-    if not owner_login and allow_owner_create and owner:
-        repo.ensure_user_record(owner)
-        owner_login = repo.resolve_user_login_identifier(owner)
     if not owner_login:
         raise ValueError("Owner must exist in the app user directory.")
 
@@ -163,12 +241,11 @@ def _prepare_doc_payload(
         collected_tags.extend(str(item or "") for item in raw_tags)
     elif raw_tags is not None:
         collected_tags.append(str(raw_tags or ""))
-    if isinstance(raw_new_tag, list):
-        collected_tags.extend(str(item or "") for item in raw_new_tag)
-    elif raw_new_tag is not None:
-        collected_tags.append(str(raw_new_tag or ""))
-
-    normalized_tags = normalize_doc_tags(collected_tags, doc_type=doc_type, fqdn=doc_fqdn, doc_url=doc_url)
+    normalized_tags = normalize_doc_tags(collected_tags, doc_type="", fqdn="", doc_url="")
+    allowed_tags = {str(item).strip().lower() for item in repo.list_doc_tag_options() if str(item).strip()}
+    invalid_tags = [tag for tag in normalized_tags if tag not in allowed_tags]
+    if invalid_tags:
+        raise ValueError(f"Tags must be selected from admin-managed options: {', '.join(sorted(allowed_tags))}")
     return {
         "doc_url": doc_url,
         "doc_type": doc_type,
@@ -286,6 +363,22 @@ def _vendor_nav(vendor_id: str, return_to: str, active_key: str) -> list[dict]:
             }
         )
     return nav
+
+
+def _offering_nav(vendor_id: str, offering_id: str, return_to: str, active_key: str, *, edit_mode: bool = False) -> list[dict]:
+    encoded_return = quote(return_to, safe="")
+    edit_query = "&edit=1" if edit_mode else ""
+    out: list[dict] = []
+    for key, label in OFFERING_SECTIONS:
+        out.append(
+            {
+                "key": key,
+                "label": label,
+                "url": f"/vendors/{vendor_id}/offerings/{offering_id}?section={key}&return_to={encoded_return}{edit_query}",
+                "active": key == active_key,
+            }
+        )
+    return out
 
 
 def _vendor_base_context(repo, request: Request, vendor_id: str, section: str, return_to: str):
@@ -915,6 +1008,8 @@ def vendor_summary_page(request: Request, vendor_id: str, return_to: str = "/ven
         "vendor_id": profile_row.get("vendor_id"),
         "owner_org_id": profile_row.get("owner_org_id"),
         "source_system": profile_row.get("source_system"),
+        "active_lobs": ", ".join(base["summary"].get("active_lob_values") or []) or "-",
+        "active_service_types": ", ".join(base["summary"].get("active_service_type_values") or []) or "-",
         "updated_at": profile_row.get("updated_at"),
     }
 
@@ -937,7 +1032,7 @@ def vendor_summary_page(request: Request, vendor_id: str, return_to: str = "/ven
             "projects_preview": projects_preview,
             "projects_page_link": f"/vendors/{vendor_id}/projects?return_to={quote(base['return_to'], safe='')}",
             "docs_preview": docs_preview,
-            "doc_types": DOC_TYPES,
+            "doc_source_options": repo.list_doc_source_options(),
             "spend_category": spend_category,
             "spend_trend_points": trend_points,
             "spend_trend_plot_rows": spend_trend_plot_rows,
@@ -1197,7 +1292,7 @@ def vendor_offerings_page(request: Request, vendor_id: str, return_to: str = "/v
             "unassigned_contracts": unassigned_contracts,
             "unassigned_demos": unassigned_demos,
             "offerings_return_to": offerings_return_to,
-            "doc_types": DOC_TYPES,
+            "doc_source_options": repo.list_doc_source_options(),
         },
     )
     return request.app.state.templates.TemplateResponse(request, "vendor_offerings.html", context)
@@ -1234,7 +1329,9 @@ def offering_new_form(request: Request, vendor_id: str, return_to: str = "/vendo
             "return_to": base["return_to"],
             "lifecycle_states": LIFECYCLE_STATES,
             "criticality_tiers": ["tier_1", "tier_2", "tier_3", "tier_4"],
-            "offering_types": OFFERING_TYPES,
+            "offering_types": _offering_type_options(repo),
+            "offering_lob_options": _offering_lob_options(repo),
+            "offering_service_type_options": _offering_service_type_options(repo),
         },
     )
     return request.app.state.templates.TemplateResponse(request, "offering_new.html", context)
@@ -1256,18 +1353,24 @@ async def offering_new_submit(request: Request, vendor_id: str):
 
     offering_name = str(form.get("offering_name", "")).strip()
     offering_type = str(form.get("offering_type", "")).strip()
+    lob = str(form.get("lob", "")).strip()
+    service_type = str(form.get("service_type", "")).strip()
     lifecycle_state = str(form.get("lifecycle_state", "draft")).strip().lower()
     criticality_tier = str(form.get("criticality_tier", "")).strip()
 
     try:
         lifecycle_state = _normalize_lifecycle(lifecycle_state)
-        offering_type = _normalize_offering_type(offering_type)
+        offering_type = _normalize_offering_type(repo, offering_type)
+        lob = _normalize_offering_lob(repo, lob)
+        service_type = _normalize_offering_service_type(repo, service_type)
         if user.can_apply_change("create_offering"):
             offering_id = repo.create_offering(
                 vendor_id=vendor_id,
                 actor_user_principal=user.user_principal,
                 offering_name=offering_name,
                 offering_type=offering_type or None,
+                lob=lob or None,
+                service_type=service_type or None,
                 lifecycle_state=lifecycle_state,
                 criticality_tier=criticality_tier or None,
             )
@@ -1290,6 +1393,8 @@ async def offering_new_submit(request: Request, vendor_id: str):
                 "vendor_id": vendor_id,
                 "offering_name": offering_name,
                 "offering_type": offering_type or None,
+                "lob": lob or None,
+                "service_type": service_type or None,
                 "lifecycle_state": lifecycle_state,
                 "criticality_tier": criticality_tier or None,
             },
@@ -1305,7 +1410,16 @@ async def offering_new_submit(request: Request, vendor_id: str):
 
 
 @router.get("/{vendor_id}/offerings/{offering_id}")
-def offering_detail_page(request: Request, vendor_id: str, offering_id: str, return_to: str = "/vendors", edit: int = 0):
+def offering_detail_page(
+    request: Request,
+    vendor_id: str,
+    offering_id: str,
+    return_to: str = "/vendors",
+    section: str = "summary",
+    edit: int = 0,
+    edit_data_flow_id: str = "",
+    new_data_feed: int = 0,
+):
     repo = get_repo()
     base = _vendor_base_context(repo, request, vendor_id, "offerings", return_to)
     if base is None:
@@ -1329,6 +1443,105 @@ def offering_detail_page(request: Request, vendor_id: str, offering_id: str, ret
     current_contracts = contracts_df[contracts_df["offering_id"].astype(str) == str(offering_id)].to_dict("records")
     current_demos = demos_df[demos_df["offering_id"].astype(str) == str(offering_id)].to_dict("records")
     offering_docs = repo.list_docs("offering", offering_id).to_dict("records")
+    try:
+        offering_profile = repo.get_offering_profile(vendor_id, offering_id)
+        offering_data_flows = repo.list_offering_data_flows(vendor_id, offering_id).to_dict("records")
+        offering_tickets = repo.list_offering_tickets(vendor_id, offering_id).to_dict("records")
+        offering_notes = repo.list_offering_notes(offering_id).to_dict("records")
+        offering_activity = repo.get_offering_activity(vendor_id, offering_id).head(50).to_dict("records")
+    except Exception as exc:
+        add_flash(
+            request,
+            (
+                "Offering operations tables are not available. Run setup/databricks/004_add_offering_profile_ticket.sql "
+                "and setup/databricks/005_add_offering_profile_dataflow_columns.sql "
+                "and setup/databricks/006_add_offering_data_flow.sql "
+                f"for existing Databricks schemas. Details: {exc}"
+            ),
+            "error",
+        )
+        offering_profile = {
+            "offering_id": offering_id,
+            "vendor_id": vendor_id,
+            "estimated_monthly_cost": None,
+            "implementation_notes": None,
+            "data_sent": None,
+            "data_received": None,
+            "integration_method": None,
+            "inbound_method": None,
+            "inbound_landing_zone": None,
+            "inbound_identifiers": None,
+            "inbound_reporting_layer": None,
+            "inbound_ingestion_notes": None,
+            "outbound_method": None,
+            "outbound_creation_process": None,
+            "outbound_delivery_process": None,
+            "outbound_responsible_owner": None,
+            "outbound_notes": None,
+            "updated_at": None,
+            "updated_by": None,
+        }
+        offering_data_flows = []
+        offering_tickets = []
+        offering_notes = []
+        offering_activity = []
+    inbound_data_flows = [
+        row for row in offering_data_flows if str(row.get("direction", "")).strip().lower() == "inbound"
+    ]
+    outbound_data_flows = [
+        row for row in offering_data_flows if str(row.get("direction", "")).strip().lower() == "outbound"
+    ]
+    owner_options = repo.search_user_directory(limit=250).to_dict("records")
+
+    section_key = (section or "summary").strip().lower()
+    valid_sections = {item[0] for item in OFFERING_SECTIONS}
+    if section_key not in valid_sections:
+        section_key = "summary"
+    if edit and section_key == "summary":
+        section_key = "profile"
+    edit_data_flow_id = str(edit_data_flow_id or "").strip()
+    selected_data_flow: dict[str, object] | None = None
+    if section_key == "dataflow" and edit_data_flow_id:
+        try:
+            selected_data_flow = repo.get_offering_data_flow(
+                vendor_id=vendor_id,
+                offering_id=offering_id,
+                data_flow_id=edit_data_flow_id,
+            )
+        except Exception:
+            selected_data_flow = None
+
+    data_feed_form = {
+        "direction": "inbound",
+        "flow_name": "",
+        "method": "",
+        "data_description": "",
+        "endpoint_details": "",
+        "identifiers": "",
+        "reporting_layer": "",
+        "creation_process": "",
+        "delivery_process": "",
+        "owner_user_principal": "",
+        "notes": "",
+        "reason": "",
+    }
+    if selected_data_flow:
+        data_feed_form.update(
+            {
+                "direction": str(selected_data_flow.get("direction") or "inbound"),
+                "flow_name": str(selected_data_flow.get("flow_name") or ""),
+                "method": str(selected_data_flow.get("method") or ""),
+                "data_description": str(selected_data_flow.get("data_description") or ""),
+                "endpoint_details": str(selected_data_flow.get("endpoint_details") or ""),
+                "identifiers": str(selected_data_flow.get("identifiers") or ""),
+                "reporting_layer": str(selected_data_flow.get("reporting_layer") or ""),
+                "creation_process": str(selected_data_flow.get("creation_process") or ""),
+                "delivery_process": str(selected_data_flow.get("delivery_process") or ""),
+                "owner_user_principal": str(selected_data_flow.get("owner_user_principal") or ""),
+                "notes": str(selected_data_flow.get("notes") or ""),
+            }
+        )
+    show_data_feed_editor = bool(section_key == "dataflow" and (selected_data_flow or new_data_feed))
 
     context = base_template_context(
         request=request,
@@ -1349,11 +1562,32 @@ def offering_detail_page(request: Request, vendor_id: str, offering_id: str, ret
             "offering_contracts": current_contracts,
             "offering_demos": current_demos,
             "offering_docs": offering_docs,
+            "offering_profile": offering_profile,
+            "offering_data_flows": offering_data_flows,
+            "inbound_data_flows": inbound_data_flows,
+            "outbound_data_flows": outbound_data_flows,
+            "offering_tickets": offering_tickets,
+            "offering_notes": offering_notes,
+            "offering_activity": offering_activity,
+            "offering_owner_options": owner_options,
+            "section": section_key,
+            "offering_nav": _offering_nav(vendor_id, offering_id, base["return_to"], section_key, edit_mode=bool(edit)),
+            "recent_offering_notes": offering_notes[:5],
+            "recent_offering_tickets": offering_tickets[:5],
             "edit_mode": bool(edit),
             "lifecycle_states": LIFECYCLE_STATES,
             "criticality_tiers": ["tier_1", "tier_2", "tier_3", "tier_4"],
-            "offering_types": OFFERING_TYPES,
-            "doc_types": DOC_TYPES,
+            "offering_types": _offering_type_options(repo),
+            "offering_lob_options": _offering_lob_options(repo),
+            "offering_service_type_options": _offering_service_type_options(repo),
+            "offering_ticket_statuses": OFFERING_TICKET_STATUSES,
+            "offering_ticket_priorities": OFFERING_TICKET_PRIORITIES,
+            "offering_note_types": OFFERING_NOTE_TYPES,
+            "offering_data_method_options": OFFERING_DATA_METHOD_OPTIONS,
+            "doc_source_options": repo.list_doc_source_options(),
+            "selected_data_flow": selected_data_flow,
+            "data_feed_form": data_feed_form,
+            "show_data_feed_editor": show_data_feed_editor,
         },
     )
     return request.app.state.templates.TemplateResponse(request, "offering_detail.html", context)
@@ -1382,6 +1616,8 @@ async def offering_update_submit(request: Request, vendor_id: str, offering_id: 
     updates = {
         "offering_name": str(form.get("offering_name", "")).strip(),
         "offering_type": str(form.get("offering_type", "")).strip(),
+        "lob": str(form.get("lob", "")).strip(),
+        "service_type": str(form.get("service_type", "")).strip(),
         "lifecycle_state": str(form.get("lifecycle_state", "")).strip().lower(),
         "criticality_tier": str(form.get("criticality_tier", "")).strip(),
     }
@@ -1391,10 +1627,25 @@ async def offering_update_submit(request: Request, vendor_id: str, offering_id: 
             updates["lifecycle_state"] = _normalize_lifecycle(updates["lifecycle_state"])
         existing_type = str(current_offering.get("offering_type") or "").strip()
         updates["offering_type"] = _normalize_offering_type(
+            repo,
             updates["offering_type"],
             extra_allowed={existing_type} if existing_type else None,
         )
         updates["offering_type"] = updates["offering_type"] or None
+        existing_lob = str(current_offering.get("lob") or "").strip()
+        updates["lob"] = _normalize_offering_lob(
+            repo,
+            updates["lob"],
+            extra_allowed={existing_lob} if existing_lob else None,
+        )
+        updates["lob"] = updates["lob"] or None
+        existing_service_type = str(current_offering.get("service_type") or "").strip()
+        updates["service_type"] = _normalize_offering_service_type(
+            repo,
+            updates["service_type"],
+            extra_allowed={existing_service_type} if existing_service_type else None,
+        )
+        updates["service_type"] = updates["service_type"] or None
         if not updates["offering_name"]:
             raise ValueError("Offering name is required.")
         payload = {"offering_id": offering_id, "updates": updates, "reason": reason}
@@ -1429,7 +1680,699 @@ async def offering_update_submit(request: Request, vendor_id: str, offering_id: 
         add_flash(request, f"Could not update offering: {exc}", "error")
 
     return RedirectResponse(
-        url=f"/vendors/{vendor_id}/offerings/{offering_id}?edit=1&return_to={quote(return_to, safe='')}",
+        url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=profile&edit=1&return_to={quote(return_to, safe='')}",
+        status_code=303,
+    )
+
+
+@router.post("/{vendor_id}/offerings/{offering_id}/profile/save")
+async def offering_profile_save_submit(request: Request, vendor_id: str, offering_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+    source_section = str(form.get("source_section", "profile")).strip().lower()
+    if source_section not in {"profile", "dataflow"}:
+        source_section = "profile"
+    reason = str(form.get("reason", "")).strip()
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if not repo.offering_belongs_to_vendor(vendor_id, offering_id):
+        add_flash(request, "Offering does not belong to this vendor.", "error")
+        return RedirectResponse(url=f"/vendors/{vendor_id}/offerings?return_to={quote(return_to, safe='')}", status_code=303)
+
+    updates: dict[str, str | float | None] = {}
+    if "estimated_monthly_cost" in form:
+        raw_cost = str(form.get("estimated_monthly_cost", "")).strip()
+        if raw_cost:
+            try:
+                updates["estimated_monthly_cost"] = float(raw_cost.replace(",", ""))
+            except Exception:
+                add_flash(request, "Estimated monthly cost must be numeric.", "error")
+                return RedirectResponse(
+                    url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&return_to={quote(return_to, safe='')}",
+                    status_code=303,
+                )
+        else:
+            updates["estimated_monthly_cost"] = None
+    if "implementation_notes" in form:
+        updates["implementation_notes"] = str(form.get("implementation_notes", "")).strip() or None
+    if "data_sent" in form:
+        updates["data_sent"] = str(form.get("data_sent", "")).strip() or None
+    if "data_received" in form:
+        updates["data_received"] = str(form.get("data_received", "")).strip() or None
+    if "integration_method" in form:
+        updates["integration_method"] = str(form.get("integration_method", "")).strip() or None
+    if "inbound_method" in form:
+        updates["inbound_method"] = str(form.get("inbound_method", "")).strip().lower() or None
+    if "inbound_landing_zone" in form:
+        updates["inbound_landing_zone"] = str(form.get("inbound_landing_zone", "")).strip() or None
+    if "inbound_identifiers" in form:
+        updates["inbound_identifiers"] = str(form.get("inbound_identifiers", "")).strip() or None
+    if "inbound_reporting_layer" in form:
+        updates["inbound_reporting_layer"] = str(form.get("inbound_reporting_layer", "")).strip() or None
+    if "inbound_ingestion_notes" in form:
+        updates["inbound_ingestion_notes"] = str(form.get("inbound_ingestion_notes", "")).strip() or None
+    if "outbound_method" in form:
+        updates["outbound_method"] = str(form.get("outbound_method", "")).strip().lower() or None
+    if "outbound_creation_process" in form:
+        updates["outbound_creation_process"] = str(form.get("outbound_creation_process", "")).strip() or None
+    if "outbound_delivery_process" in form:
+        updates["outbound_delivery_process"] = str(form.get("outbound_delivery_process", "")).strip() or None
+    if "outbound_responsible_owner" in form:
+        outbound_responsible_owner = str(form.get("outbound_responsible_owner", "")).strip()
+        if outbound_responsible_owner:
+            resolved_owner = repo.resolve_user_login_identifier(outbound_responsible_owner)
+            if not resolved_owner:
+                add_flash(request, "Outbound responsible owner must exist in the app user directory.", "error")
+                return RedirectResponse(
+                    url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&return_to={quote(return_to, safe='')}",
+                    status_code=303,
+                )
+            outbound_responsible_owner = resolved_owner
+        updates["outbound_responsible_owner"] = outbound_responsible_owner or None
+    if "outbound_notes" in form:
+        updates["outbound_notes"] = str(form.get("outbound_notes", "")).strip() or None
+
+    if not updates:
+        add_flash(request, "No profile fields were submitted.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    invalid_method_values = [
+        value
+        for value in [updates.get("inbound_method"), updates.get("outbound_method")]
+        if value and value not in set(OFFERING_DATA_METHOD_OPTIONS)
+    ]
+    if invalid_method_values:
+        add_flash(
+            request,
+            f"Data methods must be one of: {', '.join(OFFERING_DATA_METHOD_OPTIONS)}",
+            "error",
+        )
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    payload = {"offering_id": offering_id, "updates": updates, "reason": reason}
+    try:
+        if user.can_apply_change("update_offering_profile"):
+            result = repo.save_offering_profile(
+                vendor_id=vendor_id,
+                offering_id=offering_id,
+                actor_user_principal=user.user_principal,
+                updates=updates,
+                reason=reason,
+            )
+            add_flash(
+                request,
+                f"Offering profile updated. Request ID: {result['request_id']} | Audit Event: {result['change_event_id']}",
+                "success",
+            )
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="update_offering_profile",
+                payload=payload,
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_offering_detail",
+            event_type="offering_profile_update",
+            payload={"vendor_id": vendor_id, "offering_id": offering_id},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not update offering profile: {exc}", "error")
+
+    return RedirectResponse(
+        url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&edit=1&return_to={quote(return_to, safe='')}",
+        status_code=303,
+    )
+
+
+@router.post("/{vendor_id}/offerings/{offering_id}/dataflows/add")
+async def add_offering_data_flow_submit(request: Request, vendor_id: str, offering_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+    reason = str(form.get("reason", "")).strip()
+    direction = str(form.get("direction", "")).strip().lower()
+    flow_name = str(form.get("flow_name", "")).strip()
+    method = str(form.get("method", "")).strip().lower()
+    data_description = str(form.get("data_description", "")).strip()
+    endpoint_details = str(form.get("endpoint_details", "")).strip()
+    identifiers = str(form.get("identifiers", "")).strip()
+    reporting_layer = str(form.get("reporting_layer", "")).strip()
+    creation_process = str(form.get("creation_process", "")).strip()
+    delivery_process = str(form.get("delivery_process", "")).strip()
+    owner_user_principal = str(form.get("owner_user_principal", "")).strip()
+    notes = str(form.get("notes", "")).strip()
+    source_section = "dataflow"
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if not repo.offering_belongs_to_vendor(vendor_id, offering_id):
+        add_flash(request, "Offering does not belong to this vendor.", "error")
+        return RedirectResponse(url=f"/vendors/{vendor_id}/offerings?return_to={quote(return_to, safe='')}", status_code=303)
+    if direction not in {"inbound", "outbound"}:
+        add_flash(request, "Direction must be inbound or outbound.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&edit=1&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if not flow_name:
+        add_flash(request, "Data flow name is required.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&edit=1&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if method and method not in set(OFFERING_DATA_METHOD_OPTIONS):
+        add_flash(request, f"Data method must be one of: {', '.join(OFFERING_DATA_METHOD_OPTIONS)}", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&edit=1&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if owner_user_principal and not repo.resolve_user_login_identifier(owner_user_principal):
+        add_flash(request, "Owner must exist in the app user directory.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&edit=1&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+
+    payload = {
+        "offering_id": offering_id,
+        "direction": direction,
+        "flow_name": flow_name,
+        "method": method or None,
+        "data_description": data_description or None,
+        "endpoint_details": endpoint_details or None,
+        "identifiers": identifiers or None,
+        "reporting_layer": reporting_layer or None,
+        "creation_process": creation_process or None,
+        "delivery_process": delivery_process or None,
+        "owner_user_principal": owner_user_principal or None,
+        "notes": notes or None,
+        "reason": reason,
+    }
+    try:
+        if user.can_apply_change("update_offering_profile"):
+            data_flow_id = repo.add_offering_data_flow(
+                vendor_id=vendor_id,
+                offering_id=offering_id,
+                direction=direction,
+                flow_name=flow_name,
+                method=method or None,
+                data_description=data_description or None,
+                endpoint_details=endpoint_details or None,
+                identifiers=identifiers or None,
+                reporting_layer=reporting_layer or None,
+                creation_process=creation_process or None,
+                delivery_process=delivery_process or None,
+                owner_user_principal=owner_user_principal or None,
+                notes=notes or None,
+                actor_user_principal=user.user_principal,
+            )
+            add_flash(request, f"Offering data flow added: {data_flow_id}", "success")
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="update_offering_profile",
+                payload={"data_flow_action": "add", **payload},
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_offering_detail",
+            event_type="offering_data_flow_add",
+            payload={"vendor_id": vendor_id, "offering_id": offering_id, "direction": direction},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not add offering data flow: {exc}", "error")
+
+    return RedirectResponse(
+        url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&edit=1&return_to={quote(return_to, safe='')}",
+        status_code=303,
+    )
+
+
+@router.post("/{vendor_id}/offerings/{offering_id}/dataflows/remove")
+async def remove_offering_data_flow_submit(request: Request, vendor_id: str, offering_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+    reason = str(form.get("reason", "")).strip()
+    data_flow_id = str(form.get("data_flow_id", "")).strip()
+    source_section = "dataflow"
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if not repo.offering_belongs_to_vendor(vendor_id, offering_id):
+        add_flash(request, "Offering does not belong to this vendor.", "error")
+        return RedirectResponse(url=f"/vendors/{vendor_id}/offerings?return_to={quote(return_to, safe='')}", status_code=303)
+    if not data_flow_id:
+        add_flash(request, "Data flow ID is required.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&edit=1&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+
+    try:
+        if user.can_apply_change("update_offering_profile"):
+            repo.remove_offering_data_flow(
+                vendor_id=vendor_id,
+                offering_id=offering_id,
+                data_flow_id=data_flow_id,
+                actor_user_principal=user.user_principal,
+            )
+            add_flash(request, "Offering data flow removed.", "success")
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="update_offering_profile",
+                payload={
+                    "offering_id": offering_id,
+                    "data_flow_action": "remove",
+                    "data_flow_id": data_flow_id,
+                    "reason": reason,
+                },
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_offering_detail",
+            event_type="offering_data_flow_remove",
+            payload={"vendor_id": vendor_id, "offering_id": offering_id, "data_flow_id": data_flow_id},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not remove offering data flow: {exc}", "error")
+
+    return RedirectResponse(
+        url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&edit=1&return_to={quote(return_to, safe='')}",
+        status_code=303,
+    )
+
+
+@router.post("/{vendor_id}/offerings/{offering_id}/dataflows/update")
+async def update_offering_data_flow_submit(request: Request, vendor_id: str, offering_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+    reason = str(form.get("reason", "")).strip()
+    data_flow_id = str(form.get("data_flow_id", "")).strip()
+    direction = str(form.get("direction", "")).strip().lower()
+    flow_name = str(form.get("flow_name", "")).strip()
+    method = str(form.get("method", "")).strip().lower()
+    data_description = str(form.get("data_description", "")).strip()
+    endpoint_details = str(form.get("endpoint_details", "")).strip()
+    identifiers = str(form.get("identifiers", "")).strip()
+    reporting_layer = str(form.get("reporting_layer", "")).strip()
+    creation_process = str(form.get("creation_process", "")).strip()
+    delivery_process = str(form.get("delivery_process", "")).strip()
+    owner_user_principal = str(form.get("owner_user_principal", "")).strip()
+    notes = str(form.get("notes", "")).strip()
+    source_section = "dataflow"
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if not repo.offering_belongs_to_vendor(vendor_id, offering_id):
+        add_flash(request, "Offering does not belong to this vendor.", "error")
+        return RedirectResponse(url=f"/vendors/{vendor_id}/offerings?return_to={quote(return_to, safe='')}", status_code=303)
+    if not data_flow_id:
+        add_flash(request, "Data flow ID is required.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&edit=1&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if direction not in {"inbound", "outbound"}:
+        add_flash(request, "Direction must be inbound or outbound.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&edit=1&edit_data_flow_id={quote(data_flow_id, safe='')}&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if not flow_name:
+        add_flash(request, "Data flow name is required.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&edit=1&edit_data_flow_id={quote(data_flow_id, safe='')}&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if method and method not in set(OFFERING_DATA_METHOD_OPTIONS):
+        add_flash(request, f"Data method must be one of: {', '.join(OFFERING_DATA_METHOD_OPTIONS)}", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&edit=1&edit_data_flow_id={quote(data_flow_id, safe='')}&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if owner_user_principal and not repo.resolve_user_login_identifier(owner_user_principal):
+        add_flash(request, "Owner must exist in the app user directory.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&edit=1&edit_data_flow_id={quote(data_flow_id, safe='')}&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+
+    payload = {
+        "offering_id": offering_id,
+        "data_flow_id": data_flow_id,
+        "direction": direction,
+        "flow_name": flow_name,
+        "method": method or None,
+        "data_description": data_description or None,
+        "endpoint_details": endpoint_details or None,
+        "identifiers": identifiers or None,
+        "reporting_layer": reporting_layer or None,
+        "creation_process": creation_process or None,
+        "delivery_process": delivery_process or None,
+        "owner_user_principal": owner_user_principal or None,
+        "notes": notes or None,
+        "reason": reason,
+    }
+    try:
+        if user.can_apply_change("update_offering_profile"):
+            result = repo.update_offering_data_flow(
+                vendor_id=vendor_id,
+                offering_id=offering_id,
+                data_flow_id=data_flow_id,
+                actor_user_principal=user.user_principal,
+                updates={
+                    "direction": direction,
+                    "flow_name": flow_name,
+                    "method": method or None,
+                    "data_description": data_description or None,
+                    "endpoint_details": endpoint_details or None,
+                    "identifiers": identifiers or None,
+                    "reporting_layer": reporting_layer or None,
+                    "creation_process": creation_process or None,
+                    "delivery_process": delivery_process or None,
+                    "owner_user_principal": owner_user_principal or None,
+                    "notes": notes or None,
+                },
+                reason=reason,
+            )
+            add_flash(
+                request,
+                f"Offering data flow updated. Request ID: {result['request_id']} | Audit Event: {result['change_event_id']}",
+                "success",
+            )
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="update_offering_profile",
+                payload={"data_flow_action": "update", **payload},
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_offering_detail",
+            event_type="offering_data_flow_update",
+            payload={"vendor_id": vendor_id, "offering_id": offering_id, "data_flow_id": data_flow_id},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not update offering data flow: {exc}", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&edit=1&edit_data_flow_id={quote(data_flow_id, safe='')}&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+
+    return RedirectResponse(
+        url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&edit=1&return_to={quote(return_to, safe='')}",
+        status_code=303,
+    )
+
+
+@router.post("/{vendor_id}/offerings/{offering_id}/notes/add")
+async def add_offering_note_submit(request: Request, vendor_id: str, offering_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+    note_type = str(form.get("note_type", "general")).strip().lower() or "general"
+    note_text = str(form.get("note_text", "")).strip()
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=notes&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=notes&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if note_type not in set(OFFERING_NOTE_TYPES):
+        add_flash(request, f"Note type must be one of: {', '.join(OFFERING_NOTE_TYPES)}", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=notes&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if not note_text:
+        add_flash(request, "Note text is required.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=notes&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+
+    try:
+        if user.can_apply_change("add_offering_note"):
+            note_id = repo.add_offering_note(
+                vendor_id=vendor_id,
+                offering_id=offering_id,
+                note_type=note_type,
+                note_text=note_text,
+                actor_user_principal=user.user_principal,
+            )
+            add_flash(request, f"Offering note added: {note_id}", "success")
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="add_offering_note",
+                payload={"offering_id": offering_id, "note_type": note_type, "note_text": note_text},
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_offering_detail",
+            event_type="offering_note_add",
+            payload={"vendor_id": vendor_id, "offering_id": offering_id, "note_type": note_type},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not add offering note: {exc}", "error")
+
+    return RedirectResponse(
+        url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=notes&return_to={quote(return_to, safe='')}",
+        status_code=303,
+    )
+
+
+@router.post("/{vendor_id}/offerings/{offering_id}/tickets/add")
+async def add_offering_ticket_submit(request: Request, vendor_id: str, offering_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+    title = str(form.get("title", "")).strip()
+    ticket_system = str(form.get("ticket_system", "")).strip()
+    external_ticket_id = str(form.get("external_ticket_id", "")).strip()
+    status = str(form.get("status", "open")).strip().lower() or "open"
+    priority = str(form.get("priority", "")).strip().lower()
+    opened_date = str(form.get("opened_date", "")).strip()
+    notes = str(form.get("notes", "")).strip()
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=tickets&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=tickets&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if status not in set(OFFERING_TICKET_STATUSES):
+        add_flash(request, f"Ticket status must be one of: {', '.join(OFFERING_TICKET_STATUSES)}", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=tickets&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if priority and priority not in set(OFFERING_TICKET_PRIORITIES):
+        add_flash(request, f"Ticket priority must be one of: {', '.join(OFFERING_TICKET_PRIORITIES)}", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=tickets&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+
+    payload = {
+        "offering_id": offering_id,
+        "title": title,
+        "ticket_system": ticket_system or None,
+        "external_ticket_id": external_ticket_id or None,
+        "status": status,
+        "priority": priority or None,
+        "opened_date": opened_date or None,
+        "notes": notes or None,
+    }
+    try:
+        if user.can_apply_change("add_offering_ticket"):
+            ticket_id = repo.add_offering_ticket(
+                vendor_id=vendor_id,
+                offering_id=offering_id,
+                title=title,
+                ticket_system=ticket_system or None,
+                external_ticket_id=external_ticket_id or None,
+                status=status,
+                priority=priority or None,
+                opened_date=opened_date or None,
+                notes=notes or None,
+                actor_user_principal=user.user_principal,
+            )
+            add_flash(request, f"Offering ticket added: {ticket_id}", "success")
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="add_offering_ticket",
+                payload=payload,
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_offering_detail",
+            event_type="offering_ticket_add",
+            payload={"vendor_id": vendor_id, "offering_id": offering_id, "status": status},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not add offering ticket: {exc}", "error")
+
+    return RedirectResponse(
+        url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=tickets&return_to={quote(return_to, safe='')}",
+        status_code=303,
+    )
+
+
+@router.post("/{vendor_id}/offerings/{offering_id}/tickets/{ticket_id}/status")
+async def update_offering_ticket_status_submit(request: Request, vendor_id: str, offering_id: str, ticket_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+    status = str(form.get("status", "")).strip().lower()
+    closed_date = str(form.get("closed_date", "")).strip()
+    reason = str(form.get("reason", "")).strip()
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=tickets&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=tickets&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if status not in set(OFFERING_TICKET_STATUSES):
+        add_flash(request, f"Ticket status must be one of: {', '.join(OFFERING_TICKET_STATUSES)}", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=tickets&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    payload = {
+        "ticket_id": ticket_id,
+        "offering_id": offering_id,
+        "status": status,
+        "closed_date": closed_date or None,
+        "reason": reason,
+    }
+    try:
+        if user.can_apply_change("update_offering_ticket"):
+            result = repo.update_offering_ticket(
+                vendor_id=vendor_id,
+                offering_id=offering_id,
+                ticket_id=ticket_id,
+                actor_user_principal=user.user_principal,
+                updates={
+                    "status": status,
+                    "closed_date": closed_date or None,
+                },
+                reason=reason,
+            )
+            add_flash(
+                request,
+                f"Offering ticket updated. Request ID: {result['request_id']} | Audit Event: {result['change_event_id']}",
+                "success",
+            )
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="update_offering_ticket",
+                payload=payload,
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_offering_detail",
+            event_type="offering_ticket_update",
+            payload={"vendor_id": vendor_id, "offering_id": offering_id, "ticket_id": ticket_id, "status": status},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not update offering ticket: {exc}", "error")
+
+    return RedirectResponse(
+        url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=tickets&return_to={quote(return_to, safe='')}",
         status_code=303,
     )
 
@@ -1832,7 +2775,7 @@ def project_new_form(request: Request, vendor_id: str, return_to: str = "/vendor
             "vendor_id": vendor_id,
             "vendor_display_name": base["display_name"],
             "return_to": base["return_to"],
-            "project_types": PROJECT_TYPES,
+            "project_types": _project_type_options(repo),
             "project_statuses": PROJECT_STATUSES,
             "selected_vendor_rows": selected_vendor_rows,
             "selected_offering_rows": [],
@@ -1872,7 +2815,7 @@ async def project_new_submit(request: Request, vendor_id: str):
             "vendor_id": vendor_id,
             "vendor_ids": linked_vendors,
             "project_name": str(form.get("project_name", "")).strip(),
-            "project_type": _normalize_project_type(str(form.get("project_type", "other"))),
+            "project_type": _normalize_project_type(repo, str(form.get("project_type", "other"))),
             "status": _normalize_project_status(str(form.get("status", "draft"))),
             "start_date": str(form.get("start_date", "")).strip() or None,
             "target_date": str(form.get("target_date", "")).strip() or None,
@@ -1975,7 +2918,7 @@ def project_edit_form(request: Request, vendor_id: str, project_id: str, return_
             "selected_vendor_rows": selected_vendor_rows,
             "selected_offering_rows": selected_offering_rows,
             "return_to": base["return_to"],
-            "project_types": PROJECT_TYPES,
+            "project_types": _project_type_options(repo),
             "project_statuses": PROJECT_STATUSES,
             "form_action": f"/vendors/{vendor_id}/projects/{project_id}/edit",
         },
@@ -2026,7 +2969,7 @@ async def project_edit_submit(request: Request, vendor_id: str, project_id: str)
     }
 
     try:
-        updates["project_type"] = _normalize_project_type(str(updates.get("project_type", "other")))
+        updates["project_type"] = _normalize_project_type(repo, str(updates.get("project_type", "other")))
         updates["status"] = _normalize_project_status(str(updates.get("status", "draft")))
         if user.can_apply_change("update_project"):
             result = repo.update_project(
@@ -2381,12 +3324,9 @@ async def _create_doc_link_for_entity(
                 "doc_type": str(form.get("doc_type", "")),
                 "doc_title": str(form.get("doc_title", "")),
                 "tags": [str(v) for v in form.getlist("tags") if str(v).strip()],
-                "tag_new": str(form.get("tag_new", "")),
                 "owner": str(form.get("owner", "")),
-                "owner_new": str(form.get("owner_new", "")),
             },
             actor_user_principal=user.user_principal,
-            allow_owner_create=user.has_admin_rights and _to_bool(form.get("allow_owner_create")),
         )
         if user.can_apply_change("create_doc_link"):
             doc_id = repo.create_doc_link(
@@ -2711,24 +3651,44 @@ async def vendor_change_request(request: Request, vendor_id: str):
     if _write_blocked(user):
         add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
         return RedirectResponse(url=f"/vendors/{vendor_id}/changes?return_to={quote(return_to, safe='')}", status_code=303)
-    if not user.can_edit:
-        add_flash(request, "You do not have edit permission.", "error")
+    if not user.can_submit_requests:
+        add_flash(request, "You do not have permission to submit change requests.", "error")
         return RedirectResponse(url=f"/vendors/{vendor_id}/changes?return_to={quote(return_to, safe='')}", status_code=303)
 
     change_type = str(form.get("change_type", "update_vendor_profile"))
     change_notes = str(form.get("change_notes", "")).strip()
+    requested_level_raw = str(form.get("approval_level_required", "")).strip()
+    assigned_approver = str(form.get("assigned_approver", "")).strip()
     try:
+        minimum_level = required_approval_level(change_type)
+        requested_level = minimum_level
+        if requested_level_raw:
+            requested_level = max(1, min(int(requested_level_raw), 3))
+            requested_level = max(requested_level, minimum_level)
+        payload = {"notes": change_notes}
+        payload_meta: dict[str, object] = {}
+        if requested_level != minimum_level:
+            payload_meta["approval_level_required"] = requested_level
+        if assigned_approver:
+            payload_meta["assigned_approver"] = assigned_approver
+        if payload_meta:
+            payload["_meta"] = payload_meta
         request_id = repo.create_vendor_change_request(
             vendor_id=vendor_id,
             requestor_user_principal=user.user_principal,
             change_type=change_type,
-            payload={"notes": change_notes},
+            payload=payload,
         )
         repo.log_usage_event(
             user_principal=user.user_principal,
             page_name="vendor_360",
             event_type="submit_change_request",
-            payload={"vendor_id": vendor_id, "change_type": change_type},
+            payload={
+                "vendor_id": vendor_id,
+                "change_type": change_type,
+                "approval_level_required": requested_level,
+                "assigned_approver": assigned_approver or None,
+            },
         )
         add_flash(request, f"Change request submitted: {request_id}", "success")
     except Exception as exc:

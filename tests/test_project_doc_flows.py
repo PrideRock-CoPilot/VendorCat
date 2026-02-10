@@ -222,7 +222,7 @@ def test_project_doc_link_without_vendor(client: TestClient) -> None:
             "doc_url": "https://docs.google.com/document/d/abc123/edit",
             "doc_type": "",
             "doc_title": "",
-            "tags": "kickoff",
+            "tags": "notes",
             "owner": "pm@example.com",
         },
         follow_redirects=False,
@@ -306,7 +306,7 @@ def test_project_and_offering_doc_links_render(client: TestClient) -> None:
             "doc_url": "https://github.com/example/vendor-docs/blob/main/offering.md",
             "doc_type": "",
             "doc_title": "",
-            "tags": "offering",
+            "tags": "operations",
             "owner": "owner@example.com",
         },
         follow_redirects=False,
@@ -340,7 +340,7 @@ def test_doc_link_owner_must_exist_in_user_directory(client: TestClient) -> None
     assert "Owner must exist in the app user directory." in response.text
 
 
-def test_admin_doc_link_can_create_owner_from_inline_owner_input(client: TestClient) -> None:
+def test_doc_link_rejects_unknown_tag_not_in_admin_lookup(client: TestClient) -> None:
     response = client.post(
         "/vendors/vnd-001/docs/link",
         data={
@@ -348,15 +348,10 @@ def test_admin_doc_link_can_create_owner_from_inline_owner_input(client: TestCli
             "doc_url": "contoso.sharepoint.com/sites/vendors/folders/owner-handbook/",
             "doc_type": "",
             "doc_title": "",
-            "tags": ["notes"],
-            "owner_new": "new.owner@example.com",
-            "allow_owner_create": "1",
+            "tags": ["unknown_custom_tag"],
+            "owner": "admin@example.com",
         },
-        follow_redirects=False,
+        follow_redirects=True,
     )
-    assert response.status_code == 303
-
-    owners_response = client.get("/api/users/search?q=new.owner@example.com&limit=20")
-    assert owners_response.status_code == 200
-    payload = owners_response.json()
-    assert any(str(row.get("login_identifier")) == "new.owner@example.com" for row in payload.get("items", []))
+    assert response.status_code == 200
+    assert "Tags must be selected from admin-managed options" in response.text

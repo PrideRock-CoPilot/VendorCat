@@ -1,0 +1,21 @@
+command:
+  - "python"
+  - "main.py"
+
+env:
+  - name: "TVENDOR_ENV"
+    value: "prod"
+  - name: "TVENDOR_USE_MOCK"
+    value: "false"
+  - name: "TVENDOR_USE_LOCAL_DB"
+    value: "false"
+  - name: "TVENDOR_LOCKED_MODE"
+    value: "false"
+  - name: "TVENDOR_CATALOG"
+    value: "vendor_dev"
+  - name: "TVENDOR_SCHEMA"
+    value: "twvendor"
+  - name: "DATABRICKS_HTTP_PATH"
+    value: "<sql-warehouse-http-path>"
+  - name: "DATABRICKS_TOKEN"
+    valueFrom: "databricks_sql_token"

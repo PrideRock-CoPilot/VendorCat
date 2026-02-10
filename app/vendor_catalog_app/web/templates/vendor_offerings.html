@@ -39,6 +39,8 @@
       <tr>
         <th>Offering</th>
         <th>Type</th>
+        <th>LOB</th>
+        <th>Service Type</th>
         <th>Lifecycle</th>
         <th>Criticality</th>
         <th>Owners</th>
@@ -54,6 +56,8 @@
     <tr>
       <td>{{ row.offering_name }}</td>
       <td>{{ row.offering_type }}</td>
+      <td>{{ row.lob or "-" }}</td>
+      <td>{{ row.service_type or "-" }}</td>
       <td>{{ row.lifecycle_state }}</td>
       <td>{{ row.criticality_tier }}</td>
       <td>{{ row.owner_count }}</td>
@@ -69,7 +73,7 @@
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="10">No offerings found.</td></tr>
+    <tr><td colspan="12">No offerings found.</td></tr>
     {% endfor %}
     </tbody>
   </table>

@@ -9,10 +9,9 @@ from fastapi import Request
 
 from vendor_catalog_app.config import AppConfig
 from vendor_catalog_app.repository import UNKNOWN_USER_PRINCIPAL, VendorRepository
-from vendor_catalog_app.security import ROLE_ADMIN, ROLE_CHOICES, ROLE_VIEWER, effective_roles
+from vendor_catalog_app.security import ADMIN_PORTAL_ROLES, ROLE_CHOICES, ROLE_VIEWER, effective_roles
 from vendor_catalog_app.web.context import UserContext
 from vendor_catalog_app.web.flash import pop_flashes
-from vendor_catalog_app.web.utils.doc_links import DOC_TAG_OPTIONS
 
 ADMIN_ROLE_OVERRIDE_SESSION_KEY = "tvendor_admin_role_override"
 
@@ -43,7 +42,7 @@ def _resolve_effective_roles(
     if not isinstance(session, dict):
         return raw_roles, None
 
-    if ROLE_ADMIN not in raw_roles:
+    if not set(ADMIN_PORTAL_ROLES).intersection(raw_roles):
         session.pop(ADMIN_ROLE_OVERRIDE_SESSION_KEY, None)
         return raw_roles, None
 
@@ -160,6 +159,42 @@ def base_template_context(
         doc_owner_options = repo.search_user_directory(q="", limit=200).to_dict("records")
     except Exception:
         doc_owner_options = []
+    try:
+        doc_source_options = repo.list_doc_source_options()
+    except Exception:
+        doc_source_options = []
+    try:
+        doc_tag_options = repo.list_doc_tag_options()
+    except Exception:
+        doc_tag_options = []
+    try:
+        owner_role_options = repo.list_owner_role_options()
+    except Exception:
+        owner_role_options = []
+    try:
+        assignment_type_options = repo.list_assignment_type_options()
+    except Exception:
+        assignment_type_options = []
+    try:
+        contact_type_options = repo.list_contact_type_options()
+    except Exception:
+        contact_type_options = []
+    try:
+        project_type_options = repo.list_project_type_options()
+    except Exception:
+        project_type_options = []
+    try:
+        offering_type_options = repo.list_offering_type_options()
+    except Exception:
+        offering_type_options = []
+    try:
+        offering_lob_options = repo.list_offering_lob_options()
+    except Exception:
+        offering_lob_options = []
+    try:
+        offering_service_type_options = repo.list_offering_service_type_options()
+    except Exception:
+        offering_service_type_options = []
 
     payload: dict[str, Any] = {
         "request": request,
@@ -171,6 +206,9 @@ def base_template_context(
         "roles": sorted(list(context.roles)),
         "can_edit": context.can_edit,
         "can_report": context.can_report,
+        "can_submit_requests": context.can_submit_requests,
+        "can_approve_requests": context.can_approve_requests,
+        "can_access_workflows": context.can_access_workflows,
         "can_direct_apply": context.can_direct_apply,
         "is_admin": context.is_admin,
         "has_admin_rights": context.has_admin_rights,
@@ -183,8 +221,16 @@ def base_template_context(
         "local_db_path": context.config.local_db_path,
         "locked_mode": context.config.locked_mode,
         "flashes": pop_flashes(request),
-        "doc_tag_options": DOC_TAG_OPTIONS,
+        "doc_source_options": doc_source_options,
+        "doc_tag_options": doc_tag_options,
         "doc_owner_options": doc_owner_options,
+        "owner_role_options": owner_role_options,
+        "assignment_type_options": assignment_type_options,
+        "contact_type_options": contact_type_options,
+        "project_type_options": project_type_options,
+        "offering_type_options": offering_type_options,
+        "offering_lob_options": offering_lob_options,
+        "offering_service_type_options": offering_service_type_options,
     }
     if extra:
         payload.update(extra)

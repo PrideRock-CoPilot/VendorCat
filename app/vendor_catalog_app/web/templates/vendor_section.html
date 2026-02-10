@@ -20,6 +20,8 @@
   <div class="metric"><span>Active Contracts</span><strong>{{ summary.active_contract_count|int }}</strong></div>
   <div class="metric"><span>Demos Selected</span><strong>{{ summary.demos_selected|int }}</strong></div>
   <div class="metric"><span>Demos Not Selected</span><strong>{{ summary.demos_not_selected|int }}</strong></div>
+  <div class="metric"><span>Active LOBs</span><strong>{{ (summary.active_lob_values or [])|join(", ") or "none" }}</strong></div>
+  <div class="metric"><span>Active Service Types</span><strong>{{ (summary.active_service_type_values or [])|join(", ") or "none" }}</strong></div>
 </section>
 
 <section class="card section-nav-card">
@@ -115,7 +117,7 @@
   <section class="card section-divider">
     <h2>Documents</h2>
     <table>
-      <thead><tr><th>Title</th><th>Type</th><th>Owner</th><th>Tags</th><th>Link</th></tr></thead>
+      <thead><tr><th>Title</th><th>Source</th><th>Owner</th><th>Tags</th><th>Link</th></tr></thead>
       <tbody>
       {% for row in docs_preview %}
       <tr>
@@ -403,7 +405,7 @@
 
 {% if section == "changes" %}
 {% set current = profile[0] if profile else {} %}
-{% if can_edit and not locked_mode %}
+{% if (can_edit or can_submit_requests) and not locked_mode %}
 <section class="card section-divider">
   <h2>Change Actions</h2>
 
@@ -445,6 +447,17 @@
         <option value="update_offering">update_offering</option>
         <option value="request_lifecycle_change">request_lifecycle_change</option>
       </select>
+    </label>
+    <label>Approval Level
+      <select name="approval_level_required">
+        <option value="">default by change type</option>
+        <option value="1">level_1</option>
+        <option value="2">level_2</option>
+        <option value="3">level_3</option>
+      </select>
+    </label>
+    <label>Assigned Approver (optional)
+      <input type="text" name="assigned_approver" placeholder="approver@example.com">
     </label>
     <label class="full">Notes
       <textarea name="change_notes" rows="2" placeholder="Describe the requested update."></textarea>

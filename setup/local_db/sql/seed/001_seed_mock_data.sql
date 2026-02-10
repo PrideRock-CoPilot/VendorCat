@@ -13,6 +13,7 @@ DELETE FROM app_vendor_change_request;
 DELETE FROM app_note;
 DELETE FROM app_usage_log;
 DELETE FROM app_user_settings;
+DELETE FROM app_lookup_option;
 DELETE FROM app_user_directory;
 DELETE FROM audit_entity_change;
 DELETE FROM audit_workflow_event;
@@ -80,13 +81,13 @@ INSERT INTO core_vendor_business_owner (vendor_owner_id, vendor_id, owner_user_p
 ('vown-003', 'vnd-002', 'sales-systems@example.com', 'business_owner', 1, '2026-01-29 09:15:00', 'seed:system'),
 ('vown-004', 'vnd-003', 'ap-ops@example.com', 'legacy_owner', 0, '2025-12-20 16:30:00', 'seed:system');
 
-INSERT INTO core_vendor_offering (offering_id, vendor_id, offering_name, offering_type, lifecycle_state, criticality_tier, updated_at, updated_by) VALUES
-('off-001', 'vnd-001', 'Microsoft 365', 'SaaS', 'active', 'tier_1', '2026-02-01 10:00:00', 'seed:system'),
-('off-002', 'vnd-001', 'Azure', 'Cloud', 'active', 'tier_1', '2026-02-01 10:00:00', 'seed:system'),
-('off-004', 'vnd-001', 'Defender For Cloud', 'Security', 'in_review', 'tier_2', '2026-02-01 10:00:00', 'seed:system'),
-('off-005', 'vnd-001', 'Power Platform', 'PaaS', 'approved', 'tier_2', '2026-02-01 10:00:00', 'seed:system'),
-('off-006', 'vnd-001', 'Dynamics 365 Finance', 'SaaS', 'retired', 'tier_3', '2026-02-01 10:00:00', 'seed:system'),
-('off-003', 'vnd-002', 'Sales Cloud', 'SaaS', 'active', 'tier_2', '2026-01-29 09:15:00', 'seed:system');
+INSERT INTO core_vendor_offering (offering_id, vendor_id, offering_name, offering_type, lob, service_type, lifecycle_state, criticality_tier, updated_at, updated_by) VALUES
+('off-001', 'vnd-001', 'Microsoft 365', 'SaaS', 'Enterprise', 'Application', 'active', 'tier_1', '2026-02-01 10:00:00', 'seed:system'),
+('off-002', 'vnd-001', 'Azure', 'Cloud', 'IT', 'Infrastructure', 'active', 'tier_1', '2026-02-01 10:00:00', 'seed:system'),
+('off-004', 'vnd-001', 'Defender For Cloud', 'Security', 'Security', 'Security', 'in_review', 'tier_2', '2026-02-01 10:00:00', 'seed:system'),
+('off-005', 'vnd-001', 'Power Platform', 'PaaS', 'Operations', 'Platform', 'approved', 'tier_2', '2026-02-01 10:00:00', 'seed:system'),
+('off-006', 'vnd-001', 'Dynamics 365 Finance', 'SaaS', 'Finance', 'Application', 'retired', 'tier_3', '2026-02-01 10:00:00', 'seed:system'),
+('off-003', 'vnd-002', 'Sales Cloud', 'SaaS', 'Sales', 'Application', 'active', 'tier_2', '2026-01-29 09:15:00', 'seed:system');
 
 INSERT INTO core_offering_business_owner (offering_owner_id, offering_id, owner_user_principal, owner_role, active_flag, updated_at, updated_by) VALUES
 ('oown-001', 'off-001', 'workspace-admin@example.com', 'platform_owner', 1, '2026-02-01 10:00:00', 'seed:system'),
@@ -194,6 +195,76 @@ INSERT INTO app_user_directory (user_id, login_identifier, email, network_id, fi
 ('usr-009', 'secops@example.com', 'secops@example.com', NULL, 'SecOps', 'User', 'Secops User', 1, '2026-01-01 00:00:00', '2026-02-03 10:00:00', '2026-02-03 10:00:00'),
 ('usr-010', 'owner@example.com', 'owner@example.com', NULL, 'Owner', 'User', 'Owner User', 1, '2026-01-01 00:00:00', '2026-02-03 10:00:00', '2026-02-03 10:00:00');
 
+INSERT INTO app_lookup_option (option_id, lookup_type, option_code, option_label, sort_order, active_flag, valid_from_ts, valid_to_ts, is_current, deleted_flag, updated_at, updated_by) VALUES
+('lkp-doc_source-sharepoint', 'doc_source', 'sharepoint', 'Sharepoint', 1, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-doc_source-onedrive', 'doc_source', 'onedrive', 'Onedrive', 2, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-doc_source-confluence', 'doc_source', 'confluence', 'Confluence', 3, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-doc_source-google_drive', 'doc_source', 'google_drive', 'Google Drive', 4, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-doc_source-box', 'doc_source', 'box', 'Box', 5, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-doc_source-dropbox', 'doc_source', 'dropbox', 'Dropbox', 6, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-doc_source-github', 'doc_source', 'github', 'Github', 7, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-doc_source-other', 'doc_source', 'other', 'Other', 8, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-doc_tag-contract', 'doc_tag', 'contract', 'Contract', 1, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-doc_tag-msa', 'doc_tag', 'msa', 'Msa', 2, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-doc_tag-nda', 'doc_tag', 'nda', 'Nda', 3, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-doc_tag-sow', 'doc_tag', 'sow', 'Sow', 4, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-doc_tag-invoice', 'doc_tag', 'invoice', 'Invoice', 5, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-doc_tag-renewal', 'doc_tag', 'renewal', 'Renewal', 6, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-doc_tag-security', 'doc_tag', 'security', 'Security', 7, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-doc_tag-architecture', 'doc_tag', 'architecture', 'Architecture', 8, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-doc_tag-runbook', 'doc_tag', 'runbook', 'Runbook', 9, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-doc_tag-compliance', 'doc_tag', 'compliance', 'Compliance', 10, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-doc_tag-rfp', 'doc_tag', 'rfp', 'Rfp', 11, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-doc_tag-poc', 'doc_tag', 'poc', 'Poc', 12, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-doc_tag-notes', 'doc_tag', 'notes', 'Notes', 13, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-doc_tag-operations', 'doc_tag', 'operations', 'Operations', 14, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-doc_tag-folder', 'doc_tag', 'folder', 'Folder', 15, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-owner_role-business_owner', 'owner_role', 'business_owner', 'Business Owner', 1, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-owner_role-executive_owner', 'owner_role', 'executive_owner', 'Executive Owner', 2, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-owner_role-service_owner', 'owner_role', 'service_owner', 'Service Owner', 3, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-owner_role-technical_owner', 'owner_role', 'technical_owner', 'Technical Owner', 4, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-owner_role-security_owner', 'owner_role', 'security_owner', 'Security Owner', 5, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-owner_role-application_owner', 'owner_role', 'application_owner', 'Application Owner', 6, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-owner_role-platform_owner', 'owner_role', 'platform_owner', 'Platform Owner', 7, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-owner_role-legacy_owner', 'owner_role', 'legacy_owner', 'Legacy Owner', 8, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-assignment_type-consumer', 'assignment_type', 'consumer', 'Consumer', 1, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-assignment_type-primary', 'assignment_type', 'primary', 'Primary', 2, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-assignment_type-secondary', 'assignment_type', 'secondary', 'Secondary', 3, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-contact_type-business', 'contact_type', 'business', 'Business', 1, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-contact_type-account_manager', 'contact_type', 'account_manager', 'Account Manager', 2, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-contact_type-support', 'contact_type', 'support', 'Support', 3, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-contact_type-escalation', 'contact_type', 'escalation', 'Escalation', 4, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-contact_type-security_specialist', 'contact_type', 'security_specialist', 'Security Specialist', 5, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-contact_type-customer_success', 'contact_type', 'customer_success', 'Customer Success', 6, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-contact_type-product_manager', 'contact_type', 'product_manager', 'Product Manager', 7, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-project_type-rfp', 'project_type', 'rfp', 'RFP', 1, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-project_type-poc', 'project_type', 'poc', 'PoC', 2, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-project_type-renewal', 'project_type', 'renewal', 'Renewal', 3, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-project_type-implementation', 'project_type', 'implementation', 'Implementation', 4, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-project_type-other', 'project_type', 'other', 'Other', 5, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-offering_type-saas', 'offering_type', 'saas', 'SaaS', 1, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-offering_type-cloud', 'offering_type', 'cloud', 'Cloud', 2, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-offering_type-paas', 'offering_type', 'paas', 'PaaS', 3, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-offering_type-security', 'offering_type', 'security', 'Security', 4, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-offering_type-data', 'offering_type', 'data', 'Data', 5, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-offering_type-integration', 'offering_type', 'integration', 'Integration', 6, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-offering_type-other', 'offering_type', 'other', 'Other', 7, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-offering_lob-enterprise', 'offering_lob', 'enterprise', 'Enterprise', 1, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-offering_lob-finance', 'offering_lob', 'finance', 'Finance', 2, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-offering_lob-hr', 'offering_lob', 'hr', 'HR', 3, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-offering_lob-it', 'offering_lob', 'it', 'IT', 4, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-offering_lob-operations', 'offering_lob', 'operations', 'Operations', 5, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-offering_lob-sales', 'offering_lob', 'sales', 'Sales', 6, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-offering_lob-security', 'offering_lob', 'security', 'Security', 7, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-offering_service_type-application', 'offering_service_type', 'application', 'Application', 1, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-offering_service_type-infrastructure', 'offering_service_type', 'infrastructure', 'Infrastructure', 2, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-offering_service_type-integration', 'offering_service_type', 'integration', 'Integration', 3, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-offering_service_type-managed_service', 'offering_service_type', 'managed_service', 'Managed Service', 4, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-offering_service_type-platform', 'offering_service_type', 'platform', 'Platform', 5, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-offering_service_type-security', 'offering_service_type', 'security', 'Security', 6, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-offering_service_type-support', 'offering_service_type', 'support', 'Support', 7, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
+('lkp-offering_service_type-other', 'offering_service_type', 'other', 'Other', 8, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap');
+
 INSERT INTO sec_role_definition (role_code, role_name, description, approval_level, can_edit, can_report, can_direct_apply, active_flag, updated_at, updated_by) VALUES
 ('vendor_admin', 'Vendor Admin', 'Full administrative access across all workflows and data changes.', 3, 1, 1, 1, 1, '2026-01-01 00:00:00', 'bootstrap'),
 ('vendor_steward', 'Vendor Steward', 'Data steward with elevated review/apply rights for governed updates.', 2, 1, 1, 1, 1, '2026-01-01 00:00:00', 'bootstrap'),
@@ -266,3 +337,5 @@ INSERT INTO sec_user_org_scope (user_principal, org_id, scope_level, active_flag
 ('editor@example.com', 'SALES-OPS', 'edit', 1, '2026-01-15 08:00:00');
 
 COMMIT;
+
+

@@ -141,12 +141,43 @@ def test_offering_type_uses_dropdown_in_new_and_edit_forms(client: TestClient) -
     new_form = client.get("/vendors/vnd-001/offerings/new?return_to=%2Fvendors")
     assert new_form.status_code == 200
     assert '<select name="offering_type">' in new_form.text
+    assert '<select name="lob">' in new_form.text
+    assert '<select name="service_type">' in new_form.text
     assert '<option value="SaaS">' in new_form.text
 
     edit_form = client.get("/vendors/vnd-001/offerings/off-001?return_to=%2Fvendors&edit=1")
     assert edit_form.status_code == 200
     assert '<select name="offering_type">' in edit_form.text
+    assert '<select name="lob">' in edit_form.text
+    assert '<select name="service_type">' in edit_form.text
     assert '<option value="SaaS" selected' in edit_form.text
+    assert '<option value="Enterprise" selected' in edit_form.text
+    assert '<option value="Application" selected' in edit_form.text
+
+
+def test_offering_create_with_lob_and_service_type_persists_to_detail(client: TestClient) -> None:
+    create = client.post(
+        "/vendors/vnd-003/offerings/new",
+        data={
+            "return_to": "/vendors",
+            "offering_name": "Legacy Bridge",
+            "offering_type": "SaaS",
+            "lob": "Finance",
+            "service_type": "Platform",
+            "lifecycle_state": "active",
+            "criticality_tier": "tier_2",
+        },
+        follow_redirects=False,
+    )
+    assert create.status_code == 303
+    match = re.search(r"/vendors/vnd-003/offerings/(off-[^?]+)", create.headers["location"])
+    assert match is not None
+    offering_id = match.group(1)
+
+    detail = client.get(f"/vendors/vnd-003/offerings/{offering_id}?return_to=%2Fvendors")
+    assert detail.status_code == 200
+    assert "Finance" in detail.text
+    assert "Platform" in detail.text
 
 
 def test_create_offering_rejects_invalid_offering_type(client: TestClient) -> None:
@@ -252,6 +283,15 @@ def test_vendor_change_trail_shows_field_level_diff(client: TestClient) -> None:
     assert ("Risk Tier: medium -&gt; high" in changes_page.text) or ("Risk Tier: medium -> high" in changes_page.text)
 
 
+def test_vendor_summary_includes_active_lob_and_service_type_values(client: TestClient) -> None:
+    response = client.get("/vendors/vnd-001/summary?return_to=%2Fvendors")
+    assert response.status_code == 200
+    assert "active_lobs" in response.text
+    assert "active_service_types" in response.text
+    assert "Enterprise, IT" in response.text
+    assert "Application, Infrastructure" in response.text
+
+
 def test_vendor_ownership_allows_adding_owner_assignment_and_contact(client: TestClient) -> None:
     owner_response = client.post(
         "/vendors/vnd-002/owners/add",
@@ -296,3 +336,192 @@ def test_vendor_ownership_allows_adding_owner_assignment_and_contact(client: Tes
     assert "new.owner@example.com" in ownership_page.text
     assert "FIN-OPS" in ownership_page.text
     assert "Taylor Ops" in ownership_page.text
+
+
+def test_offering_sectioned_page_supports_operational_profile_updates(client: TestClient) -> None:
+    summary_page = client.get("/vendors/vnd-001/offerings/off-004?return_to=%2Fvendors")
+    assert summary_page.status_code == 200
+    assert "Offering Summary" in summary_page.text
+    assert "Data Flow" in summary_page.text
+    assert "Data Exchange Snapshot" not in summary_page.text
+
+    update_response = client.post(
+        "/vendors/vnd-001/offerings/off-004/profile/save",
+        data={
+            "return_to": "/vendors",
+            "source_section": "profile",
+            "estimated_monthly_cost": "24500",
+            "integration_method": "Connector API",
+            "implementation_notes": "Regional rollout complete.",
+            "data_sent": "Alert metadata and incidents",
+            "data_received": "Security events and policy posture",
+            "reason": "Baseline profile update",
+        },
+        follow_redirects=False,
+    )
+    assert update_response.status_code == 303
+    assert "section=profile" in update_response.headers["location"]
+
+    profile_page = client.get("/vendors/vnd-001/offerings/off-004?section=profile&return_to=%2Fvendors")
+    assert profile_page.status_code == 200
+    assert "Regional rollout complete." in profile_page.text
+    assert "24500" in profile_page.text
+
+
+def test_offering_dataflow_section_can_capture_inbound_outbound_details(client: TestClient) -> None:
+    dataflow_page = client.get("/vendors/vnd-001/offerings/off-004?section=dataflow&return_to=%2Fvendors")
+    assert dataflow_page.status_code == 200
+    assert "Data Feeds" in dataflow_page.text
+    assert "Inbound Feeds" in dataflow_page.text
+    assert "Outbound Feeds" in dataflow_page.text
+    assert "Incoming Data Flow" not in dataflow_page.text
+    assert "Outgoing Data Flow" not in dataflow_page.text
+    assert "+ Add Data Feed" in dataflow_page.text
+
+
+def test_offering_dataflow_supports_multiple_rows_per_direction(client: TestClient) -> None:
+    first_add = client.post(
+        "/vendors/vnd-001/offerings/off-004/dataflows/add",
+        data={
+            "return_to": "/vendors",
+            "direction": "inbound",
+            "flow_name": "Billing API feed",
+            "method": "api",
+            "data_description": "Invoice status and payment events",
+            "endpoint_details": "https://vendor.example.com/api/v1/billing",
+            "identifiers": "account_id, invoice_id",
+            "reporting_layer": "uc.silver_billing",
+            "owner_user_principal": "admin@example.com",
+            "reason": "Capture first inbound feed",
+        },
+        follow_redirects=False,
+    )
+    assert first_add.status_code == 303
+    assert "section=dataflow" in first_add.headers["location"]
+
+    second_add = client.post(
+        "/vendors/vnd-001/offerings/off-004/dataflows/add",
+        data={
+            "return_to": "/vendors",
+            "direction": "inbound",
+            "flow_name": "Service desk file drop",
+            "method": "file_transfer",
+            "data_description": "Daily incident extract",
+            "endpoint_details": "sftp://partner/drop/incidents",
+            "reason": "Capture second inbound feed",
+        },
+        follow_redirects=False,
+    )
+    assert second_add.status_code == 303
+
+    outbound_add = client.post(
+        "/vendors/vnd-001/offerings/off-004/dataflows/add",
+        data={
+            "return_to": "/vendors",
+            "direction": "outbound",
+            "flow_name": "Finance reconciliation export",
+            "method": "cloud_to_cloud",
+            "data_description": "Monthly spend reconciliation payload",
+            "creation_process": "Delta table snapshot",
+            "delivery_process": "Cross-account share",
+            "owner_user_principal": "admin@example.com",
+            "reason": "Capture outbound feed",
+        },
+        follow_redirects=False,
+    )
+    assert outbound_add.status_code == 303
+
+    dataflow_page = client.get("/vendors/vnd-001/offerings/off-004?section=dataflow&return_to=%2Fvendors")
+    assert dataflow_page.status_code == 200
+    assert "Billing API feed" in dataflow_page.text
+    assert "Service desk file drop" in dataflow_page.text
+    assert "Finance reconciliation export" in dataflow_page.text
+    assert "edit_data_flow_id=" in dataflow_page.text
+
+    edit_match = re.search(r"edit_data_flow_id=(odf-[^&]+)&", dataflow_page.text)
+    assert edit_match is not None
+    edit_id = edit_match.group(1)
+    update_response = client.post(
+        "/vendors/vnd-001/offerings/off-004/dataflows/update",
+        data={
+            "return_to": "/vendors",
+            "data_flow_id": edit_id,
+            "direction": "inbound",
+            "flow_name": "Billing API feed (updated)",
+            "method": "api",
+            "data_description": "Updated billing payload",
+            "endpoint_details": "https://vendor.example.com/api/v2/billing",
+            "identifiers": "account_id, invoice_id, statement_id",
+            "reporting_layer": "uc.gold_billing",
+            "creation_process": "",
+            "delivery_process": "",
+            "owner_user_principal": "admin@example.com",
+            "notes": "Updated feed shape",
+            "reason": "Refresh feed definition",
+        },
+        follow_redirects=False,
+    )
+    assert update_response.status_code == 303
+    updated_page = client.get("/vendors/vnd-001/offerings/off-004?section=dataflow&return_to=%2Fvendors")
+    assert updated_page.status_code == 200
+    assert "Billing API feed (updated)" in updated_page.text
+
+    match = re.search(r'name="data_flow_id" value="(odf-[^"]+)"', dataflow_page.text)
+    assert match is not None
+    remove_id = match.group(1)
+    remove_response = client.post(
+        "/vendors/vnd-001/offerings/off-004/dataflows/remove",
+        data={
+            "return_to": "/vendors",
+            "data_flow_id": remove_id,
+            "reason": "Remove obsolete feed",
+        },
+        follow_redirects=False,
+    )
+    assert remove_response.status_code == 303
+
+    after_remove = client.get("/vendors/vnd-001/offerings/off-004?section=dataflow&return_to=%2Fvendors")
+    assert after_remove.status_code == 200
+    assert "Billing API feed (updated)" not in after_remove.text
+    assert "Billing API feed" in after_remove.text
+    assert "Finance reconciliation export" in after_remove.text
+
+
+def test_offering_tickets_and_notes_can_be_added(client: TestClient) -> None:
+    ticket_response = client.post(
+        "/vendors/vnd-001/offerings/off-004/tickets/add",
+        data={
+            "return_to": "/vendors",
+            "title": "Defender tenant onboarding issue",
+            "ticket_system": "ServiceNow",
+            "external_ticket_id": "INC-9001",
+            "status": "open",
+            "priority": "high",
+            "opened_date": "2026-02-10",
+            "notes": "Escalated with vendor support.",
+        },
+        follow_redirects=False,
+    )
+    assert ticket_response.status_code == 303
+    assert "section=tickets" in ticket_response.headers["location"]
+
+    note_response = client.post(
+        "/vendors/vnd-001/offerings/off-004/notes/add",
+        data={
+            "return_to": "/vendors",
+            "note_type": "issue",
+            "note_text": "API latency increased after tenant policy update.",
+        },
+        follow_redirects=False,
+    )
+    assert note_response.status_code == 303
+    assert "section=notes" in note_response.headers["location"]
+
+    tickets_page = client.get("/vendors/vnd-001/offerings/off-004?section=tickets&return_to=%2Fvendors")
+    assert tickets_page.status_code == 200
+    assert "INC-9001" in tickets_page.text
+    assert "Defender tenant onboarding issue" in tickets_page.text
+
+    notes_page = client.get("/vendors/vnd-001/offerings/off-004?section=notes&return_to=%2Fvendors")
+    assert notes_page.status_code == 200
+    assert "API latency increased after tenant policy update." in notes_page.text

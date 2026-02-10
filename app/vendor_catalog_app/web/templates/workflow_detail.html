@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="section-header">
+  <div>
+    <h1>Approval Request</h1>
+    <p>Review submitted changes, then set the next workflow status.</p>
+  </div>
+  <div class="button-group">
+    <a class="button-link subtle" href="{{ return_to }}">Back</a>
+  </div>
+</div>
+
+<section class="card section-divider">
+  <div class="grid grid-3">
+    <div><strong>Request ID</strong><div>{{ row.change_request_id }}</div></div>
+    <div><strong>Type</strong><div>{{ row.change_type }}</div></div>
+    <div><strong>Status</strong><div>{{ row.status }}</div></div>
+    <div><strong>Requester</strong><div>{{ row.requestor_user_principal }}</div></div>
+    <div><strong>Approval Level</strong><div>{{ row._approval_label }}</div></div>
+    <div><strong>LOB</strong><div>{{ row._lob_display }}</div></div>
+    <div><strong>Submitted</strong><div>{{ row.submitted_at }}</div></div>
+    <div><strong>Updated</strong><div>{{ row.updated_at }}</div></div>
+    <div><strong>Summary</strong><div>{{ row._summary }}</div></div>
+  </div>
+</section>
+
+<section class="card section-divider">
+  <h2>Applies To</h2>
+  <table>
+    <thead><tr><th>Target</th><th>Reference</th><th>Link</th></tr></thead>
+    <tbody>
+      {% for target in target_links %}
+      <tr>
+        <td>{{ target.label }}</td>
+        <td>{{ target.value }}</td>
+        <td>
+          {% if target.url %}
+          <a href="{{ target.url }}" target="_blank" rel="noopener noreferrer">{{ target.link_label or "Open" }}</a>
+          {% else %}
+          <span class="muted">No direct link</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3">No direct target references were found in this request payload.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card section-divider">
+  <h2>Change Review</h2>
+  <table>
+    <thead><tr><th>Field</th><th>Current Value</th><th>Proposed Value</th><th>Status</th><th>Source</th></tr></thead>
+    <tbody>
+      {% for item in side_by_side_rows %}
+      <tr>
+        <td>{{ item.field }}</td>
+        <td><code>{{ item.current }}</code></td>
+        <td><code>{{ item.proposed }}</code></td>
+        <td>
+          <span class="status-badge status-{{ item.status|lower }}">{{ item.status }}</span>
+        </td>
+        <td>{{ item.source }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No comparable fields found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card section-divider">
+  <h2>Decision</h2>
+  {% if row._can_decide and row.status not in ['approved', 'rejected'] and not locked_mode %}
+  <form method="post" action="/workflows/{{ row.change_request_id }}/decision" class="grid grid-2 form-grid">
+    <input type="hidden" name="return_to" value="{{ return_to }}">
+    <label>Set Status
+      <select name="decision" required>
+        {% for status in decision_status_options %}
+        <option value="{{ status }}">{{ status|replace('_', ' ')|title }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="full">Decision Notes
+      <textarea name="notes" rows="3" placeholder="Optional notes for audit trail"></textarea>
+    </label>
+    <div class="button-group"><button type="submit">Apply Status</button></div>
+  </form>
+  {% elif locked_mode %}
+  <p class="muted">Locked mode is enabled. Decisions are disabled.</p>
+  {% elif row.status in ['approved', 'rejected'] %}
+  <p class="muted">This request is final: {{ row.status }}.</p>
+  {% else %}
+  <p class="muted">Insufficient approval level for this request.</p>
+  {% endif %}
+</section>
+{% endblock %}

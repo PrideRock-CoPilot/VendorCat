@@ -15,7 +15,6 @@ from vendor_catalog_app.web.services import (
     log_page_view,
 )
 from vendor_catalog_app.web.utils.doc_links import (
-    DOC_TYPES,
     extract_doc_fqdn,
     normalize_doc_tags,
     suggest_doc_title,
@@ -34,7 +33,7 @@ PROJECT_SECTIONS = [
     ("docs", "Documents"),
     ("notes", "Notes"),
 ]
-PROJECT_TYPES = ["rfp", "poc", "renewal", "implementation", "other"]
+PROJECT_TYPES_FALLBACK = ["rfp", "poc", "renewal", "implementation", "other"]
 PROJECT_STATUS_VALUES = [x for x in PROJECT_STATUSES if x != "all"]
 
 
@@ -122,10 +121,16 @@ def _project_nav(project_id: str, return_to: str, active_key: str) -> list[dict]
     ]
 
 
-def _normalize_project_type(value: str) -> str:
+def _project_type_options(repo) -> list[str]:
+    options = [str(item).strip().lower() for item in repo.list_project_type_options() if str(item).strip()]
+    return options or list(PROJECT_TYPES_FALLBACK)
+
+
+def _normalize_project_type(repo, value: str) -> str:
+    allowed = _project_type_options(repo)
     project_type = (value or "other").strip().lower()
-    if project_type not in PROJECT_TYPES:
-        raise ValueError(f"Project type must be one of: {', '.join(PROJECT_TYPES)}")
+    if project_type not in set(allowed):
+        raise ValueError(f"Project type must be one of: {', '.join(allowed)}")
     return project_type
 
 
@@ -136,17 +141,22 @@ def _normalize_project_status(value: str) -> str:
     return status
 
 
-def _normalize_doc_type(value: str) -> str:
-    doc_type = (value or "").strip().lower()
-    if not doc_type:
-        return ""
-    if doc_type not in DOC_TYPES:
-        raise ValueError(f"Document type must be one of: {', '.join(DOC_TYPES)}")
-    return doc_type
+def _normalize_doc_source(repo, value: str, *, doc_url: str = "") -> str:
+    allowed = {str(item).strip().lower() for item in repo.list_doc_source_options() if str(item).strip()}
+    if not allowed:
+        raise ValueError("Document source lookup options are not configured.")
+    source = str(value or "").strip().lower()
+    if source:
+        if source not in allowed:
+            raise ValueError(f"Source must be one of: {', '.join(sorted(allowed))}")
+        return source
 
-
-def _to_bool(value: object) -> bool:
-    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+    inferred = suggest_doc_type(doc_url).strip().lower()
+    if inferred in allowed:
+        return inferred
+    if "other" in allowed:
+        return "other"
+    return sorted(allowed)[0]
 
 
 def _prepare_doc_payload(
@@ -154,15 +164,12 @@ def _prepare_doc_payload(
     form_data: dict[str, object],
     *,
     actor_user_principal: str,
-    allow_owner_create: bool = False,
 ) -> dict[str, str]:
     doc_url = str(form_data.get("doc_url", "")).strip()
-    doc_type = _normalize_doc_type(str(form_data.get("doc_type", "")))
+    doc_type = _normalize_doc_source(repo, str(form_data.get("doc_type", "")), doc_url=doc_url)
     doc_title = str(form_data.get("doc_title", "")).strip()
     raw_tags = form_data.get("tags")
-    raw_new_tag = form_data.get("tag_new")
-    owner_new = str(form_data.get("owner_new", "")).strip()
-    owner = owner_new or str(form_data.get("owner", "")).strip() or str(actor_user_principal or "").strip()
+    owner = str(form_data.get("owner", "")).strip() or str(actor_user_principal or "").strip()
     doc_fqdn = extract_doc_fqdn(doc_url)
 
     if not doc_url:
@@ -176,9 +183,6 @@ def _prepare_doc_payload(
     if len(doc_title) > 120:
         doc_title = doc_title[:120].rstrip()
     owner_login = repo.resolve_user_login_identifier(owner)
-    if not owner_login and allow_owner_create and owner:
-        repo.ensure_user_record(owner)
-        owner_login = repo.resolve_user_login_identifier(owner)
     if not owner_login:
         raise ValueError("Owner must exist in the app user directory.")
 
@@ -187,12 +191,11 @@ def _prepare_doc_payload(
         collected_tags.extend(str(item or "") for item in raw_tags)
     elif raw_tags is not None:
         collected_tags.append(str(raw_tags or ""))
-    if isinstance(raw_new_tag, list):
-        collected_tags.extend(str(item or "") for item in raw_new_tag)
-    elif raw_new_tag is not None:
-        collected_tags.append(str(raw_new_tag or ""))
-
-    normalized_tags = normalize_doc_tags(collected_tags, doc_type=doc_type, fqdn=doc_fqdn, doc_url=doc_url)
+    normalized_tags = normalize_doc_tags(collected_tags, doc_type="", fqdn="", doc_url="")
+    allowed_tags = {str(item).strip().lower() for item in repo.list_doc_tag_options() if str(item).strip()}
+    invalid_tags = [tag for tag in normalized_tags if tag not in allowed_tags]
+    if invalid_tags:
+        raise ValueError(f"Tags must be selected from admin-managed options: {', '.join(sorted(allowed_tags))}")
     return {
         "doc_url": doc_url,
         "doc_type": doc_type,
@@ -337,7 +340,7 @@ def _render_project_section(request: Request, base: dict, section: str):
             "project_notes": base["notes"],
             "project_docs": base["docs"],
             "project_activity": base["activity"],
-            "doc_types": DOC_TYPES,
+            "doc_source_options": repo.list_doc_source_options(),
             "demo_map_options": demo_map_options,
             "linked_vendor_rows": linked_vendor_rows,
             "current_offering_ids": current_offering_ids,
@@ -418,7 +421,7 @@ def projects_new_form(request: Request, vendor_id: str = "", return_to: str = "/
             "vendor_id": safe_vendor or "",
             "vendor_display_name": "Global",
             "return_to": _safe_return_to(return_to),
-            "project_types": PROJECT_TYPES,
+            "project_types": _project_type_options(repo),
             "project_statuses": PROJECT_STATUS_VALUES,
             "selected_vendor_rows": selected_vendor_rows,
             "selected_offering_rows": [],
@@ -455,7 +458,7 @@ async def projects_new_submit(request: Request):
         project_payload = {
             "vendor_ids": linked_vendors,
             "project_name": str(form.get("project_name", "")).strip(),
-            "project_type": _normalize_project_type(str(form.get("project_type", "other"))),
+            "project_type": _normalize_project_type(repo, str(form.get("project_type", "other"))),
             "status": _normalize_project_status(str(form.get("status", "draft"))),
             "start_date": str(form.get("start_date", "")).strip() or None,
             "target_date": str(form.get("target_date", "")).strip() or None,
@@ -537,7 +540,7 @@ def project_edit_form(request: Request, project_id: str, return_to: str = "/proj
             "selected_vendor_rows": selected_vendor_rows,
             "selected_offering_rows": selected_offering_rows,
             "return_to": _safe_return_to(return_to),
-            "project_types": PROJECT_TYPES,
+            "project_types": _project_type_options(repo),
             "project_statuses": PROJECT_STATUS_VALUES,
             "form_action": f"/projects/{project_id}/edit",
         },
@@ -571,7 +574,7 @@ async def project_edit_submit(request: Request, project_id: str):
     linked_vendors = _dedupe_ordered(linked_vendors)
     updates = {
         "project_name": str(form.get("project_name", "")).strip(),
-        "project_type": _normalize_project_type(str(form.get("project_type", "other"))),
+        "project_type": _normalize_project_type(repo, str(form.get("project_type", "other"))),
         "status": _normalize_project_status(str(form.get("status", "draft"))),
         "start_date": str(form.get("start_date", "")).strip() or None,
         "target_date": str(form.get("target_date", "")).strip() or None,
@@ -934,12 +937,9 @@ async def project_doc_link_submit(request: Request, project_id: str):
                 "doc_type": str(form.get("doc_type", "")),
                 "doc_title": str(form.get("doc_title", "")),
                 "tags": [str(v) for v in form.getlist("tags") if str(v).strip()],
-                "tag_new": str(form.get("tag_new", "")),
                 "owner": str(form.get("owner", "")),
-                "owner_new": str(form.get("owner_new", "")),
             },
             actor_user_principal=user.user_principal,
-            allow_owner_create=user.has_admin_rights and _to_bool(form.get("allow_owner_create")),
         )
         if user.can_apply_change("create_doc_link"):
             doc_id = repo.create_doc_link(

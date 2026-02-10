@@ -36,6 +36,8 @@ Safety guard: local DB is enabled only for `TVENDOR_ENV` values `dev`, `developm
 Databricks schema bootstrap is intentionally manual (security boundary). Use:
 - Environment config: `setup/config/tvendor.env`
 - Bootstrap SQL: `setup/databricks/001_create_databricks_schema.sql`
+- Existing-schema migration (LOB/Service Type columns): `setup/databricks/002_add_offering_lob_service_type.sql`
+- Existing-schema migration (lookup SCD validity columns): `setup/databricks/003_add_lookup_scd_columns.sql`
 
 ## Quick Start
 1. Install dependencies:

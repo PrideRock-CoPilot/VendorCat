@@ -35,11 +35,11 @@
 
 
 {% macro offering_owner_add_form(post_url, return_to, default_role="business_owner", submit_label="Add Owner") -%}
-{% set owner_role_options = ["business_owner", "executive_owner", "service_owner", "technical_owner", "security_owner", "application_owner", "platform_owner", "legacy_owner"] %}
+{% set owner_role_values = owner_role_options|default(["business_owner", "executive_owner", "service_owner", "technical_owner", "security_owner", "application_owner", "platform_owner", "legacy_owner"], true) %}
 <form method="post" action="{{ post_url }}" class="grid grid-2 form-grid">
   <input type="hidden" name="return_to" value="{{ return_to }}">
   {{ owner_principal_input("owner_user_principal", "", "Owner Principal", "user@company.com", true) }}
-  {{ select_input("owner_role", "Role", owner_role_options, default_role or "business_owner", true) }}
+  {{ select_input("owner_role", "Role", owner_role_values, default_role or "business_owner", true) }}
   <label class="full">Reason
     <input type="text" name="reason" placeholder="Optional">
   </label>
@@ -49,11 +49,11 @@
 
 
 {% macro vendor_owner_add_form(post_url, return_to, default_role="business_owner", submit_label="Add Owner") -%}
-{% set owner_role_options = ["business_owner", "executive_owner", "service_owner", "technical_owner", "security_owner", "application_owner", "platform_owner", "legacy_owner"] %}
+{% set owner_role_values = owner_role_options|default(["business_owner", "executive_owner", "service_owner", "technical_owner", "security_owner", "application_owner", "platform_owner", "legacy_owner"], true) %}
 <form method="post" action="{{ post_url }}" class="grid grid-2 form-grid">
   <input type="hidden" name="return_to" value="{{ return_to }}">
   {{ owner_principal_input("owner_user_principal", "", "Owner Principal", "user@company.com", true) }}
-  {{ select_input("owner_role", "Role", owner_role_options, default_role or "business_owner", true) }}
+  {{ select_input("owner_role", "Role", owner_role_values, default_role or "business_owner", true) }}
   <label class="full">Reason
     <input type="text" name="reason" placeholder="Optional">
   </label>
@@ -63,13 +63,13 @@
 
 
 {% macro vendor_org_assignment_add_form(post_url, return_to, submit_label="Add Assignment") -%}
-{% set assignment_type_options = ["primary", "consumer", "secondary"] %}
+{% set assignment_type_values = assignment_type_options|default(["consumer", "primary", "secondary"], true) %}
 <form method="post" action="{{ post_url }}" class="grid grid-2 form-grid">
   <input type="hidden" name="return_to" value="{{ return_to }}">
   <label>Org ID <span class="field-error">*</span>
     <input type="text" name="org_id" placeholder="IT-ENT" required>
   </label>
-  {{ select_input("assignment_type", "Assignment Type", assignment_type_options, "consumer", true) }}
+  {{ select_input("assignment_type", "Assignment Type", assignment_type_values, "consumer", true) }}
   <label class="full">Reason
     <input type="text" name="reason" placeholder="Optional">
   </label>
@@ -79,13 +79,13 @@
 
 
 {% macro vendor_contact_add_form(post_url, return_to, submit_label="Add Contact") -%}
-{% set contact_type_options = ["business", "account_manager", "support", "escalation", "security_specialist", "customer_success", "product_manager"] %}
+{% set contact_type_values = contact_type_options|default(["business", "account_manager", "support", "escalation", "security_specialist", "customer_success", "product_manager"], true) %}
 <form method="post" action="{{ post_url }}" class="grid grid-2 form-grid">
   <input type="hidden" name="return_to" value="{{ return_to }}">
   <label>Full Name <span class="field-error">*</span>
     <input type="text" name="full_name" placeholder="Jane Doe" required>
   </label>
-  {{ select_input("contact_type", "Type", contact_type_options, "business", true) }}
+  {{ select_input("contact_type", "Type", contact_type_values, "business", true) }}
   <label>Email
     <input type="email" name="email" placeholder="jane.doe@example.com">
   </label>
@@ -101,13 +101,13 @@
 
 
 {% macro offering_contact_add_form(post_url, return_to, submit_label="Add Contact") -%}
-{% set contact_type_options = ["business", "account_manager", "support", "escalation", "security_specialist", "customer_success", "product_manager"] %}
+{% set contact_type_values = contact_type_options|default(["business", "account_manager", "support", "escalation", "security_specialist", "customer_success", "product_manager"], true) %}
 <form method="post" action="{{ post_url }}" class="grid grid-2 form-grid">
   <input type="hidden" name="return_to" value="{{ return_to }}">
   <label>Full Name <span class="field-error">*</span>
     <input type="text" name="full_name" placeholder="Jane Doe" required>
   </label>
-  {{ select_input("contact_type", "Type", contact_type_options, "business", true) }}
+  {{ select_input("contact_type", "Type", contact_type_values, "business", true) }}
   <label>Email
     <input type="email" name="email" placeholder="jane.doe@example.com">
   </label>

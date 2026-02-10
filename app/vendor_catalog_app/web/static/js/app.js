@@ -86,25 +86,18 @@ document.addEventListener("DOMContentLoaded", () => {
       const urlInput = form.querySelector("[data-doc-url]");
       const typeSelect = form.querySelector("[data-doc-type]");
       const tagsSelect = form.querySelector("[data-doc-tags]");
-      const ownerInput = form.querySelector("[data-doc-owner-input]");
-      const ownerCreateFlag = form.querySelector("[data-allow-owner-create]");
       if (!(urlInput instanceof HTMLInputElement) || !(typeSelect instanceof HTMLSelectElement)) {
         form.dataset.docLinkInitialized = "1";
         return;
       }
 
-      const ensureOption = (select, value, label, selectOption = true) => {
+      const selectExistingOption = (select, value) => {
         if (!(select instanceof HTMLSelectElement)) return null;
         const normalized = String(value || "").trim();
         if (!normalized) return null;
         let match = [...select.options].find((option) => String(option.value).toLowerCase() === normalized.toLowerCase());
-        if (!match) {
-          match = document.createElement("option");
-          match.value = normalized;
-          match.textContent = label || normalized;
-          select.appendChild(match);
-        }
-        if (selectOption) match.selected = true;
+        if (!match) return null;
+        match.selected = true;
         return match;
       };
 
@@ -133,19 +126,20 @@ document.addEventListener("DOMContentLoaded", () => {
       };
 
       const applyDerivedTags = (url, explicitType) => {
-        const inferredType = explicitType || suggestType(url);
-        if (inferredType) {
-          ensureOption(tagsSelect, inferredType, inferredType, true);
-        }
         if (isFolderLike(url)) {
-          ensureOption(tagsSelect, "folder", "folder", true);
+          selectExistingOption(tagsSelect, "folder");
         }
       };
 
       const syncDerived = () => {
         const inferredType = suggestType(urlInput.value);
-        if (!typeSelect.value || typeSelect.value === "other" || typeSelect.value === "") {
-          typeSelect.value = inferredType;
+        if (!typeSelect.value || typeSelect.value === "") {
+          const matched = [...typeSelect.options].find(
+            (option) => String(option.value).toLowerCase() === inferredType.toLowerCase(),
+          );
+          if (matched) {
+            typeSelect.value = matched.value;
+          }
         }
         applyDerivedTags(urlInput.value, typeSelect.value || inferredType);
       };
@@ -153,14 +147,6 @@ document.addEventListener("DOMContentLoaded", () => {
       urlInput.addEventListener("input", syncDerived);
       typeSelect.addEventListener("change", syncDerived);
       syncDerived();
-
-      if (ownerInput instanceof HTMLInputElement && ownerCreateFlag instanceof HTMLInputElement) {
-        const syncOwnerCreate = () => {
-          ownerCreateFlag.value = ownerInput.value.trim() ? "1" : "0";
-        };
-        ownerInput.addEventListener("input", syncOwnerCreate);
-        syncOwnerCreate();
-      }
 
       form.dataset.docLinkInitialized = "1";
     });

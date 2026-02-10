@@ -15,16 +15,150 @@
 
 <section class="metrics">
   <div class="metric"><span>Lifecycle</span><strong>{{ offering.lifecycle_state }}</strong></div>
-  <div class="metric"><span>Type</span><strong>{{ offering.offering_type }}</strong></div>
+  <div class="metric"><span>Type</span><strong>{{ offering.offering_type or "none" }}</strong></div>
+  <div class="metric"><span>LOB</span><strong>{{ offering.lob or "none" }}</strong></div>
+  <div class="metric"><span>Service Type</span><strong>{{ offering.service_type or "none" }}</strong></div>
   <div class="metric"><span>Criticality</span><strong>{{ offering.criticality_tier }}</strong></div>
-  <div class="metric"><span>Offering ID</span><strong>{{ offering.offering_id }}</strong></div>
   <div class="metric"><span>Contracts</span><strong>{{ offering_contracts|length }}</strong></div>
   <div class="metric"><span>Demos</span><strong>{{ offering_demos|length }}</strong></div>
+  <div class="metric"><span>Tickets</span><strong>{{ offering_tickets|length }}</strong></div>
+  <div class="metric"><span>Notes</span><strong>{{ offering_notes|length }}</strong></div>
+  <div class="metric"><span>Docs</span><strong>{{ offering_docs|length }}</strong></div>
 </section>
 
+<section class="card section-nav-card">
+  <div class="section-nav-links">
+    {% for item in offering_nav %}
+    <a class="{% if item.active %}active{% endif %}" href="{{ item.url }}">{{ item.label }}</a>
+    {% endfor %}
+  </div>
+</section>
+
+{% if section == "summary" %}
+<div class="grid grid-2">
+  <section class="card section-divider">
+    <h2>Offering Summary</h2>
+    <table>
+      <tbody>
+      <tr><th>Offering ID</th><td>{{ offering.offering_id }}</td></tr>
+      <tr><th>Offering Name</th><td>{{ offering.offering_name }}</td></tr>
+      <tr><th>Type</th><td>{{ offering.offering_type or "none" }}</td></tr>
+      <tr><th>LOB</th><td>{{ offering.lob or "none" }}</td></tr>
+      <tr><th>Service Type</th><td>{{ offering.service_type or "none" }}</td></tr>
+      <tr><th>Lifecycle</th><td>{{ offering.lifecycle_state }}</td></tr>
+      <tr><th>Criticality</th><td>{{ offering.criticality_tier or "none" }}</td></tr>
+      <tr><th>Monthly Cost</th><td>{% if offering_profile.estimated_monthly_cost is not none %}${{ offering_profile.estimated_monthly_cost }}{% else %}-{% endif %}</td></tr>
+      <tr><th>Implementation</th><td>{{ offering_profile.implementation_notes or "-" }}</td></tr>
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<div class="grid grid-2">
+  <section class="card section-divider">
+    <h2>Linked Contracts</h2>
+    <table>
+      <thead><tr><th>Contract</th><th>Status</th><th>Start</th><th>End</th></tr></thead>
+      <tbody>
+      {% for row in offering_contracts %}
+      <tr>
+        <td>
+          {% if row.contract_number %}
+          {{ row.contract_number }} ({{ row.contract_id }})
+          {% else %}
+          {{ row.contract_id }}
+          {% endif %}
+        </td>
+        <td>{{ row.contract_status }}</td>
+        <td>{{ row.start_date }}</td>
+        <td>{{ row.end_date }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No contracts mapped.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  <section class="card section-divider">
+    <h2>Linked Demos</h2>
+    <table>
+      <thead><tr><th>Demo</th><th>Date</th><th>Outcome</th><th>Score</th></tr></thead>
+      <tbody>
+      {% for row in offering_demos %}
+      <tr>
+        <td>{{ row.demo_id }}</td>
+        <td>{{ row.demo_date }}</td>
+        <td>{{ row.selection_outcome }}</td>
+        <td>{{ row.overall_score }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No demos mapped.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<div class="grid grid-2">
+  <section class="card section-divider">
+    <h2>Recent Tickets</h2>
+    <table>
+      <thead><tr><th>Ticket</th><th>Status</th><th>Priority</th><th>Opened</th></tr></thead>
+      <tbody>
+      {% for row in recent_offering_tickets %}
+      <tr>
+        <td>{% if row.external_ticket_id %}{{ row.external_ticket_id }}{% else %}{{ row.ticket_id }}{% endif %} - {{ row.title }}</td>
+        <td>{{ row.status }}</td>
+        <td>{{ row.priority or "-" }}</td>
+        <td>{{ row.opened_date or row.created_at }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No tickets yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  <section class="card section-divider">
+    <h2>Recent Notes</h2>
+    <table>
+      <thead><tr><th>When</th><th>Type</th><th>Author</th><th>Note</th></tr></thead>
+      <tbody>
+      {% for row in recent_offering_notes %}
+      <tr><td>{{ row.created_at }}</td><td>{{ row.note_type }}</td><td>{{ row.created_by }}</td><td>{{ row.note_text }}</td></tr>
+      {% else %}
+      <tr><td colspan="4">No notes yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<div class="grid grid-2">
+  <section class="card section-divider">
+    <h2>Recent Documents</h2>
+    <table>
+      <thead><tr><th>Title</th><th>Source</th><th>Owner</th><th>Link</th></tr></thead>
+      <tbody>
+      {% for row in offering_docs[:5] %}
+      <tr>
+        <td>{{ row.doc_title }}</td>
+        <td>{{ row.doc_type }}</td>
+        <td>{{ row.owner }}</td>
+        <td><a href="{{ row.doc_url }}" target="_blank" rel="noopener noreferrer">Open link</a></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No offering documents linked.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+{% endif %}
+
+{% if section == "profile" %}
 {% if can_edit and not locked_mode %}
 <section class="card section-divider" id="edit-form">
-  <h2>Edit Offering</h2>
+  <h2>Edit Offering Core</h2>
   <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/update" class="grid grid-3">
     <input type="hidden" name="return_to" value="{{ return_to }}">
     <label>Offering Name
@@ -38,6 +172,28 @@
         {% endfor %}
         {% if offering.offering_type and offering.offering_type not in offering_types %}
         <option value="{{ offering.offering_type }}" selected>{{ offering.offering_type }}</option>
+        {% endif %}
+      </select>
+    </label>
+    <label>Line of Business (LOB)
+      <select name="lob">
+        <option value="">none</option>
+        {% for option in offering_lob_options %}
+        <option value="{{ option }}" {% if option == (offering.lob or "") %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+        {% if offering.lob and offering.lob not in offering_lob_options %}
+        <option value="{{ offering.lob }}" selected>{{ offering.lob }}</option>
+        {% endif %}
+      </select>
+    </label>
+    <label>Service Type
+      <select name="service_type">
+        <option value="">none</option>
+        {% for option in offering_service_type_options %}
+        <option value="{{ option }}" {% if option == (offering.service_type or "") %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+        {% if offering.service_type and offering.service_type not in offering_service_type_options %}
+        <option value="{{ offering.service_type }}" selected>{{ offering.service_type }}</option>
         {% endif %}
       </select>
     </label>
@@ -62,8 +218,192 @@
     <div><button type="submit">Save Offering</button></div>
   </form>
 </section>
+
+<section class="card section-divider">
+  <h2>Operational Profile</h2>
+  <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/profile/save" class="grid grid-2">
+    <input type="hidden" name="return_to" value="{{ return_to }}">
+    <input type="hidden" name="source_section" value="profile">
+    <label>Estimated Monthly Cost
+      <input type="text" name="estimated_monthly_cost" value="{{ offering_profile.estimated_monthly_cost or '' }}" placeholder="e.g. 25000">
+    </label>
+    <label class="full">Implementation Notes
+      <textarea name="implementation_notes" rows="3" placeholder="Rollout, dependencies, controls">{{ offering_profile.implementation_notes or '' }}</textarea>
+    </label>
+    <label class="full">Reason
+      <input type="text" name="reason" placeholder="Why this profile update is needed" required>
+    </label>
+    <div><button type="submit">Save Operational Profile</button></div>
+  </form>
+</section>
+{% else %}
+<section class="card section-divider">
+  <h2>Operational Profile</h2>
+  <table>
+    <tbody>
+    <tr><th>Estimated Monthly Cost</th><td>{{ offering_profile.estimated_monthly_cost or "-" }}</td></tr>
+    <tr><th>Implementation Notes</th><td>{{ offering_profile.implementation_notes or "-" }}</td></tr>
+    <tr><th>Updated At</th><td>{{ offering_profile.updated_at or "-" }}</td></tr>
+    <tr><th>Updated By</th><td>{{ offering_profile.updated_by or "-" }}</td></tr>
+    </tbody>
+  </table>
+</section>
+{% endif %}
 {% endif %}
 
+{% if section == "dataflow" %}
+<section class="card section-divider">
+  <div class="section-header">
+    <div>
+      <h2>Data Feeds</h2>
+      <p>Track each inbound and outbound feed as an individual record.</p>
+    </div>
+    {% if can_edit and not locked_mode %}
+    <div class="button-group">
+      <a class="button-link" href="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?section=dataflow&edit=1&new_data_feed=1&return_to={{ return_to|urlencode }}#data-feed-editor">+ Add Data Feed</a>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<div class="grid grid-2">
+  <section class="card section-divider">
+    <h2>Inbound Feeds</h2>
+    <table>
+      <thead><tr><th>Feed</th><th>Method</th><th>Data</th><th>Endpoint</th><th>Identifiers</th><th>Reporting</th><th>Owner</th><th>Action</th></tr></thead>
+      <tbody>
+      {% for row in inbound_data_flows %}
+      <tr>
+        <td><a href="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?section=dataflow&edit=1&edit_data_flow_id={{ row.data_flow_id }}&return_to={{ return_to|urlencode }}#data-feed-editor">{{ row.flow_name }}</a></td>
+        <td>{{ row.method or "-" }}</td>
+        <td>{{ row.data_description or "-" }}</td>
+        <td>{{ row.endpoint_details or "-" }}</td>
+        <td>{{ row.identifiers or "-" }}</td>
+        <td>{{ row.reporting_layer or "-" }}</td>
+        <td>{{ row.owner_user_principal or "-" }}</td>
+        <td>
+          {% if can_edit and not locked_mode %}
+          <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/dataflows/remove" class="inline-form">
+            <input type="hidden" name="return_to" value="{{ return_to }}">
+            <input type="hidden" name="data_flow_id" value="{{ row.data_flow_id }}">
+            <input type="hidden" name="reason" value="Remove obsolete data feed">
+            <button type="submit">Remove</button>
+          </form>
+          {% else %}
+          -
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8">No inbound feeds defined.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  <section class="card section-divider">
+    <h2>Outbound Feeds</h2>
+    <table>
+      <thead><tr><th>Feed</th><th>Method</th><th>Data</th><th>Creation</th><th>Delivery</th><th>Owner</th><th>Notes</th><th>Action</th></tr></thead>
+      <tbody>
+      {% for row in outbound_data_flows %}
+      <tr>
+        <td><a href="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?section=dataflow&edit=1&edit_data_flow_id={{ row.data_flow_id }}&return_to={{ return_to|urlencode }}#data-feed-editor">{{ row.flow_name }}</a></td>
+        <td>{{ row.method or "-" }}</td>
+        <td>{{ row.data_description or "-" }}</td>
+        <td>{{ row.creation_process or "-" }}</td>
+        <td>{{ row.delivery_process or "-" }}</td>
+        <td>{{ row.owner_user_principal or "-" }}</td>
+        <td>{{ row.notes or "-" }}</td>
+        <td>
+          {% if can_edit and not locked_mode %}
+          <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/dataflows/remove" class="inline-form">
+            <input type="hidden" name="return_to" value="{{ return_to }}">
+            <input type="hidden" name="data_flow_id" value="{{ row.data_flow_id }}">
+            <input type="hidden" name="reason" value="Remove obsolete data feed">
+            <button type="submit">Remove</button>
+          </form>
+          {% else %}
+          -
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8">No outbound feeds defined.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+
+{% if can_edit and not locked_mode and show_data_feed_editor %}
+<section class="card section-divider" id="data-feed-editor">
+  <h2>{% if selected_data_flow %}Edit Data Feed{% else %}Add Data Feed{% endif %}</h2>
+  <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/dataflows/{% if selected_data_flow %}update{% else %}add{% endif %}" class="grid grid-3">
+    <input type="hidden" name="return_to" value="{{ return_to }}">
+    {% if selected_data_flow %}
+    <input type="hidden" name="data_flow_id" value="{{ selected_data_flow.data_flow_id }}">
+    {% endif %}
+    <label>Direction
+      <select name="direction" required>
+        <option value="inbound" {% if data_feed_form.direction == "inbound" %}selected{% endif %}>inbound</option>
+        <option value="outbound" {% if data_feed_form.direction == "outbound" %}selected{% endif %}>outbound</option>
+      </select>
+    </label>
+    <label>Feed Name
+      <input type="text" name="flow_name" value="{{ data_feed_form.flow_name }}" placeholder="e.g., Daily API extract" required>
+    </label>
+    <label>Method
+      <select name="method">
+        <option value="" {% if not data_feed_form.method %}selected{% endif %}>none</option>
+        {% for method in offering_data_method_options %}
+        <option value="{{ method }}" {% if data_feed_form.method == method %}selected{% endif %}>{{ method|replace('_', ' ')|title }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Data Description
+      <textarea name="data_description" rows="3" placeholder="What data is exchanged">{{ data_feed_form.data_description }}</textarea>
+    </label>
+    <label>Endpoint / Landing Zone
+      <textarea name="endpoint_details" rows="3" placeholder="API endpoint, folder path, landing table">{{ data_feed_form.endpoint_details }}</textarea>
+    </label>
+    <label>Identifiers
+      <textarea name="identifiers" rows="3" placeholder="Record keys, account IDs, contract IDs">{{ data_feed_form.identifiers }}</textarea>
+    </label>
+    <label>Reporting Layer
+      <textarea name="reporting_layer" rows="3" placeholder="Silver/Gold/reporting views impacted">{{ data_feed_form.reporting_layer }}</textarea>
+    </label>
+    <label>Creation Process
+      <textarea name="creation_process" rows="3" placeholder="How outbound payload is generated">{{ data_feed_form.creation_process }}</textarea>
+    </label>
+    <label>Delivery Process
+      <textarea name="delivery_process" rows="3" placeholder="How data is sent/delivered">{{ data_feed_form.delivery_process }}</textarea>
+    </label>
+    <label>Responsible Owner
+      <select name="owner_user_principal">
+        <option value="" {% if not data_feed_form.owner_user_principal %}selected{% endif %}>none</option>
+        {% for owner in offering_owner_options %}
+        <option value="{{ owner.login_identifier }}" {% if data_feed_form.owner_user_principal == owner.login_identifier %}selected{% endif %}>{{ owner.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Notes
+      <textarea name="notes" rows="3" placeholder="Schedule, SLA, dependencies, controls">{{ data_feed_form.notes }}</textarea>
+    </label>
+    <label>Reason
+      <input type="text" name="reason" value="{{ data_feed_form.reason }}" placeholder="{% if selected_data_flow %}Why this data feed is being updated{% else %}Why this data feed is being added{% endif %}" required>
+    </label>
+    <div class="button-group">
+      <button type="submit">{% if selected_data_flow %}Save Data Feed{% else %}Add Data Feed{% endif %}</button>
+      {% if selected_data_flow %}
+      <a class="button-link subtle" href="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?section=dataflow&edit=1&return_to={{ return_to|urlencode }}">Cancel</a>
+      {% endif %}
+    </div>
+  </form>
+</section>
+{% endif %}
+{% endif %}
+
+{% if section == "ownership" %}
 <div class="grid grid-2">
   <section class="card section-divider">
     <h2>Offering Owners</h2>
@@ -78,7 +418,7 @@
         <td>
           {% if can_edit and not locked_mode %}
           <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/owners/remove" class="inline-form">
-            <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?return_to={{ return_to|urlencode }}&edit=1">
+            <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?section=ownership&return_to={{ return_to|urlencode }}&edit=1">
             <input type="hidden" name="offering_owner_id" value="{{ row.offering_owner_id }}">
             <input type="text" name="reason" placeholder="Reason">
             <button type="submit">Remove</button>
@@ -95,7 +435,7 @@
     <h3>Add Owner</h3>
     {{ offering_owner_add_form(
          post_url="/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "/owners/add",
-         return_to="/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "?return_to=" ~ (return_to|urlencode) ~ "&edit=1",
+         return_to="/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "?section=ownership&return_to=" ~ (return_to|urlencode) ~ "&edit=1",
          default_role="business_owner",
          submit_label="Add Owner"
        ) }}
@@ -116,7 +456,7 @@
         <td>
           {% if can_edit and not locked_mode %}
           <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/contacts/remove" class="inline-form">
-            <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?return_to={{ return_to|urlencode }}&edit=1">
+            <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?section=ownership&return_to={{ return_to|urlencode }}&edit=1">
             <input type="hidden" name="offering_contact_id" value="{{ row.offering_contact_id }}">
             <input type="text" name="reason" placeholder="Reason">
             <button type="submit">Remove</button>
@@ -133,13 +473,15 @@
     <h3>Add Contact</h3>
     {{ offering_contact_add_form(
          post_url="/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "/contacts/add",
-         return_to="/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "?return_to=" ~ (return_to|urlencode) ~ "&edit=1",
+         return_to="/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "?section=ownership&return_to=" ~ (return_to|urlencode) ~ "&edit=1",
          submit_label="Add Contact"
        ) }}
     {% endif %}
   </section>
 </div>
+{% endif %}
 
+{% if section == "delivery" %}
 <div class="grid grid-2">
   <section class="card section-divider">
     <h2>Contracts</h2>
@@ -148,14 +490,20 @@
       <tbody>
       {% for row in offering_contracts %}
       <tr>
-        <td>{{ row.contract_number or row.contract_id }}</td>
+        <td>
+          {% if row.contract_number %}
+          {{ row.contract_number }} ({{ row.contract_id }})
+          {% else %}
+          {{ row.contract_id }}
+          {% endif %}
+        </td>
         <td>{{ row.contract_status }}</td>
         <td>{{ row.start_date }}</td>
         <td>{{ row.end_date }}</td>
         <td>
           {% if can_edit and not locked_mode %}
           <form method="post" action="/vendors/{{ vendor_id }}/map-contract" class="inline-form">
-            <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?return_to={{ return_to|urlencode }}&edit=1">
+            <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?section=delivery&return_to={{ return_to|urlencode }}&edit=1">
             <input type="hidden" name="contract_id" value="{{ row.contract_id }}">
             <select name="offering_id">
               {% for option in offering_options %}
@@ -189,7 +537,7 @@
         <td>
           {% if can_edit and not locked_mode %}
           <form method="post" action="/vendors/{{ vendor_id }}/map-demo" class="inline-form">
-            <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?return_to={{ return_to|urlencode }}&edit=1">
+            <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?section=delivery&return_to={{ return_to|urlencode }}&edit=1">
             <input type="hidden" name="demo_id" value="{{ row.demo_id }}">
             <select name="offering_id">
               {% for option in offering_options %}
@@ -209,11 +557,139 @@
     </table>
   </section>
 </div>
+{% endif %}
 
+{% if section == "tickets" %}
+<section class="card section-divider">
+  <h2>Offering Tickets</h2>
+  {% if can_edit and not locked_mode %}
+  <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/tickets/add" class="grid grid-3">
+    <input type="hidden" name="return_to" value="{{ return_to }}">
+    <label>Ticket Summary
+      <input type="text" name="title" placeholder="Issue summary" required>
+    </label>
+    <label>Ticket System
+      <input type="text" name="ticket_system" placeholder="ServiceNow, Jira, Zendesk">
+    </label>
+    <label>Ticket ID
+      <input type="text" name="external_ticket_id" placeholder="INC12345">
+    </label>
+    <label>Status
+      <select name="status">
+        {% for status in offering_ticket_statuses %}
+        <option value="{{ status }}">{{ status }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Priority
+      <select name="priority">
+        <option value="">none</option>
+        {% for priority in offering_ticket_priorities %}
+        <option value="{{ priority }}">{{ priority }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Opened Date
+      <input type="date" name="opened_date">
+    </label>
+    <label class="full">Notes
+      <textarea name="notes" rows="2" placeholder="Ticket details"></textarea>
+    </label>
+    <div><button type="submit">Add Ticket</button></div>
+  </form>
+  {% endif %}
+
+  <table style="margin-top:10px;">
+    <thead><tr><th>Ticket</th><th>Status</th><th>Priority</th><th>Opened</th><th>Closed</th><th>Notes</th><th>Action</th></tr></thead>
+    <tbody>
+    {% for row in offering_tickets %}
+    <tr>
+      <td>
+        {% if row.external_ticket_id %}<strong>{{ row.external_ticket_id }}</strong><br>{% endif %}
+        {{ row.title }}
+        {% if row.ticket_system %}<div class="muted">{{ row.ticket_system }}</div>{% endif %}
+      </td>
+      <td>{{ row.status }}</td>
+      <td>{{ row.priority or "-" }}</td>
+      <td>{{ row.opened_date or "-" }}</td>
+      <td>{{ row.closed_date or "-" }}</td>
+      <td>{{ row.notes or "-" }}</td>
+      <td>
+        {% if can_edit and not locked_mode %}
+        <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/tickets/{{ row.ticket_id }}/status" class="inline-form">
+          <input type="hidden" name="return_to" value="{{ return_to }}">
+          <select name="status">
+            {% for status in offering_ticket_statuses %}
+            <option value="{{ status }}" {% if status == row.status %}selected{% endif %}>{{ status }}</option>
+            {% endfor %}
+          </select>
+          <input type="date" name="closed_date" value="{{ row.closed_date or '' }}">
+          <input type="text" name="reason" placeholder="Reason" required>
+          <button type="submit">Update</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7">No tickets yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if section == "notes" %}
+<section class="card section-divider" id="offering-notes">
+  <h2>Offering Notes</h2>
+  {% if can_edit and not locked_mode %}
+  <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/notes/add" class="grid grid-2">
+    <input type="hidden" name="return_to" value="{{ return_to }}">
+    <label>Type
+      <select name="note_type">
+        {% for note_type in offering_note_types %}
+        <option value="{{ note_type }}">{{ note_type }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="full">Note
+      <textarea name="note_text" rows="3" placeholder="Issue notes, implementation updates, data flow notes..." required></textarea>
+    </label>
+    <div><button type="submit">Add Note</button></div>
+  </form>
+  {% endif %}
+
+  <table style="margin-top:10px;">
+    <thead><tr><th>When</th><th>Type</th><th>Author</th><th>Note</th></tr></thead>
+    <tbody>
+    {% for row in offering_notes %}
+    <tr><td>{{ row.created_at }}</td><td>{{ row.note_type }}</td><td>{{ row.created_by }}</td><td>{{ row.note_text }}</td></tr>
+    {% else %}
+    <tr><td colspan="4">No notes yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card section-divider">
+  <h2>Offering Activity</h2>
+  <table>
+    <thead><tr><th>When</th><th>Entity</th><th>Action</th><th>Details</th><th>Actor</th></tr></thead>
+    <tbody>
+    {% for row in offering_activity %}
+    <tr><td>{{ row.event_ts }}</td><td>{{ row.entity_name }}</td><td>{{ row.action_type }}</td><td>{{ row.change_summary }}</td><td>{{ row.actor_user_principal }}</td></tr>
+    {% else %}
+    <tr><td colspan="5">No offering activity yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if section == "documents" %}
 <section class="card section-divider" id="offering-docs">
   <h2>Documents</h2>
   <table>
-    <thead><tr><th>Title</th><th>Type</th><th>Owner</th><th>Tags</th><th>URL</th><th>Action</th></tr></thead>
+    <thead><tr><th>Title</th><th>Source</th><th>Owner</th><th>Tags</th><th>URL</th><th>Action</th></tr></thead>
     <tbody>
     {% for row in offering_docs %}
     <tr>
@@ -225,7 +701,7 @@
       <td>
         {% if can_edit and not locked_mode %}
         <form method="post" action="/vendors/docs/{{ row.doc_id }}/remove" class="inline-form">
-          <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?return_to={{ return_to|urlencode }}">
+          <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?section=documents&return_to={{ return_to|urlencode }}">
           <input type="hidden" name="vendor_id" value="{{ vendor_id }}">
           <button type="submit">Remove</button>
         </form>
@@ -244,11 +720,12 @@
     <div style="margin-top:10px;">
       {{ render_doc_link_form(
            post_url="/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "/docs/link",
-           return_to="/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "?return_to=" ~ (return_to|urlencode),
+           return_to="/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "?section=documents&return_to=" ~ (return_to|urlencode),
            submit_label="Add Link"
          ) }}
     </div>
   </details>
   {% endif %}
 </section>
+{% endif %}
 {% endblock %}

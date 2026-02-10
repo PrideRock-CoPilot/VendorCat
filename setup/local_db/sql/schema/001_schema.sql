@@ -104,6 +104,8 @@ CREATE TABLE IF NOT EXISTS core_vendor_offering (
   vendor_id TEXT NOT NULL,
   offering_name TEXT NOT NULL,
   offering_type TEXT,
+  lob TEXT,
+  service_type TEXT,
   lifecycle_state TEXT NOT NULL,
   criticality_tier TEXT,
   updated_at TEXT NOT NULL,
@@ -354,6 +356,21 @@ CREATE TABLE IF NOT EXISTS app_user_settings (
   updated_by TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS app_lookup_option (
+  option_id TEXT PRIMARY KEY,
+  lookup_type TEXT NOT NULL,
+  option_code TEXT NOT NULL,
+  option_label TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 100,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  valid_from_ts TEXT NOT NULL,
+  valid_to_ts TEXT,
+  is_current INTEGER NOT NULL DEFAULT 1 CHECK (is_current IN (0, 1)),
+  deleted_flag INTEGER NOT NULL DEFAULT 0 CHECK (deleted_flag IN (0, 1)),
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS app_usage_log (
   usage_event_id TEXT PRIMARY KEY,
   user_principal TEXT NOT NULL,
@@ -444,6 +461,75 @@ CREATE TABLE IF NOT EXISTS app_project_note (
   updated_at TEXT NOT NULL,
   updated_by TEXT NOT NULL,
   FOREIGN KEY (project_id) REFERENCES app_project(project_id)
+);
+
+CREATE TABLE IF NOT EXISTS app_offering_profile (
+  offering_id TEXT PRIMARY KEY,
+  vendor_id TEXT NOT NULL,
+  estimated_monthly_cost REAL,
+  implementation_notes TEXT,
+  data_sent TEXT,
+  data_received TEXT,
+  integration_method TEXT,
+  inbound_method TEXT,
+  inbound_landing_zone TEXT,
+  inbound_identifiers TEXT,
+  inbound_reporting_layer TEXT,
+  inbound_ingestion_notes TEXT,
+  outbound_method TEXT,
+  outbound_creation_process TEXT,
+  outbound_delivery_process TEXT,
+  outbound_responsible_owner TEXT,
+  outbound_notes TEXT,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  FOREIGN KEY (offering_id) REFERENCES core_vendor_offering(offering_id),
+  FOREIGN KEY (vendor_id) REFERENCES core_vendor(vendor_id)
+);
+
+CREATE TABLE IF NOT EXISTS app_offering_data_flow (
+  data_flow_id TEXT PRIMARY KEY,
+  offering_id TEXT NOT NULL,
+  vendor_id TEXT NOT NULL,
+  direction TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+  flow_name TEXT NOT NULL,
+  method TEXT,
+  data_description TEXT,
+  endpoint_details TEXT,
+  identifiers TEXT,
+  reporting_layer TEXT,
+  creation_process TEXT,
+  delivery_process TEXT,
+  owner_user_principal TEXT,
+  notes TEXT,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  created_at TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  FOREIGN KEY (offering_id) REFERENCES core_vendor_offering(offering_id),
+  FOREIGN KEY (vendor_id) REFERENCES core_vendor(vendor_id)
+);
+
+CREATE TABLE IF NOT EXISTS app_offering_ticket (
+  ticket_id TEXT PRIMARY KEY,
+  offering_id TEXT NOT NULL,
+  vendor_id TEXT NOT NULL,
+  ticket_system TEXT,
+  external_ticket_id TEXT,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL,
+  priority TEXT,
+  opened_date TEXT,
+  closed_date TEXT,
+  notes TEXT,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  created_at TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  FOREIGN KEY (offering_id) REFERENCES core_vendor_offering(offering_id),
+  FOREIGN KEY (vendor_id) REFERENCES core_vendor(vendor_id)
 );
 
 CREATE TABLE IF NOT EXISTS app_document_link (
@@ -552,7 +638,16 @@ CREATE INDEX IF NOT EXISTS idx_app_project_vendor_map_project ON app_project_ven
 CREATE INDEX IF NOT EXISTS idx_app_project_status ON app_project(status);
 CREATE INDEX IF NOT EXISTS idx_app_project_demo_project ON app_project_demo(project_id);
 CREATE INDEX IF NOT EXISTS idx_app_project_note_project ON app_project_note(project_id);
+CREATE INDEX IF NOT EXISTS idx_app_offering_profile_vendor ON app_offering_profile(vendor_id);
+CREATE INDEX IF NOT EXISTS idx_app_offering_data_flow_offering ON app_offering_data_flow(offering_id, active_flag, direction);
+CREATE INDEX IF NOT EXISTS idx_app_offering_data_flow_vendor ON app_offering_data_flow(vendor_id, active_flag, direction);
+CREATE INDEX IF NOT EXISTS idx_app_offering_ticket_offering ON app_offering_ticket(offering_id, active_flag, opened_date);
+CREATE INDEX IF NOT EXISTS idx_app_offering_ticket_vendor ON app_offering_ticket(vendor_id, active_flag);
 CREATE INDEX IF NOT EXISTS idx_app_doc_entity ON app_document_link(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_app_user_directory_login ON app_user_directory(login_identifier);
+CREATE INDEX IF NOT EXISTS idx_app_lookup_type_code ON app_lookup_option(lookup_type, option_code);
+CREATE INDEX IF NOT EXISTS idx_app_lookup_type_sort ON app_lookup_option(lookup_type, active_flag, sort_order);
+CREATE INDEX IF NOT EXISTS idx_app_lookup_type_current ON app_lookup_option(lookup_type, is_current, sort_order);
+CREATE INDEX IF NOT EXISTS idx_app_lookup_type_deleted ON app_lookup_option(lookup_type, deleted_flag, sort_order);
 CREATE INDEX IF NOT EXISTS idx_usage_user_ts ON app_usage_log(user_principal, event_ts);
 CREATE INDEX IF NOT EXISTS idx_change_req_vendor ON app_vendor_change_request(vendor_id);

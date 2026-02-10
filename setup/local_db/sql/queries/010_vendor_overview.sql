@@ -5,6 +5,8 @@ SELECT
   v.owner_org_id,
   v.risk_tier,
   COUNT(DISTINCT o.offering_id) AS offering_count,
+  GROUP_CONCAT(DISTINCT CASE WHEN LOWER(COALESCE(o.lifecycle_state, '')) = 'active' THEN o.lob END) AS active_lobs,
+  GROUP_CONCAT(DISTINCT CASE WHEN LOWER(COALESCE(o.lifecycle_state, '')) = 'active' THEN o.service_type END) AS active_service_types,
   COUNT(DISTINCT CASE WHEN c.contract_status = 'active' THEN c.contract_id END) AS active_contract_count,
   COUNT(DISTINCT CASE WHEN d.selection_outcome = 'selected' THEN d.demo_id END) AS demos_selected,
   COUNT(DISTINCT CASE WHEN d.selection_outcome IN ('not_selected', 'deferred') THEN d.demo_id END) AS demos_not_selected

@@ -40,15 +40,17 @@ class AppConfig:
         env_name = os.getenv("TVENDOR_ENV", "dev").strip().lower() or "dev"
         default_local_db = env_name in DEV_ENV_NAMES
         requested_local_db = _as_bool(os.getenv("TVENDOR_USE_LOCAL_DB"), default=default_local_db)
+        raw_host = (
+            os.getenv("DATABRICKS_SERVER_HOSTNAME", "")
+            or os.getenv("DATABRICKS_HOST", "")
+        )
         if requested_local_db and env_name not in DEV_ENV_NAMES:
             raise RuntimeError(
                 "TVENDOR_USE_LOCAL_DB=true is allowed only for dev/local environments. "
                 "Set TVENDOR_ENV=dev (or local), or disable TVENDOR_USE_LOCAL_DB."
             )
         return AppConfig(
-            databricks_server_hostname=os.getenv("DATABRICKS_SERVER_HOSTNAME", "").replace(
-                "https://", ""
-            ),
+            databricks_server_hostname=raw_host.replace("https://", "").rstrip("/"),
             databricks_http_path=os.getenv("DATABRICKS_HTTP_PATH", ""),
             databricks_token=os.getenv("DATABRICKS_TOKEN", ""),
             env=env_name,

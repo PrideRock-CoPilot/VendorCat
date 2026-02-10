@@ -65,7 +65,12 @@ setup/config/tvendor.env
 ```text
 setup/databricks/001_create_databricks_schema.sql
 ```
-3. Start the app after bootstrap is complete.
+3. If your schema already exists from a prior version, run:
+```text
+setup/databricks/002_add_offering_lob_service_type.sql
+setup/databricks/003_add_lookup_scd_columns.sql
+```
+4. Start the app after bootstrap is complete.
 
 If required tables are missing or inaccessible, startup fails with a schema/bootstrap error.
 

@@ -34,8 +34,8 @@
     <a class="{{ 'active' if active_nav == 'dashboard' else '' }}" href="/dashboard">Dashboard</a>
     <a class="{{ 'active' if active_nav == 'vendors' else '' }}" href="/vendors">Vendor 360</a>
     <a class="{{ 'active' if active_nav == 'projects' else '' }}" href="/projects">Projects</a>
-    {% if can_edit %}
-    <a class="{{ 'active' if active_nav == 'workflows' else '' }}" href="/workflows">Workflows</a>
+    {% if can_approve_requests %}
+    <a class="{{ 'active' if active_nav == 'pending_approvals' else '' }}" href="/workflows/pending-approvals">Pending Approvals</a>
     {% endif %}
     {% if can_report %}
     <a class="{{ 'active' if active_nav == 'reports' else '' }}" href="/reports">Reports</a>

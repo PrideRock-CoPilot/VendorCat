@@ -157,10 +157,6 @@ def normalize_doc_tags(
         for value in raw_tags.split(","):
             _append(value)
 
-    normalized_type = (doc_type or "").strip().lower()
-    if normalized_type in DOC_TYPES:
-        _append(normalized_type)
-
     for tag in derive_doc_tags(doc_url):
         _append(tag)
 

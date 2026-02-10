@@ -24,6 +24,8 @@ WHERE (
         lower(o.offering_id) LIKE lower(%s)
         OR lower(coalesce(o.offering_name, '')) LIKE lower(%s)
         OR lower(coalesce(o.offering_type, '')) LIKE lower(%s)
+        OR lower(coalesce(o.lob, '')) LIKE lower(%s)
+        OR lower(coalesce(o.service_type, '')) LIKE lower(%s)
       )
   )
   OR EXISTS (
