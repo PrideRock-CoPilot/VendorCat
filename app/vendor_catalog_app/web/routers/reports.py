@@ -375,6 +375,9 @@ async def reports_email_request(request: Request):
     repo = get_repo()
     user = get_user_context(request)
     form = await request.form()
+    if user.config.locked_mode:
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url="/reports", status_code=303)
     if not _can_use_reports(user):
         add_flash(request, "You do not have permission to request emailed extracts.", "error")
         return RedirectResponse(url="/dashboard", status_code=303)

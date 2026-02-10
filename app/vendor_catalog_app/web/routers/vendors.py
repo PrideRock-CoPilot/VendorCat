@@ -6,7 +6,14 @@ import pandas as pd
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
-from vendor_catalog_app.web.utils.doc_links import DOC_TYPES, suggest_doc_title, suggest_doc_type
+from vendor_catalog_app.repository import GLOBAL_CHANGE_VENDOR_ID
+from vendor_catalog_app.web.utils.doc_links import (
+    DOC_TYPES,
+    extract_doc_fqdn,
+    normalize_doc_tags,
+    suggest_doc_title,
+    suggest_doc_type,
+)
 from vendor_catalog_app.web.flash import add_flash
 from vendor_catalog_app.web.services import (
     base_template_context,
@@ -49,6 +56,7 @@ PROJECT_STATUSES = ["draft", "active", "blocked", "complete", "cancelled"]
 PROJECT_TYPES = ["rfp", "poc", "renewal", "implementation", "other"]
 PROJECT_DEMO_TYPES = ["live", "recorded", "workshop", "sandbox"]
 PROJECT_DEMO_OUTCOMES = ["unknown", "selected", "not_selected", "follow_up"]
+OFFERING_TYPES = ["SaaS", "Cloud", "PaaS", "Security", "Data", "Integration", "Other"]
 
 VENDOR_SECTIONS = [
     ("summary", "Summary"),
@@ -100,15 +108,41 @@ def _normalize_doc_type(value: str) -> str:
     return doc_type
 
 
-def _prepare_doc_payload(form_data: dict[str, str]) -> dict[str, str]:
+def _normalize_offering_type(value: str, *, allow_blank: bool = True, extra_allowed: set[str] | None = None) -> str:
+    offering_type = (value or "").strip()
+    if not offering_type:
+        return "" if allow_blank else OFFERING_TYPES[0]
+    canonical_by_lower = {item.lower(): item for item in OFFERING_TYPES}
+    canonical = canonical_by_lower.get(offering_type.lower())
+    if canonical:
+        return canonical
+    if extra_allowed and offering_type in extra_allowed:
+        return offering_type
+    raise ValueError(f"Offering type must be one of: {', '.join(OFFERING_TYPES)}")
+
+
+def _to_bool(value: object) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _prepare_doc_payload(
+    repo,
+    form_data: dict[str, object],
+    *,
+    actor_user_principal: str,
+    allow_owner_create: bool = False,
+) -> dict[str, str]:
     doc_url = str(form_data.get("doc_url", "")).strip()
     doc_type = _normalize_doc_type(str(form_data.get("doc_type", "")))
     doc_title = str(form_data.get("doc_title", "")).strip()
-    tags = str(form_data.get("tags", "")).strip()
-    owner = str(form_data.get("owner", "")).strip()
+    raw_tags = form_data.get("tags")
+    raw_new_tag = form_data.get("tag_new")
+    owner_new = str(form_data.get("owner_new", "")).strip()
+    owner = owner_new or str(form_data.get("owner", "")).strip() or str(actor_user_principal or "").strip()
+    doc_fqdn = extract_doc_fqdn(doc_url)
 
-    if not doc_url.lower().startswith("https://"):
-        raise ValueError("Document URL must start with https://")
+    if not doc_url:
+        raise ValueError("Document link is required.")
     if not doc_type:
         doc_type = suggest_doc_type(doc_url)
     if not doc_title:
@@ -117,12 +151,31 @@ def _prepare_doc_payload(form_data: dict[str, str]) -> dict[str, str]:
         raise ValueError("Document title is required.")
     if len(doc_title) > 120:
         doc_title = doc_title[:120].rstrip()
+    owner_login = repo.resolve_user_login_identifier(owner)
+    if not owner_login and allow_owner_create and owner:
+        repo.ensure_user_record(owner)
+        owner_login = repo.resolve_user_login_identifier(owner)
+    if not owner_login:
+        raise ValueError("Owner must exist in the app user directory.")
+
+    collected_tags: list[str] = []
+    if isinstance(raw_tags, list):
+        collected_tags.extend(str(item or "") for item in raw_tags)
+    elif raw_tags is not None:
+        collected_tags.append(str(raw_tags or ""))
+    if isinstance(raw_new_tag, list):
+        collected_tags.extend(str(item or "") for item in raw_new_tag)
+    elif raw_new_tag is not None:
+        collected_tags.append(str(raw_new_tag or ""))
+
+    normalized_tags = normalize_doc_tags(collected_tags, doc_type=doc_type, fqdn=doc_fqdn, doc_url=doc_url)
     return {
         "doc_url": doc_url,
         "doc_type": doc_type,
         "doc_title": doc_title,
-        "tags": tags,
-        "owner": owner,
+        "tags": ",".join(normalized_tags),
+        "owner": owner_login,
+        "doc_fqdn": doc_fqdn,
     }
 
 
@@ -284,6 +337,11 @@ def _project_demo_select_options(vendor_demos: list[dict]) -> list[dict]:
 
 def _write_blocked(user) -> bool:
     return bool(user.config.locked_mode)
+
+
+def _request_scope_vendor_id(vendor_id: str | None) -> str:
+    cleaned = str(vendor_id or "").strip()
+    return cleaned or GLOBAL_CHANGE_VENDOR_ID
 
 
 def _dedupe_ordered(values: list[str]) -> list[str]:
@@ -753,26 +811,42 @@ async def vendor_new_submit(request: Request):
         )
 
     try:
-        vendor_id = repo.create_vendor_profile(
-            actor_user_principal=user.user_principal,
-            legal_name=form_values["legal_name"],
-            display_name=form_values["display_name"] or form_values["legal_name"],
-            lifecycle_state=form_values["lifecycle_state"],
-            owner_org_id=owner_org_id,
-            risk_tier=form_values["risk_tier"] or None,
-            source_system=form_values["source_system"] or "manual",
+        if user.can_apply_change("create_vendor_profile"):
+            vendor_id = repo.create_vendor_profile(
+                actor_user_principal=user.user_principal,
+                legal_name=form_values["legal_name"],
+                display_name=form_values["display_name"] or form_values["legal_name"],
+                lifecycle_state=form_values["lifecycle_state"],
+                owner_org_id=owner_org_id,
+                risk_tier=form_values["risk_tier"] or None,
+                source_system=form_values["source_system"] or "manual",
+            )
+            repo.log_usage_event(
+                user_principal=user.user_principal,
+                page_name="vendor_360",
+                event_type="vendor_create",
+                payload={"vendor_id": vendor_id},
+            )
+            add_flash(request, f"Vendor created: {vendor_id}", "success")
+            return RedirectResponse(
+                url=f"/vendors/{vendor_id}/summary?return_to={quote(return_to, safe='')}",
+                status_code=303,
+            )
+        request_id = repo.create_vendor_change_request(
+            vendor_id=GLOBAL_CHANGE_VENDOR_ID,
+            requestor_user_principal=user.user_principal,
+            change_type="create_vendor_profile",
+            payload={
+                "legal_name": form_values["legal_name"],
+                "display_name": form_values["display_name"] or form_values["legal_name"],
+                "lifecycle_state": form_values["lifecycle_state"],
+                "owner_org_id": owner_org_id,
+                "risk_tier": form_values["risk_tier"] or None,
+                "source_system": form_values["source_system"] or "manual",
+            },
         )
-        repo.log_usage_event(
-            user_principal=user.user_principal,
-            page_name="vendor_360",
-            event_type="vendor_create",
-            payload={"vendor_id": vendor_id},
-        )
-        add_flash(request, f"Vendor created: {vendor_id}", "success")
-        return RedirectResponse(
-            url=f"/vendors/{vendor_id}/summary?return_to={quote(return_to, safe='')}",
-            status_code=303,
-        )
+        add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        return RedirectResponse(url="/workflows?status=pending", status_code=303)
     except Exception as exc:
         error_text = str(exc)
         if "owner_org_id" in error_text.lower():
@@ -900,6 +974,158 @@ def vendor_ownership_page(request: Request, vendor_id: str, return_to: str = "/v
     return request.app.state.templates.TemplateResponse(request, "vendor_section.html", context)
 
 
+@router.post("/{vendor_id}/owners/add")
+async def add_vendor_owner_submit(request: Request, vendor_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", f"/vendors/{vendor_id}/ownership")))
+    owner_user_principal = str(form.get("owner_user_principal", "")).strip()
+    owner_role = str(form.get("owner_role", "")).strip()
+    reason = str(form.get("reason", "")).strip()
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+
+    try:
+        payload = {
+            "owner_user_principal": owner_user_principal,
+            "owner_role": owner_role,
+            "reason": reason,
+        }
+        if user.can_apply_change("add_vendor_owner"):
+            owner_id = repo.add_vendor_owner(
+                vendor_id=vendor_id,
+                owner_user_principal=owner_user_principal,
+                owner_role=owner_role,
+                actor_user_principal=user.user_principal,
+            )
+            add_flash(request, f"Vendor owner added: {owner_id}", "success")
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="add_vendor_owner",
+                payload=payload,
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_ownership",
+            event_type="add_vendor_owner",
+            payload={"vendor_id": vendor_id},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not add vendor owner: {exc}", "error")
+    return RedirectResponse(url=return_to, status_code=303)
+
+
+@router.post("/{vendor_id}/org-assignments/add")
+async def add_vendor_org_assignment_submit(request: Request, vendor_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", f"/vendors/{vendor_id}/ownership")))
+    org_id = str(form.get("org_id", "")).strip()
+    assignment_type = str(form.get("assignment_type", "")).strip()
+    reason = str(form.get("reason", "")).strip()
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+
+    try:
+        payload = {"org_id": org_id, "assignment_type": assignment_type, "reason": reason}
+        if user.can_apply_change("add_vendor_org_assignment"):
+            assignment_id = repo.add_vendor_org_assignment(
+                vendor_id=vendor_id,
+                org_id=org_id,
+                assignment_type=assignment_type,
+                actor_user_principal=user.user_principal,
+            )
+            add_flash(request, f"Org assignment added: {assignment_id}", "success")
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="add_vendor_org_assignment",
+                payload=payload,
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_ownership",
+            event_type="add_vendor_org_assignment",
+            payload={"vendor_id": vendor_id},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not add org assignment: {exc}", "error")
+    return RedirectResponse(url=return_to, status_code=303)
+
+
+@router.post("/{vendor_id}/contacts/add")
+async def add_vendor_contact_submit(request: Request, vendor_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", f"/vendors/{vendor_id}/ownership")))
+    full_name = str(form.get("full_name", "")).strip()
+    contact_type = str(form.get("contact_type", "")).strip()
+    email = str(form.get("email", "")).strip()
+    phone = str(form.get("phone", "")).strip()
+    reason = str(form.get("reason", "")).strip()
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+
+    try:
+        payload = {
+            "full_name": full_name,
+            "contact_type": contact_type,
+            "email": email or None,
+            "phone": phone or None,
+            "reason": reason,
+        }
+        if user.can_apply_change("add_vendor_contact"):
+            contact_id = repo.add_vendor_contact(
+                vendor_id=vendor_id,
+                full_name=full_name,
+                contact_type=contact_type,
+                email=email or None,
+                phone=phone or None,
+                actor_user_principal=user.user_principal,
+            )
+            add_flash(request, f"Vendor contact added: {contact_id}", "success")
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="add_vendor_contact",
+                payload=payload,
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_ownership",
+            event_type="add_vendor_contact",
+            payload={"vendor_id": vendor_id},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not add vendor contact: {exc}", "error")
+    return RedirectResponse(url=return_to, status_code=303)
+
+
 @router.get("/{vendor_id}/portfolio")
 def vendor_portfolio_compat(request: Request, vendor_id: str, return_to: str = "/vendors"):
     return RedirectResponse(
@@ -1008,6 +1234,7 @@ def offering_new_form(request: Request, vendor_id: str, return_to: str = "/vendo
             "return_to": base["return_to"],
             "lifecycle_states": LIFECYCLE_STATES,
             "criticality_tiers": ["tier_1", "tier_2", "tier_3", "tier_4"],
+            "offering_types": OFFERING_TYPES,
         },
     )
     return request.app.state.templates.TemplateResponse(request, "offering_new.html", context)
@@ -1034,25 +1261,41 @@ async def offering_new_submit(request: Request, vendor_id: str):
 
     try:
         lifecycle_state = _normalize_lifecycle(lifecycle_state)
-        offering_id = repo.create_offering(
-            vendor_id=vendor_id,
-            actor_user_principal=user.user_principal,
-            offering_name=offering_name,
-            offering_type=offering_type or None,
-            lifecycle_state=lifecycle_state,
-            criticality_tier=criticality_tier or None,
+        offering_type = _normalize_offering_type(offering_type)
+        if user.can_apply_change("create_offering"):
+            offering_id = repo.create_offering(
+                vendor_id=vendor_id,
+                actor_user_principal=user.user_principal,
+                offering_name=offering_name,
+                offering_type=offering_type or None,
+                lifecycle_state=lifecycle_state,
+                criticality_tier=criticality_tier or None,
+            )
+            repo.log_usage_event(
+                user_principal=user.user_principal,
+                page_name="vendor_offerings",
+                event_type="offering_create",
+                payload={"vendor_id": vendor_id, "offering_id": offering_id},
+            )
+            add_flash(request, f"Offering created: {offering_id}", "success")
+            return RedirectResponse(
+                url=f"/vendors/{vendor_id}/offerings/{offering_id}?return_to={quote(return_to, safe='')}",
+                status_code=303,
+            )
+        request_id = repo.create_vendor_change_request(
+            vendor_id=_request_scope_vendor_id(vendor_id),
+            requestor_user_principal=user.user_principal,
+            change_type="create_offering",
+            payload={
+                "vendor_id": vendor_id,
+                "offering_name": offering_name,
+                "offering_type": offering_type or None,
+                "lifecycle_state": lifecycle_state,
+                "criticality_tier": criticality_tier or None,
+            },
         )
-        repo.log_usage_event(
-            user_principal=user.user_principal,
-            page_name="vendor_offerings",
-            event_type="offering_create",
-            payload={"vendor_id": vendor_id, "offering_id": offering_id},
-        )
-        add_flash(request, f"Offering created: {offering_id}", "success")
-        return RedirectResponse(
-            url=f"/vendors/{vendor_id}/offerings/{offering_id}?return_to={quote(return_to, safe='')}",
-            status_code=303,
-        )
+        add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        return RedirectResponse(url="/workflows?status=pending", status_code=303)
     except Exception as exc:
         add_flash(request, f"Could not create offering: {exc}", "error")
         return RedirectResponse(
@@ -1109,6 +1352,7 @@ def offering_detail_page(request: Request, vendor_id: str, offering_id: str, ret
             "edit_mode": bool(edit),
             "lifecycle_states": LIFECYCLE_STATES,
             "criticality_tiers": ["tier_1", "tier_2", "tier_3", "tier_4"],
+            "offering_types": OFFERING_TYPES,
             "doc_types": DOC_TYPES,
         },
     )
@@ -1130,7 +1374,8 @@ async def offering_update_submit(request: Request, vendor_id: str, offering_id: 
         add_flash(request, "You do not have edit permission.", "error")
         return RedirectResponse(url=f"/vendors/{vendor_id}/offerings/{offering_id}?return_to={quote(return_to, safe='')}", status_code=303)
 
-    if repo.get_offering_record(vendor_id, offering_id) is None:
+    current_offering = repo.get_offering_record(vendor_id, offering_id)
+    if current_offering is None:
         add_flash(request, "Offering does not belong to this vendor.", "error")
         return RedirectResponse(url=f"/vendors/{vendor_id}/offerings?return_to={quote(return_to, safe='')}", status_code=303)
 
@@ -1144,10 +1389,16 @@ async def offering_update_submit(request: Request, vendor_id: str, offering_id: 
     try:
         if updates["lifecycle_state"]:
             updates["lifecycle_state"] = _normalize_lifecycle(updates["lifecycle_state"])
+        existing_type = str(current_offering.get("offering_type") or "").strip()
+        updates["offering_type"] = _normalize_offering_type(
+            updates["offering_type"],
+            extra_allowed={existing_type} if existing_type else None,
+        )
+        updates["offering_type"] = updates["offering_type"] or None
         if not updates["offering_name"]:
             raise ValueError("Offering name is required.")
         payload = {"offering_id": offering_id, "updates": updates, "reason": reason}
-        if user.can_direct_apply:
+        if user.can_apply_change("update_offering"):
             result = repo.update_offering_fields(
                 vendor_id=vendor_id,
                 offering_id=offering_id,
@@ -1212,7 +1463,7 @@ async def map_contract_submit(request: Request, vendor_id: str):
 
     try:
         payload = {"contract_id": contract_id, "offering_id": offering_id or None, "reason": reason}
-        if user.can_direct_apply:
+        if user.can_apply_change("map_contract_to_offering"):
             result = repo.map_contract_to_offering(
                 contract_id=contract_id,
                 vendor_id=vendor_id,
@@ -1273,7 +1524,7 @@ async def map_demo_submit(request: Request, vendor_id: str):
 
     try:
         payload = {"demo_id": demo_id, "offering_id": offering_id or None, "reason": reason}
-        if user.can_direct_apply:
+        if user.can_apply_change("map_demo_to_offering"):
             result = repo.map_demo_to_offering(
                 demo_id=demo_id,
                 vendor_id=vendor_id,
@@ -1332,7 +1583,7 @@ async def add_offering_owner_submit(request: Request, vendor_id: str, offering_i
             "owner_role": owner_role,
             "reason": reason,
         }
-        if user.can_direct_apply:
+        if user.can_apply_change("add_offering_owner"):
             owner_id = repo.add_offering_owner(
                 vendor_id=vendor_id,
                 offering_id=offering_id,
@@ -1381,7 +1632,7 @@ async def remove_offering_owner_submit(request: Request, vendor_id: str, offerin
 
     try:
         payload = {"offering_id": offering_id, "offering_owner_id": offering_owner_id, "reason": reason}
-        if user.can_direct_apply:
+        if user.can_apply_change("remove_offering_owner"):
             repo.remove_offering_owner(
                 vendor_id=vendor_id,
                 offering_id=offering_id,
@@ -1439,7 +1690,7 @@ async def add_offering_contact_submit(request: Request, vendor_id: str, offering
             "phone": phone,
             "reason": reason,
         }
-        if user.can_direct_apply:
+        if user.can_apply_change("add_offering_contact"):
             contact_id = repo.add_offering_contact(
                 vendor_id=vendor_id,
                 offering_id=offering_id,
@@ -1490,7 +1741,7 @@ async def remove_offering_contact_submit(request: Request, vendor_id: str, offer
 
     try:
         payload = {"offering_id": offering_id, "offering_contact_id": offering_contact_id, "reason": reason}
-        if user.can_direct_apply:
+        if user.can_apply_change("remove_offering_contact"):
             repo.remove_offering_contact(
                 vendor_id=vendor_id,
                 offering_id=offering_id,
@@ -1617,30 +1868,51 @@ async def project_new_submit(request: Request, vendor_id: str):
                 linked_vendors.append(offering_vendor_id)
     linked_vendors = _dedupe_ordered(linked_vendors)
     try:
-        project_id = repo.create_project(
-            vendor_id=vendor_id,
-            vendor_ids=linked_vendors,
-            actor_user_principal=user.user_principal,
-            project_name=str(form.get("project_name", "")).strip(),
-            project_type=_normalize_project_type(str(form.get("project_type", "other"))),
-            status=_normalize_project_status(str(form.get("status", "draft"))),
-            start_date=str(form.get("start_date", "")).strip() or None,
-            target_date=str(form.get("target_date", "")).strip() or None,
-            owner_principal=str(form.get("owner_principal", "")).strip() or None,
-            description=str(form.get("description", "")).strip() or None,
-            linked_offering_ids=linked_offerings,
+        project_payload = {
+            "vendor_id": vendor_id,
+            "vendor_ids": linked_vendors,
+            "project_name": str(form.get("project_name", "")).strip(),
+            "project_type": _normalize_project_type(str(form.get("project_type", "other"))),
+            "status": _normalize_project_status(str(form.get("status", "draft"))),
+            "start_date": str(form.get("start_date", "")).strip() or None,
+            "target_date": str(form.get("target_date", "")).strip() or None,
+            "owner_principal": str(form.get("owner_principal", "")).strip() or None,
+            "description": str(form.get("description", "")).strip() or None,
+            "linked_offering_ids": linked_offerings,
+        }
+        if user.can_apply_change("create_project"):
+            project_id = repo.create_project(
+                vendor_id=vendor_id,
+                vendor_ids=linked_vendors,
+                actor_user_principal=user.user_principal,
+                project_name=project_payload["project_name"],
+                project_type=project_payload["project_type"],
+                status=project_payload["status"],
+                start_date=project_payload["start_date"],
+                target_date=project_payload["target_date"],
+                owner_principal=project_payload["owner_principal"],
+                description=project_payload["description"],
+                linked_offering_ids=linked_offerings,
+            )
+            repo.log_usage_event(
+                user_principal=user.user_principal,
+                page_name="vendor_projects",
+                event_type="project_create",
+                payload={"vendor_id": vendor_id, "project_id": project_id},
+            )
+            add_flash(request, f"Project created: {project_id}", "success")
+            return RedirectResponse(
+                url=f"/projects/{project_id}/summary?return_to={quote(return_to, safe='')}",
+                status_code=303,
+            )
+        request_id = repo.create_vendor_change_request(
+            vendor_id=_request_scope_vendor_id(vendor_id),
+            requestor_user_principal=user.user_principal,
+            change_type="create_project",
+            payload=project_payload,
         )
-        repo.log_usage_event(
-            user_principal=user.user_principal,
-            page_name="vendor_projects",
-            event_type="project_create",
-            payload={"vendor_id": vendor_id, "project_id": project_id},
-        )
-        add_flash(request, f"Project created: {project_id}", "success")
-        return RedirectResponse(
-            url=f"/projects/{project_id}/summary?return_to={quote(return_to, safe='')}",
-            status_code=303,
-        )
+        add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        return RedirectResponse(url="/workflows?status=pending", status_code=303)
     except Exception as exc:
         add_flash(request, f"Could not create project: {exc}", "error")
         return RedirectResponse(
@@ -1756,7 +2028,7 @@ async def project_edit_submit(request: Request, vendor_id: str, project_id: str)
     try:
         updates["project_type"] = _normalize_project_type(str(updates.get("project_type", "other")))
         updates["status"] = _normalize_project_status(str(updates.get("status", "draft")))
-        if user.can_direct_apply:
+        if user.can_apply_change("update_project"):
             result = repo.update_project(
                 vendor_id=vendor_id,
                 project_id=project_id,
@@ -1857,30 +2129,55 @@ async def project_demo_new_submit(request: Request, vendor_id: str, project_id: 
 
     linked_vendor_demo_id = str(form.get("linked_vendor_demo_id", "")).strip()
     try:
-        demo_id = repo.create_project_demo(
-            vendor_id=vendor_id,
-            project_id=project_id,
-            actor_user_principal=user.user_principal,
-            demo_name=str(form.get("demo_name", "")).strip(),
-            demo_datetime_start=str(form.get("demo_datetime_start", "")).strip() or None,
-            demo_datetime_end=str(form.get("demo_datetime_end", "")).strip() or None,
-            demo_type=str(form.get("demo_type", "live")).strip() or "live",
-            outcome=str(form.get("outcome", "unknown")).strip() or "unknown",
-            score=float(str(form.get("score", "")).strip()) if str(form.get("score", "")).strip() else None,
-            attendees_internal=str(form.get("attendees_internal", "")).strip() or None,
-            attendees_vendor=str(form.get("attendees_vendor", "")).strip() or None,
-            notes=str(form.get("notes", "")).strip() or None,
-            followups=str(form.get("followups", "")).strip() or None,
-            linked_offering_id=str(form.get("linked_offering_id", "")).strip() or None,
-            linked_vendor_demo_id=linked_vendor_demo_id or None,
-        )
-        repo.log_usage_event(
-            user_principal=user.user_principal,
-            page_name="vendor_project_detail",
-            event_type="project_demo_create",
-            payload={"vendor_id": vendor_id, "project_id": project_id, "project_demo_id": demo_id},
-        )
-        add_flash(request, f"Project demo created: {demo_id}", "success")
+        demo_payload = {
+            "vendor_id": vendor_id,
+            "project_id": project_id,
+            "demo_name": str(form.get("demo_name", "")).strip(),
+            "demo_datetime_start": str(form.get("demo_datetime_start", "")).strip() or None,
+            "demo_datetime_end": str(form.get("demo_datetime_end", "")).strip() or None,
+            "demo_type": str(form.get("demo_type", "live")).strip() or "live",
+            "outcome": str(form.get("outcome", "unknown")).strip() or "unknown",
+            "score": float(str(form.get("score", "")).strip()) if str(form.get("score", "")).strip() else None,
+            "attendees_internal": str(form.get("attendees_internal", "")).strip() or None,
+            "attendees_vendor": str(form.get("attendees_vendor", "")).strip() or None,
+            "notes": str(form.get("notes", "")).strip() or None,
+            "followups": str(form.get("followups", "")).strip() or None,
+            "linked_offering_id": str(form.get("linked_offering_id", "")).strip() or None,
+            "linked_vendor_demo_id": linked_vendor_demo_id or None,
+        }
+        if user.can_apply_change("create_project_demo"):
+            demo_id = repo.create_project_demo(
+                vendor_id=vendor_id,
+                project_id=project_id,
+                actor_user_principal=user.user_principal,
+                demo_name=demo_payload["demo_name"],
+                demo_datetime_start=demo_payload["demo_datetime_start"],
+                demo_datetime_end=demo_payload["demo_datetime_end"],
+                demo_type=demo_payload["demo_type"],
+                outcome=demo_payload["outcome"],
+                score=demo_payload["score"],
+                attendees_internal=demo_payload["attendees_internal"],
+                attendees_vendor=demo_payload["attendees_vendor"],
+                notes=demo_payload["notes"],
+                followups=demo_payload["followups"],
+                linked_offering_id=demo_payload["linked_offering_id"],
+                linked_vendor_demo_id=demo_payload["linked_vendor_demo_id"],
+            )
+            repo.log_usage_event(
+                user_principal=user.user_principal,
+                page_name="vendor_project_detail",
+                event_type="project_demo_create",
+                payload={"vendor_id": vendor_id, "project_id": project_id, "project_demo_id": demo_id},
+            )
+            add_flash(request, f"Project demo created: {demo_id}", "success")
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=_request_scope_vendor_id(vendor_id),
+                requestor_user_principal=user.user_principal,
+                change_type="create_project_demo",
+                payload=demo_payload,
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
     except Exception as exc:
         add_flash(request, f"Could not create project demo: {exc}", "error")
     return RedirectResponse(
@@ -1960,7 +2257,7 @@ async def project_demo_update_submit(request: Request, vendor_id: str, project_i
     updates = {k: v for k, v in updates.items() if v is not None and v != ""}
 
     try:
-        if user.can_direct_apply:
+        if user.can_apply_change("update_project_demo"):
             result = repo.update_project_demo(
                 vendor_id=vendor_id,
                 project_id=project_id,
@@ -2011,7 +2308,7 @@ async def project_demo_remove_submit(request: Request, vendor_id: str, project_i
         return RedirectResponse(url=return_to, status_code=303)
 
     try:
-        if user.can_direct_apply:
+        if user.can_apply_change("remove_project_demo"):
             repo.remove_project_demo(
                 vendor_id=vendor_id,
                 project_id=project_id,
@@ -2078,31 +2375,55 @@ async def _create_doc_link_for_entity(
 
     try:
         payload = _prepare_doc_payload(
+            repo,
             {
                 "doc_url": str(form.get("doc_url", "")),
                 "doc_type": str(form.get("doc_type", "")),
                 "doc_title": str(form.get("doc_title", "")),
-                "tags": str(form.get("tags", "")),
+                "tags": [str(v) for v in form.getlist("tags") if str(v).strip()],
+                "tag_new": str(form.get("tag_new", "")),
                 "owner": str(form.get("owner", "")),
-            }
-        )
-        doc_id = repo.create_doc_link(
-            entity_type=entity_type,
-            entity_id=entity_id,
-            doc_title=payload["doc_title"],
-            doc_url=payload["doc_url"],
-            doc_type=payload["doc_type"],
-            tags=payload["tags"] or None,
-            owner=payload["owner"] or None,
+                "owner_new": str(form.get("owner_new", "")),
+            },
             actor_user_principal=user.user_principal,
+            allow_owner_create=user.has_admin_rights and _to_bool(form.get("allow_owner_create")),
         )
-        repo.log_usage_event(
-            user_principal=user.user_principal,
-            page_name=page_name,
-            event_type="doc_link_create",
-            payload={**event_payload, "doc_id": doc_id, "entity_type": entity_type},
-        )
-        add_flash(request, f"Document link added: {payload['doc_title']}", "success")
+        if user.can_apply_change("create_doc_link"):
+            doc_id = repo.create_doc_link(
+                entity_type=entity_type,
+                entity_id=entity_id,
+                doc_title=payload["doc_title"],
+                doc_url=payload["doc_url"],
+                doc_type=payload["doc_type"],
+                tags=payload["tags"] or None,
+                doc_fqdn=payload["doc_fqdn"] or None,
+                owner=payload["owner"] or None,
+                actor_user_principal=user.user_principal,
+            )
+            repo.log_usage_event(
+                user_principal=user.user_principal,
+                page_name=page_name,
+                event_type="doc_link_create",
+                payload={**event_payload, "doc_id": doc_id, "entity_type": entity_type},
+            )
+            add_flash(request, f"Document link added: {payload['doc_title']}", "success")
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=_request_scope_vendor_id(vendor_id),
+                requestor_user_principal=user.user_principal,
+                change_type="create_doc_link",
+                payload={
+                    "entity_type": entity_type,
+                    "entity_id": entity_id,
+                    "doc_title": payload["doc_title"],
+                    "doc_url": payload["doc_url"],
+                    "doc_type": payload["doc_type"],
+                    "tags": payload["tags"] or None,
+                    "doc_fqdn": payload["doc_fqdn"] or None,
+                    "owner": payload["owner"] or None,
+                },
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
     except Exception as exc:
         add_flash(request, f"Could not add document link: {exc}", "error")
     target = return_to or redirect_url
@@ -2190,12 +2511,12 @@ async def doc_link_remove_submit(request: Request, doc_id: str):
         add_flash(request, "Document link not found.", "error")
         return RedirectResponse(url=return_to, status_code=303)
     try:
-        if user.can_direct_apply:
+        if user.can_apply_change("remove_doc_link"):
             repo.remove_doc_link(doc_id=doc_id, actor_user_principal=user.user_principal)
             add_flash(request, "Document link removed.", "success")
         else:
             request_id = repo.create_vendor_change_request(
-                vendor_id=str(form.get("vendor_id", "")).strip() or str(doc.get("entity_id")),
+                vendor_id=_request_scope_vendor_id(str(form.get("vendor_id", "")).strip() or str(doc.get("entity_id"))),
                 requestor_user_principal=user.user_principal,
                 change_type="remove_doc_link",
                 payload={"doc_id": doc_id},
@@ -2329,8 +2650,8 @@ async def vendor_direct_update(request: Request, vendor_id: str):
     if _write_blocked(user):
         add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
         return RedirectResponse(url=f"/vendors/{vendor_id}/changes?return_to={quote(return_to, safe='')}", status_code=303)
-    if not user.can_direct_apply:
-        add_flash(request, "Direct updates require admin or steward rights.", "error")
+    if not user.can_apply_change("update_vendor_profile"):
+        add_flash(request, "Direct updates require approval level 2 or higher.", "error")
         return RedirectResponse(url=f"/vendors/{vendor_id}/changes?return_to={quote(return_to, safe='')}", status_code=303)
 
     profile = repo.get_vendor_profile(vendor_id)
@@ -2396,17 +2717,20 @@ async def vendor_change_request(request: Request, vendor_id: str):
 
     change_type = str(form.get("change_type", "update_vendor_profile"))
     change_notes = str(form.get("change_notes", "")).strip()
-    request_id = repo.create_vendor_change_request(
-        vendor_id=vendor_id,
-        requestor_user_principal=user.user_principal,
-        change_type=change_type,
-        payload={"notes": change_notes},
-    )
-    repo.log_usage_event(
-        user_principal=user.user_principal,
-        page_name="vendor_360",
-        event_type="submit_change_request",
-        payload={"vendor_id": vendor_id, "change_type": change_type},
-    )
-    add_flash(request, f"Change request submitted: {request_id}", "success")
+    try:
+        request_id = repo.create_vendor_change_request(
+            vendor_id=vendor_id,
+            requestor_user_principal=user.user_principal,
+            change_type=change_type,
+            payload={"notes": change_notes},
+        )
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_360",
+            event_type="submit_change_request",
+            payload={"vendor_id": vendor_id, "change_type": change_type},
+        )
+        add_flash(request, f"Change request submitted: {request_id}", "success")
+    except Exception as exc:
+        add_flash(request, f"Could not submit change request: {exc}", "error")
     return RedirectResponse(url=f"/vendors/{vendor_id}/changes?return_to={quote(return_to, safe='')}", status_code=303)

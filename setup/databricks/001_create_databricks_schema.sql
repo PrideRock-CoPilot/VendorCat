@@ -321,6 +321,20 @@ CREATE TABLE IF NOT EXISTS {fq_schema}.app_note (
   created_by STRING NOT NULL
 ) USING DELTA;
 
+CREATE TABLE IF NOT EXISTS {fq_schema}.app_user_directory (
+  user_id STRING NOT NULL,
+  login_identifier STRING NOT NULL,
+  email STRING,
+  network_id STRING,
+  first_name STRING,
+  last_name STRING,
+  display_name STRING NOT NULL,
+  active_flag BOOLEAN NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  updated_at TIMESTAMP NOT NULL,
+  last_seen_at TIMESTAMP NOT NULL
+) USING DELTA;
+
 CREATE TABLE IF NOT EXISTS {fq_schema}.app_user_settings (
   setting_id STRING NOT NULL,
   user_principal STRING NOT NULL,
@@ -446,6 +460,19 @@ CREATE TABLE IF NOT EXISTS {fq_schema}.sec_user_org_scope (
   scope_level STRING NOT NULL,
   active_flag BOOLEAN NOT NULL,
   granted_at TIMESTAMP NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS {fq_schema}.sec_role_definition (
+  role_code STRING NOT NULL,
+  role_name STRING NOT NULL,
+  description STRING,
+  approval_level INT NOT NULL,
+  can_edit BOOLEAN NOT NULL,
+  can_report BOOLEAN NOT NULL,
+  can_direct_apply BOOLEAN NOT NULL,
+  active_flag BOOLEAN NOT NULL,
+  updated_at TIMESTAMP NOT NULL,
+  updated_by STRING NOT NULL
 ) USING DELTA;
 
 CREATE TABLE IF NOT EXISTS {fq_schema}.sec_role_permission (

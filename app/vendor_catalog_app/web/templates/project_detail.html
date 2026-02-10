@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "doc_link_form.html" import render_doc_link_form with context %}
 {% block content %}
 <div class="section-header">
   <div>
@@ -154,25 +155,11 @@
           </tbody>
         </table>
         {% if can_edit and not locked_mode %}
-        <form method="post" action="{{ row._demo_doc_link_action }}" class="grid grid-3" data-doc-link-form>
-          <input type="hidden" name="return_to" value="{{ return_to }}">
-          <label>URL
-            <input type="url" name="doc_url" placeholder="https://..." required data-doc-url>
-            <small class="muted">We'll auto-detect the link type from the URL. You can change it.</small>
-          </label>
-          <label>Type
-            <select name="doc_type" data-doc-type>
-              <option value="">auto</option>
-              {% for type in doc_types %}
-              <option value="{{ type }}">{{ type }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <label>Title<input type="text" name="doc_title" maxlength="120" placeholder="Optional"></label>
-          <label>Tags<input type="text" name="tags"></label>
-          <label>Owner<input type="text" name="owner"></label>
-          <div><button type="submit">Add Demo Link</button></div>
-        </form>
+        {{ render_doc_link_form(
+             post_url=row._demo_doc_link_action,
+             return_to=return_to,
+             submit_label="Add Demo Link"
+           ) }}
         {% endif %}
       </td>
     </tr>
@@ -211,72 +198,36 @@
     </tbody>
   </table>
   {% if can_edit and not locked_mode %}
-  <h3>Add Link</h3>
-  <form method="post" action="/vendors/{{ vendor_id }}/projects/{{ project.project_id }}/docs/link" class="grid grid-3" data-doc-link-form>
-    <input type="hidden" name="return_to" value="{{ return_to }}">
-    <label>URL
-      <input type="url" name="doc_url" placeholder="https://..." required data-doc-url>
-      <small class="muted">We'll auto-detect the link type from the URL. You can change it.</small>
-    </label>
-    <label>Type
-      <select name="doc_type" data-doc-type>
-        <option value="">auto</option>
-        {% for type in doc_types %}
-        <option value="{{ type }}">{{ type }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Title<input type="text" name="doc_title" maxlength="120" placeholder="Optional"></label>
-    <label>Tags<input type="text" name="tags"></label>
-    <label>Owner<input type="text" name="owner"></label>
-    <div><button type="submit">Add Link</button></div>
-  </form>
+  <details style="margin-top:12px;">
+    <summary><strong>Add New Document Link</strong></summary>
+    <div style="margin-top:10px;">
+      {{ render_doc_link_form(
+           post_url="/vendors/" ~ vendor_id ~ "/projects/" ~ project.project_id ~ "/docs/link",
+           return_to=return_to,
+           submit_label="Add Link"
+         ) }}
+    </div>
+  </details>
   {% endif %}
 </section>
 
 <section class="card section-divider">
   <h2>Activity / Changes</h2>
   <table>
-    <thead><tr><th>When</th><th>Entity</th><th>Action</th><th>Actor</th></tr></thead>
+    <thead><tr><th>When</th><th>Entity</th><th>Action</th><th>Details</th><th>Actor</th></tr></thead>
     <tbody>
     {% for row in project_activity %}
     <tr>
       <td>{{ row.event_ts }}</td>
       <td>{{ row.entity_name }}</td>
       <td>{{ row.action_type }}</td>
+      <td>{{ row.change_summary }}</td>
       <td>{{ row.actor_user_principal }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="4">No activity yet.</td></tr>
+    <tr><td colspan="5">No activity yet.</td></tr>
     {% endfor %}
     </tbody>
   </table>
 </section>
 {% endblock %}
-
-{% block scripts %}
-<script>
-document.querySelectorAll("[data-doc-link-form]").forEach((form) => {
-  const urlInput = form.querySelector("[data-doc-url]");
-  const typeSelect = form.querySelector("[data-doc-type]");
-  if (!urlInput || !typeSelect) return;
-  const suggestType = (url) => {
-    const v = (url || "").toLowerCase();
-    if (v.includes("sharepoint.com") || v.includes("/sites/") || v.includes("/teams/")) return "sharepoint";
-    if (v.includes("onedrive.live.com") || v.includes("1drv.ms")) return "onedrive";
-    if (v.includes("atlassian.net/wiki") || v.includes("/confluence")) return "confluence";
-    if (v.includes("docs.google.com") || v.includes("drive.google.com")) return "google_drive";
-    if (v.includes("box.com")) return "box";
-    if (v.includes("dropbox.com")) return "dropbox";
-    if (v.includes("github.com")) return "github";
-    return "other";
-  };
-  urlInput.addEventListener("input", () => {
-    if (!typeSelect.value || typeSelect.value === "other") {
-      typeSelect.value = suggestType(urlInput.value);
-    }
-  });
-});
-</script>
-{% endblock %}
-

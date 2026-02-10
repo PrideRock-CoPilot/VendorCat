@@ -42,3 +42,12 @@ def api_project_search(request: Request, q: str = "", limit: int = 20):
     ensure_session_started(request, user)
     rows = repo.search_projects_typeahead(q=q, limit=_normalize_limit(limit)).to_dict("records")
     return JSONResponse({"items": rows})
+
+
+@router.get("/users/search")
+def api_user_search(request: Request, q: str = "", limit: int = 20):
+    repo = get_repo()
+    user = get_user_context(request)
+    ensure_session_started(request, user)
+    rows = repo.search_user_directory(q=q, limit=_normalize_limit(limit)).to_dict("records")
+    return JSONResponse({"items": rows})

@@ -489,9 +489,39 @@ def document_links() -> pd.DataFrame:
 def audit_entity_changes() -> pd.DataFrame:
     return pd.DataFrame(
         [
-            {"change_event_id": "ae-001", "entity_name": "core_vendor", "entity_id": "vnd-001", "action_type": "update", "event_ts": "2026-01-16 09:00:00", "actor_user_principal": "vendor_steward@example.com", "request_id": "cr-001"},
-            {"change_event_id": "ae-002", "entity_name": "core_vendor_demo", "entity_id": "demo-002", "action_type": "insert", "event_ts": "2025-11-01 16:00:00", "actor_user_principal": "architecture-board@example.com", "request_id": None},
-            {"change_event_id": "ae-003", "entity_name": "core_contract", "entity_id": "ctr-001", "action_type": "update", "event_ts": "2025-12-05 13:00:00", "actor_user_principal": "fin-ops@example.com", "request_id": None},
+            {
+                "change_event_id": "ae-001",
+                "entity_name": "core_vendor",
+                "entity_id": "vnd-001",
+                "action_type": "update",
+                "before_json": {"risk_tier": "low", "owner_org_id": "IT-ENT"},
+                "after_json": {"risk_tier": "medium", "owner_org_id": "IT-ENT"},
+                "event_ts": "2026-01-16 09:00:00",
+                "actor_user_principal": "vendor_steward@example.com",
+                "request_id": "cr-001",
+            },
+            {
+                "change_event_id": "ae-002",
+                "entity_name": "core_vendor_demo",
+                "entity_id": "demo-002",
+                "action_type": "insert",
+                "before_json": None,
+                "after_json": {"demo_date": "2025-11-01", "overall_score": 7.9, "selection_outcome": "selected"},
+                "event_ts": "2025-11-01 16:00:00",
+                "actor_user_principal": "architecture-board@example.com",
+                "request_id": None,
+            },
+            {
+                "change_event_id": "ae-003",
+                "entity_name": "core_contract",
+                "entity_id": "ctr-001",
+                "action_type": "update",
+                "before_json": {"contract_status": "active", "cancelled_flag": False},
+                "after_json": {"contract_status": "cancelled", "cancelled_flag": True},
+                "event_ts": "2025-12-05 13:00:00",
+                "actor_user_principal": "fin-ops@example.com",
+                "request_id": None,
+            },
         ]
     )
 

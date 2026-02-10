@@ -1,5 +1,14 @@
 {% extends "base.html" %}
 {% block content %}
+{% set header_labels = {
+  "display_name": "Display Name",
+  "vendor_id": "Vendor ID",
+  "legal_name": "Legal Name",
+  "lifecycle_state": "Lifecycle State",
+  "owner_org_id": "Owner Org ID",
+  "risk_tier": "Risk Tier",
+  "updated_at": "Updated At"
+} %}
 <h1>Vendor 360</h1>
 
 <form method="get" action="/vendors" class="card grid grid-5">
@@ -117,25 +126,24 @@
 {% endif %}
 
 <section class="card">
-  <table id="vendor-table">
+  <table id="vendor-table" class="vendor-table">
     <thead>
       <tr>
         {% for field in visible_fields %}
-        <th>
+        <th class="sortable-header">
           {% if sort_links.get(field) %}
-          <a href="{{ sort_links.get(field) }}">{{ field }}</a>
+          <a class="sortable-header-link" href="{{ sort_links.get(field) }}">{{ header_labels.get(field, field|replace('_', ' ')|title) }}</a>
           {% if filters.sort_by == 'vendor_name' and field == 'display_name' %}
-          <small>{{ '↑' if filters.sort_dir == 'asc' else '↓' }}</small>
+          <small class="sort-indicator">{% if filters.sort_dir == 'asc' %}&#8593;{% else %}&#8595;{% endif %}</small>
           {% elif filters.sort_by == field %}
-          <small>{{ '↑' if filters.sort_dir == 'asc' else '↓' }}</small>
+          <small class="sort-indicator">{% if filters.sort_dir == 'asc' %}&#8593;{% else %}&#8595;{% endif %}</small>
           {% endif %}
           {% else %}
-          {{ field }}
+          {{ header_labels.get(field, field|replace('_', ' ')|title) }}
           {% endif %}
         </th>
         {% endfor %}
-        <th>actions</th>
-        <th>offerings</th>
+        <th>Offerings</th>
       </tr>
     </thead>
     <tbody>
@@ -150,9 +158,6 @@
           {% endif %}
         </td>
         {% endfor %}
-        <td>
-          <a class="button-link subtle" href="{{ row._offerings_page_link }}">Offerings</a>
-        </td>
         <td>
           {% if row._offerings %}
           <div class="offering-chip-list">
@@ -169,7 +174,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="{{ visible_fields|length + 2 }}">No vendors found</td></tr>
+      <tr><td colspan="{{ visible_fields|length + 1 }}">No vendors found</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -177,7 +182,7 @@
     <p>Showing {{ show_from }}-{{ show_to }} of {{ total_rows }} vendors.</p>
     <div class="button-group">
       <a class="button-link subtle {% if filters.page <= 1 %}disabled{% endif %}" href="{{ prev_page_url }}">Previous</a>
-      <span class="pill">Page {{ filters.page }} of {{ page_count }}</span>
+      <span class="pill pagination-pill">Page {{ filters.page }} of {{ page_count }}</span>
       <a class="button-link subtle {% if filters.page >= page_count %}disabled{% endif %}" href="{{ next_page_url }}">Next</a>
     </div>
   </div>

@@ -5,6 +5,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
+from vendor_catalog_app.repository import GLOBAL_CHANGE_VENDOR_ID
 from vendor_catalog_app.web.flash import add_flash
 from vendor_catalog_app.web.services import (
     base_template_context,
@@ -13,7 +14,13 @@ from vendor_catalog_app.web.services import (
     get_user_context,
     log_page_view,
 )
-from vendor_catalog_app.web.utils.doc_links import DOC_TYPES, suggest_doc_title, suggest_doc_type
+from vendor_catalog_app.web.utils.doc_links import (
+    DOC_TYPES,
+    extract_doc_fqdn,
+    normalize_doc_tags,
+    suggest_doc_title,
+    suggest_doc_type,
+)
 
 
 router = APIRouter(prefix="/projects")
@@ -49,6 +56,11 @@ def _safe_vendor_id(repo, vendor_id: str | None) -> str | None:
     if profile.empty:
         return None
     return cleaned
+
+
+def _request_scope_vendor_id(vendor_id: str | None) -> str:
+    cleaned = str(vendor_id or "").strip()
+    return cleaned or GLOBAL_CHANGE_VENDOR_ID
 
 
 def _dedupe_ordered(values: list[str]) -> list[str]:
@@ -133,15 +145,28 @@ def _normalize_doc_type(value: str) -> str:
     return doc_type
 
 
-def _prepare_doc_payload(form_data: dict[str, str]) -> dict[str, str]:
+def _to_bool(value: object) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _prepare_doc_payload(
+    repo,
+    form_data: dict[str, object],
+    *,
+    actor_user_principal: str,
+    allow_owner_create: bool = False,
+) -> dict[str, str]:
     doc_url = str(form_data.get("doc_url", "")).strip()
     doc_type = _normalize_doc_type(str(form_data.get("doc_type", "")))
     doc_title = str(form_data.get("doc_title", "")).strip()
-    tags = str(form_data.get("tags", "")).strip()
-    owner = str(form_data.get("owner", "")).strip()
+    raw_tags = form_data.get("tags")
+    raw_new_tag = form_data.get("tag_new")
+    owner_new = str(form_data.get("owner_new", "")).strip()
+    owner = owner_new or str(form_data.get("owner", "")).strip() or str(actor_user_principal or "").strip()
+    doc_fqdn = extract_doc_fqdn(doc_url)
 
-    if not doc_url.lower().startswith("https://"):
-        raise ValueError("Document URL must start with https://")
+    if not doc_url:
+        raise ValueError("Document link is required.")
     if not doc_type:
         doc_type = suggest_doc_type(doc_url)
     if not doc_title:
@@ -150,12 +175,31 @@ def _prepare_doc_payload(form_data: dict[str, str]) -> dict[str, str]:
         raise ValueError("Document title is required.")
     if len(doc_title) > 120:
         doc_title = doc_title[:120].rstrip()
+    owner_login = repo.resolve_user_login_identifier(owner)
+    if not owner_login and allow_owner_create and owner:
+        repo.ensure_user_record(owner)
+        owner_login = repo.resolve_user_login_identifier(owner)
+    if not owner_login:
+        raise ValueError("Owner must exist in the app user directory.")
+
+    collected_tags: list[str] = []
+    if isinstance(raw_tags, list):
+        collected_tags.extend(str(item or "") for item in raw_tags)
+    elif raw_tags is not None:
+        collected_tags.append(str(raw_tags or ""))
+    if isinstance(raw_new_tag, list):
+        collected_tags.extend(str(item or "") for item in raw_new_tag)
+    elif raw_new_tag is not None:
+        collected_tags.append(str(raw_new_tag or ""))
+
+    normalized_tags = normalize_doc_tags(collected_tags, doc_type=doc_type, fqdn=doc_fqdn, doc_url=doc_url)
     return {
         "doc_url": doc_url,
         "doc_type": doc_type,
         "doc_title": doc_title,
-        "tags": tags,
-        "owner": owner,
+        "tags": ",".join(normalized_tags),
+        "owner": owner_login,
+        "doc_fqdn": doc_fqdn,
     }
 
 
@@ -408,30 +452,50 @@ async def projects_new_submit(request: Request):
                 linked_vendors.append(offering_vendor_id)
     linked_vendors = _dedupe_ordered(linked_vendors)
     try:
-        project_id = repo.create_project(
-            vendor_id=None,
-            vendor_ids=linked_vendors,
-            actor_user_principal=user.user_principal,
-            project_name=str(form.get("project_name", "")).strip(),
-            project_type=_normalize_project_type(str(form.get("project_type", "other"))),
-            status=_normalize_project_status(str(form.get("status", "draft"))),
-            start_date=str(form.get("start_date", "")).strip() or None,
-            target_date=str(form.get("target_date", "")).strip() or None,
-            owner_principal=str(form.get("owner_principal", "")).strip() or None,
-            description=str(form.get("description", "")).strip() or None,
-            linked_offering_ids=linked_offerings,
+        project_payload = {
+            "vendor_ids": linked_vendors,
+            "project_name": str(form.get("project_name", "")).strip(),
+            "project_type": _normalize_project_type(str(form.get("project_type", "other"))),
+            "status": _normalize_project_status(str(form.get("status", "draft"))),
+            "start_date": str(form.get("start_date", "")).strip() or None,
+            "target_date": str(form.get("target_date", "")).strip() or None,
+            "owner_principal": str(form.get("owner_principal", "")).strip() or None,
+            "description": str(form.get("description", "")).strip() or None,
+            "linked_offering_ids": linked_offerings,
+        }
+        if user.can_apply_change("create_project"):
+            project_id = repo.create_project(
+                vendor_id=None,
+                vendor_ids=linked_vendors,
+                actor_user_principal=user.user_principal,
+                project_name=project_payload["project_name"],
+                project_type=project_payload["project_type"],
+                status=project_payload["status"],
+                start_date=project_payload["start_date"],
+                target_date=project_payload["target_date"],
+                owner_principal=project_payload["owner_principal"],
+                description=project_payload["description"],
+                linked_offering_ids=linked_offerings,
+            )
+            repo.log_usage_event(
+                user_principal=user.user_principal,
+                page_name="projects",
+                event_type="project_create",
+                payload={"project_id": project_id, "vendor_count": len(linked_vendors)},
+            )
+            add_flash(request, f"Project created: {project_id}", "success")
+            return RedirectResponse(
+                url=f"/projects/{project_id}/summary?return_to={quote(return_to, safe='')}",
+                status_code=303,
+            )
+        request_id = repo.create_vendor_change_request(
+            vendor_id=_request_scope_vendor_id(linked_vendors[0] if linked_vendors else ""),
+            requestor_user_principal=user.user_principal,
+            change_type="create_project",
+            payload=project_payload,
         )
-        repo.log_usage_event(
-            user_principal=user.user_principal,
-            page_name="projects",
-            event_type="project_create",
-            payload={"project_id": project_id, "vendor_count": len(linked_vendors)},
-        )
-        add_flash(request, f"Project created: {project_id}", "success")
-        return RedirectResponse(
-            url=f"/projects/{project_id}/summary?return_to={quote(return_to, safe='')}",
-            status_code=303,
-        )
+        add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        return RedirectResponse(url="/workflows?status=pending", status_code=303)
     except Exception as exc:
         add_flash(request, f"Could not create project: {exc}", "error")
         return RedirectResponse(url=f"/projects/new?return_to={quote(return_to, safe='')}", status_code=303)
@@ -516,7 +580,7 @@ async def project_edit_submit(request: Request, project_id: str):
     }
 
     try:
-        if user.can_direct_apply:
+        if user.can_apply_change("update_project"):
             result = repo.update_project(
                 vendor_id=None,
                 project_id=project_id,
@@ -536,7 +600,7 @@ async def project_edit_submit(request: Request, project_id: str):
             current_vendor_ids = [str(x) for x in (current_project.get("vendor_ids") or []) if str(x).strip()]
             cr_vendor_id = linked_vendors[0] if linked_vendors else (current_vendor_ids[0] if current_vendor_ids else "")
             request_id = repo.create_vendor_change_request(
-                vendor_id=cr_vendor_id,
+                vendor_id=_request_scope_vendor_id(cr_vendor_id),
                 requestor_user_principal=user.user_principal,
                 change_type="update_project",
                 payload={
@@ -585,7 +649,7 @@ async def project_owner_update(request: Request, project_id: str):
         return RedirectResponse(url=return_to, status_code=303)
 
     try:
-        if user.can_direct_apply:
+        if user.can_apply_change("update_project_owner"):
             result = repo.update_project(
                 vendor_id=None,
                 project_id=project_id,
@@ -603,7 +667,7 @@ async def project_owner_update(request: Request, project_id: str):
         else:
             vendor_ids = [str(x) for x in (project.get("vendor_ids") or []) if str(x).strip()]
             request_id = repo.create_vendor_change_request(
-                vendor_id=vendor_ids[0] if vendor_ids else "",
+                vendor_id=_request_scope_vendor_id(vendor_ids[0] if vendor_ids else ""),
                 requestor_user_principal=user.user_principal,
                 change_type="update_project_owner",
                 payload={"project_id": project_id, "owner_principal": owner_principal, "reason": reason},
@@ -653,7 +717,7 @@ async def project_add_vendor(request: Request, project_id: str):
     if add_vendor_id not in vendor_ids:
         vendor_ids.append(add_vendor_id)
     try:
-        if user.can_direct_apply:
+        if user.can_apply_change("attach_project_vendor"):
             result = repo.update_project(
                 vendor_id=None,
                 project_id=project_id,
@@ -670,7 +734,7 @@ async def project_add_vendor(request: Request, project_id: str):
             )
         else:
             request_id = repo.create_vendor_change_request(
-                vendor_id=vendor_ids[0] if vendor_ids else add_vendor_id,
+                vendor_id=_request_scope_vendor_id(vendor_ids[0] if vendor_ids else add_vendor_id),
                 requestor_user_principal=user.user_principal,
                 change_type="attach_project_vendor",
                 payload={"project_id": project_id, "vendor_ids": vendor_ids, "reason": reason},
@@ -725,7 +789,7 @@ async def project_add_offering(request: Request, project_id: str):
         offering_ids.append(add_offering_id)
 
     try:
-        if user.can_direct_apply:
+        if user.can_apply_change("attach_project_offering"):
             result = repo.update_project(
                 vendor_id=None,
                 project_id=project_id,
@@ -742,7 +806,7 @@ async def project_add_offering(request: Request, project_id: str):
             )
         else:
             request_id = repo.create_vendor_change_request(
-                vendor_id=vendor_ids[0] if vendor_ids else "",
+                vendor_id=_request_scope_vendor_id(vendor_ids[0] if vendor_ids else ""),
                 requestor_user_principal=user.user_principal,
                 change_type="attach_project_offering",
                 payload={
@@ -863,8 +927,21 @@ async def project_doc_link_submit(request: Request, project_id: str):
     project_vendor_ids = [str(x).strip() for x in (project.get("vendor_ids") or []) if str(x).strip()]
     change_vendor_id = project_vendor_ids[0] if project_vendor_ids else str(project.get("vendor_id") or "").strip()
     try:
-        payload = _prepare_doc_payload(dict(form))
-        if user.can_direct_apply:
+        payload = _prepare_doc_payload(
+            repo,
+            {
+                "doc_url": str(form.get("doc_url", "")),
+                "doc_type": str(form.get("doc_type", "")),
+                "doc_title": str(form.get("doc_title", "")),
+                "tags": [str(v) for v in form.getlist("tags") if str(v).strip()],
+                "tag_new": str(form.get("tag_new", "")),
+                "owner": str(form.get("owner", "")),
+                "owner_new": str(form.get("owner_new", "")),
+            },
+            actor_user_principal=user.user_principal,
+            allow_owner_create=user.has_admin_rights and _to_bool(form.get("allow_owner_create")),
+        )
+        if user.can_apply_change("create_doc_link"):
             doc_id = repo.create_doc_link(
                 entity_type="project",
                 entity_id=project_id,
@@ -872,13 +949,14 @@ async def project_doc_link_submit(request: Request, project_id: str):
                 doc_url=payload["doc_url"],
                 doc_type=payload["doc_type"],
                 tags=payload["tags"] or None,
+                doc_fqdn=payload["doc_fqdn"] or None,
                 owner=payload["owner"] or None,
                 actor_user_principal=user.user_principal,
             )
             add_flash(request, f"Document link added: {payload['doc_title']}", "success")
         else:
             request_id = repo.create_vendor_change_request(
-                vendor_id=change_vendor_id,
+                vendor_id=_request_scope_vendor_id(change_vendor_id),
                 requestor_user_principal=user.user_principal,
                 change_type="create_doc_link",
                 payload={"entity_type": "project", "entity_id": project_id, **payload},
@@ -889,13 +967,14 @@ async def project_doc_link_submit(request: Request, project_id: str):
             user_principal=user.user_principal,
             page_name="projects",
             event_type="doc_link_create",
-            payload={
-                "project_id": project_id,
-                "entity_type": "project",
-                "doc_id": doc_id or None,
-                "doc_type": payload["doc_type"],
-            },
-        )
+                payload={
+                    "project_id": project_id,
+                    "entity_type": "project",
+                    "doc_id": doc_id or None,
+                    "doc_type": payload["doc_type"],
+                    "doc_fqdn": payload["doc_fqdn"] or None,
+                },
+            )
     except Exception as exc:
         add_flash(request, f"Could not add document link: {exc}", "error")
     return RedirectResponse(url=return_to, status_code=303)
@@ -943,7 +1022,7 @@ async def project_note_add(request: Request, project_id: str):
         return RedirectResponse(url=return_to, status_code=303)
 
     try:
-        if user.can_direct_apply:
+        if user.can_apply_change("add_project_note"):
             note_id = repo.add_project_note(
                 vendor_id=vendor_id,
                 project_id=project_id,
@@ -953,7 +1032,7 @@ async def project_note_add(request: Request, project_id: str):
             add_flash(request, f"Project note added: {note_id}", "success")
         else:
             request_id = repo.create_vendor_change_request(
-                vendor_id=vendor_id,
+                vendor_id=_request_scope_vendor_id(vendor_id),
                 requestor_user_principal=user.user_principal,
                 change_type="add_project_note",
                 payload={"project_id": project_id, "note_text": note_text},

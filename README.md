@@ -20,6 +20,7 @@ Databricks-compatible Vendor Catalog application with a complete `twvendor` data
 - Document links hub (URL metadata only, no file uploads)
 - Permission-aware admin and governance model
 - Full audit and usage telemetry patterns
+- Persistent user directory (`app_user_directory`) so audit trails retain identity even after AD/account churn
 - Reports workspace with:
   - on-screen preview
   - CSV download
@@ -27,8 +28,10 @@ Databricks-compatible Vendor Catalog application with a complete `twvendor` data
 
 ## Runtime Modes
 - Mock mode (`TVENDOR_USE_MOCK=true`): in-memory test data
-- Local DB mode (`TVENDOR_USE_LOCAL_DB=true`): SQLite-backed local schema
+- Local DB mode (`TVENDOR_ENV=dev` + `TVENDOR_USE_LOCAL_DB=true`): SQLite-backed local schema
 - Databricks mode: SQL warehouse + Unity Catalog schema (`<catalog>.twvendor`)
+
+Safety guard: local DB is enabled only for `TVENDOR_ENV` values `dev`, `development`, or `local`.
 
 Databricks schema bootstrap is intentionally manual (security boundary). Use:
 - Environment config: `setup/config/tvendor.env`
@@ -53,7 +56,7 @@ Canonical full logical schema lives at:
 - `setup/local_db/sql/schema/001_schema.sql`
 
 Current schema scope:
-- 40 tables
+- 41 tables
 - 3 reporting views
 - core, history, app workflow, security, and audit families in one logical schema (`twvendor`)
 

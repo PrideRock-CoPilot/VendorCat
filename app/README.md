@@ -23,22 +23,26 @@ Setup assets (manual Databricks schema bootstrap, env templates, local DB bootst
 ## Security And Governance
 - Role-aware UX (`vendor_admin`, `vendor_steward`, `vendor_editor`, `vendor_viewer`, `vendor_auditor`)
 - Automatic baseline access provisioning for first-time users
+- Persistent app user directory captures login identifiers and durable `user_id` references for audit/change records
 - Usage telemetry events for page and action auditability
 - Direct-apply vs change-request write behavior by role
 
 ## Run Modes
 - Mock mode:
 ```bat
+set TVENDOR_ENV=dev
 set TVENDOR_USE_MOCK=true
 ```
 - Local DB mode:
 ```bat
+set TVENDOR_ENV=dev
 set TVENDOR_USE_MOCK=false
 set TVENDOR_USE_LOCAL_DB=true
 set TVENDOR_LOCAL_DB_PATH=setup\local_db\twvendor_local.db
 ```
 - Databricks mode:
 ```bat
+set TVENDOR_ENV=prod
 set TVENDOR_USE_MOCK=false
 set TVENDOR_USE_LOCAL_DB=false
 set TVENDOR_CATALOG=vendor_dev
@@ -47,6 +51,8 @@ set DATABRICKS_SERVER_HOSTNAME=<workspace-host>
 set DATABRICKS_HTTP_PATH=<sql-warehouse-http-path>
 set DATABRICKS_TOKEN=<pat>
 ```
+
+`TVENDOR_USE_LOCAL_DB=true` is permitted only when `TVENDOR_ENV` is `dev`, `development`, or `local`.
 
 For security, schema bootstrap is a manual step. The app does not create schemas/tables.
 

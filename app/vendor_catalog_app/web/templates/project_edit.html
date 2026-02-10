@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "owner_forms.html" import owner_principal_input with context %}
 {% block content %}
 <div class="section-header">
   <div>
@@ -33,7 +34,7 @@
     </label>
     <label>Start Date<input type="date" name="start_date" value="{{ project.start_date }}"></label>
     <label>Target Date<input type="date" name="target_date" value="{{ project.target_date }}"></label>
-    <label>Owner Principal<input type="text" name="owner_principal" value="{{ project.owner_principal or '' }}"></label>
+    {{ owner_principal_input("owner_principal", project.owner_principal or "", "Owner Principal", "user@company.com") }}
     <label class="full">Description
       <textarea name="description" rows="4">{{ project.description or '' }}</textarea>
     </label>

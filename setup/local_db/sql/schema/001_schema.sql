@@ -331,6 +331,20 @@ CREATE TABLE IF NOT EXISTS app_note (
   created_by TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS app_user_directory (
+  user_id TEXT PRIMARY KEY,
+  login_identifier TEXT NOT NULL UNIQUE,
+  email TEXT,
+  network_id TEXT,
+  first_name TEXT,
+  last_name TEXT,
+  display_name TEXT NOT NULL,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS app_user_settings (
   setting_id TEXT PRIMARY KEY,
   user_principal TEXT NOT NULL,
@@ -466,6 +480,19 @@ CREATE TABLE IF NOT EXISTS sec_user_org_scope (
   granted_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS sec_role_definition (
+  role_code TEXT PRIMARY KEY,
+  role_name TEXT NOT NULL,
+  description TEXT,
+  approval_level INTEGER NOT NULL DEFAULT 0,
+  can_edit INTEGER NOT NULL DEFAULT 0 CHECK (can_edit IN (0, 1)),
+  can_report INTEGER NOT NULL DEFAULT 0 CHECK (can_report IN (0, 1)),
+  can_direct_apply INTEGER NOT NULL DEFAULT 0 CHECK (can_direct_apply IN (0, 1)),
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS sec_role_permission (
   role_code TEXT NOT NULL,
   object_name TEXT NOT NULL,
@@ -526,5 +553,6 @@ CREATE INDEX IF NOT EXISTS idx_app_project_status ON app_project(status);
 CREATE INDEX IF NOT EXISTS idx_app_project_demo_project ON app_project_demo(project_id);
 CREATE INDEX IF NOT EXISTS idx_app_project_note_project ON app_project_note(project_id);
 CREATE INDEX IF NOT EXISTS idx_app_doc_entity ON app_document_link(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_app_user_directory_login ON app_user_directory(login_identifier);
 CREATE INDEX IF NOT EXISTS idx_usage_user_ts ON app_usage_log(user_principal, event_ts);
 CREATE INDEX IF NOT EXISTS idx_change_req_vendor ON app_vendor_change_request(vendor_id);

@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% from "doc_link_form.html" import render_doc_link_form with context %}
+{% from "owner_forms.html" import offering_owner_add_form, offering_contact_add_form with context %}
 {% block content %}
 <div class="section-header">
   <div>
@@ -29,7 +31,15 @@
       <input type="text" name="offering_name" value="{{ offering.offering_name }}" required>
     </label>
     <label>Offering Type
-      <input type="text" name="offering_type" value="{{ offering.offering_type or '' }}">
+      <select name="offering_type">
+        <option value="">none</option>
+        {% for option in offering_types %}
+        <option value="{{ option }}" {% if option == (offering.offering_type or "") %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+        {% if offering.offering_type and offering.offering_type not in offering_types %}
+        <option value="{{ offering.offering_type }}" selected>{{ offering.offering_type }}</option>
+        {% endif %}
+      </select>
     </label>
     <label>Lifecycle State
       <select name="lifecycle_state">
@@ -83,13 +93,12 @@
     </table>
     {% if can_edit and not locked_mode %}
     <h3>Add Owner</h3>
-    <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/owners/add" class="grid grid-2">
-      <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?return_to={{ return_to|urlencode }}&edit=1">
-      <label>Owner Principal<input type="text" name="owner_user_principal" required></label>
-      <label>Role<input type="text" name="owner_role" value="business_owner"></label>
-      <label class="full">Reason<input type="text" name="reason" placeholder="Optional"></label>
-      <div><button type="submit">Add Owner</button></div>
-    </form>
+    {{ offering_owner_add_form(
+         post_url="/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "/owners/add",
+         return_to="/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "?return_to=" ~ (return_to|urlencode) ~ "&edit=1",
+         default_role="business_owner",
+         submit_label="Add Owner"
+       ) }}
     {% endif %}
   </section>
 
@@ -122,15 +131,11 @@
     </table>
     {% if can_edit and not locked_mode %}
     <h3>Add Contact</h3>
-    <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/contacts/add" class="grid grid-2">
-      <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?return_to={{ return_to|urlencode }}&edit=1">
-      <label>Full Name<input type="text" name="full_name" required></label>
-      <label>Type<input type="text" name="contact_type" value="business"></label>
-      <label>Email<input type="email" name="email"></label>
-      <label>Phone<input type="text" name="phone"></label>
-      <label class="full">Reason<input type="text" name="reason" placeholder="Optional"></label>
-      <div><button type="submit">Add Contact</button></div>
-    </form>
+    {{ offering_contact_add_form(
+         post_url="/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "/contacts/add",
+         return_to="/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "?return_to=" ~ (return_to|urlencode) ~ "&edit=1",
+         submit_label="Add Contact"
+       ) }}
     {% endif %}
   </section>
 </div>
@@ -234,52 +239,16 @@
   </table>
 
   {% if can_edit and not locked_mode %}
-  <h3>Add Link</h3>
-  <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/docs/link" class="grid grid-3" data-doc-link-form>
-    <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?return_to={{ return_to|urlencode }}">
-    <label>URL
-      <input type="url" name="doc_url" placeholder="https://..." required data-doc-url>
-      <small class="muted">We'll auto-detect the link type from the URL. You can change it.</small>
-    </label>
-    <label>Type
-      <select name="doc_type" data-doc-type>
-        <option value="">auto</option>
-        {% for type in doc_types %}
-        <option value="{{ type }}">{{ type }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>Title<input type="text" name="doc_title" maxlength="120" placeholder="Optional"></label>
-    <label>Tags<input type="text" name="tags"></label>
-    <label>Owner<input type="text" name="owner"></label>
-    <div><button type="submit">Add Link</button></div>
-  </form>
+  <details style="margin-top:12px;">
+    <summary><strong>Add New Document Link</strong></summary>
+    <div style="margin-top:10px;">
+      {{ render_doc_link_form(
+           post_url="/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "/docs/link",
+           return_to="/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "?return_to=" ~ (return_to|urlencode),
+           submit_label="Add Link"
+         ) }}
+    </div>
+  </details>
   {% endif %}
 </section>
-{% endblock %}
-
-{% block scripts %}
-<script>
-document.querySelectorAll("[data-doc-link-form]").forEach((form) => {
-  const urlInput = form.querySelector("[data-doc-url]");
-  const typeSelect = form.querySelector("[data-doc-type]");
-  if (!urlInput || !typeSelect) return;
-  const suggestType = (url) => {
-    const v = (url || "").toLowerCase();
-    if (v.includes("sharepoint.com") || v.includes("/sites/") || v.includes("/teams/")) return "sharepoint";
-    if (v.includes("onedrive.live.com") || v.includes("1drv.ms")) return "onedrive";
-    if (v.includes("atlassian.net/wiki") || v.includes("/confluence")) return "confluence";
-    if (v.includes("docs.google.com") || v.includes("drive.google.com")) return "google_drive";
-    if (v.includes("box.com")) return "box";
-    if (v.includes("dropbox.com")) return "dropbox";
-    if (v.includes("github.com")) return "github";
-    return "other";
-  };
-  urlInput.addEventListener("input", () => {
-    if (!typeSelect.value || typeSelect.value === "other") {
-      typeSelect.value = suggestType(urlInput.value);
-    }
-  });
-});
-</script>
 {% endblock %}

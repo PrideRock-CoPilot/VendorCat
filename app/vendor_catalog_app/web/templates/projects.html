@@ -54,12 +54,11 @@
         <th>Target</th>
         <th>Demos</th>
         <th>Last Activity</th>
-        <th>Actions</th>
       </tr>
     </thead>
     <tbody>
     {% for row in rows %}
-    <tr>
+    <tr class="clickable-row" data-href="{{ row._open_link }}">
       <td>{{ row.project_name }}</td>
       <td>{{ row.vendor_display_name }}</td>
       <td>{{ row.status }}</td>
@@ -68,15 +67,9 @@
       <td>{{ row.target_date }}</td>
       <td>{{ row.demo_count }}</td>
       <td>{{ row.last_activity_at }}</td>
-      <td class="button-group">
-        <a class="button-link subtle" href="{{ row._open_link }}">Open</a>
-        {% if can_edit and not locked_mode %}
-        <a class="button-link subtle" href="{{ row._edit_link }}">Edit</a>
-        {% endif %}
-      </td>
     </tr>
     {% else %}
-    <tr><td colspan="9">No projects found.</td></tr>
+    <tr><td colspan="8">No projects found.</td></tr>
     {% endfor %}
     </tbody>
   </table>

@@ -7,7 +7,13 @@ APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
-from vendor_catalog_app.web.utils.doc_links import suggest_doc_title, suggest_doc_type
+from vendor_catalog_app.web.utils.doc_links import (
+    extract_doc_fqdn,
+    normalize_doc_fqdn,
+    normalize_doc_tags,
+    suggest_doc_title,
+    suggest_doc_type,
+)
 
 
 def test_suggest_doc_type_matches_known_hosts() -> None:
@@ -27,3 +33,28 @@ def test_suggest_doc_title_uses_host_and_last_path_segment() -> None:
     assert "Contract_2026.pdf" in title
     assert len(title) <= 120
 
+
+def test_extract_and_normalize_fqdn() -> None:
+    assert extract_doc_fqdn("https://contoso.sharepoint.com/sites/vendors/Contract.pdf") == "contoso.sharepoint.com"
+    assert extract_doc_fqdn("contoso.sharepoint.com/sites/vendors/Contract.pdf") == "contoso.sharepoint.com"
+    assert normalize_doc_fqdn("Contoso.SharePoint.com") == "contoso.sharepoint.com"
+
+
+def test_normalize_doc_tags_includes_detected_type_and_fqdn() -> None:
+    tags = normalize_doc_tags(["contract", "renewal"], doc_type="sharepoint", fqdn="contoso.sharepoint.com")
+    assert "contract" in tags
+    assert "renewal" in tags
+    assert "sharepoint" in tags
+    assert "fqdn:contoso.sharepoint.com" in tags
+
+
+def test_normalize_doc_tags_keeps_custom_and_derives_folder_tag() -> None:
+    tags = normalize_doc_tags(
+        ["Custom Tag", "cross-team"],
+        doc_type="other",
+        fqdn="contoso.sharepoint.com",
+        doc_url="contoso.sharepoint.com/sites/vendor-library/folders/nda/",
+    )
+    assert "custom_tag" in tags
+    assert "cross-team" in tags
+    assert "folder" in tags

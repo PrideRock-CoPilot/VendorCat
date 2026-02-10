@@ -13,6 +13,7 @@ DELETE FROM app_vendor_change_request;
 DELETE FROM app_note;
 DELETE FROM app_usage_log;
 DELETE FROM app_user_settings;
+DELETE FROM app_user_directory;
 DELETE FROM audit_entity_change;
 DELETE FROM audit_workflow_event;
 DELETE FROM audit_access_event;
@@ -35,6 +36,8 @@ DELETE FROM src_spreadsheet_vendor_raw;
 DELETE FROM src_ingest_batch;
 DELETE FROM sec_user_org_scope;
 DELETE FROM sec_user_role_map;
+DELETE FROM sec_role_permission;
+DELETE FROM sec_role_definition;
 
 INSERT INTO src_ingest_batch (batch_id, source_system, source_object, extract_ts, loaded_ts, row_count, status) VALUES
 ('b-20260201-01', 'PeopleSoft', 'vendor', '2026-02-01 02:00:00', '2026-02-01 02:15:00', 1, 'loaded'),
@@ -178,6 +181,81 @@ INSERT INTO audit_entity_change (change_event_id, entity_name, entity_id, action
 INSERT INTO app_usage_log (usage_event_id, user_principal, page_name, event_type, event_ts, payload_json) VALUES
 ('use-001', 'admin@example.com', 'vendor_360', 'page_view', '2026-02-03 08:00:00', '{"section":"list"}'),
 ('use-002', 'bob.smith@example.com', 'project_detail', 'page_view', '2026-02-03 09:10:00', '{"project_id":"prj-001"}');
+
+INSERT INTO app_user_directory (user_id, login_identifier, email, network_id, first_name, last_name, display_name, active_flag, created_at, updated_at, last_seen_at) VALUES
+('usr-001', 'admin@example.com', 'admin@example.com', NULL, 'Admin', 'User', 'Admin User', 1, '2026-01-01 00:00:00', '2026-02-03 10:00:00', '2026-02-03 10:00:00'),
+('usr-002', 'bob.smith@example.com', 'bob.smith@example.com', NULL, 'Bob', 'Smith', 'Bob Smith', 1, '2026-01-01 00:00:00', '2026-02-03 10:00:00', '2026-02-03 10:00:00'),
+('usr-003', 'amy.johnson@example.com', 'amy.johnson@example.com', NULL, 'Amy', 'Johnson', 'Amy Johnson', 1, '2026-01-01 00:00:00', '2026-02-03 10:00:00', '2026-02-03 10:00:00'),
+('usr-004', 'procurement@example.com', 'procurement@example.com', NULL, 'Procurement', 'Team', 'Procurement Team', 1, '2026-01-01 00:00:00', '2026-02-03 10:00:00', '2026-02-03 10:00:00'),
+('usr-005', 'security-arch@example.com', 'security-arch@example.com', NULL, 'Security', 'Architect', 'Security Architect', 1, '2026-01-01 00:00:00', '2026-02-03 10:00:00', '2026-02-03 10:00:00'),
+('usr-006', 'cloud-platform@example.com', 'cloud-platform@example.com', NULL, 'Cloud', 'Platform', 'Cloud Platform', 1, '2026-01-01 00:00:00', '2026-02-03 10:00:00', '2026-02-03 10:00:00'),
+('usr-007', 'sales-systems@example.com', 'sales-systems@example.com', NULL, 'Sales', 'Systems', 'Sales Systems', 1, '2026-01-01 00:00:00', '2026-02-03 10:00:00', '2026-02-03 10:00:00'),
+('usr-008', 'pm@example.com', 'pm@example.com', NULL, 'Project', 'Manager', 'Project Manager', 1, '2026-01-01 00:00:00', '2026-02-03 10:00:00', '2026-02-03 10:00:00'),
+('usr-009', 'secops@example.com', 'secops@example.com', NULL, 'SecOps', 'User', 'Secops User', 1, '2026-01-01 00:00:00', '2026-02-03 10:00:00', '2026-02-03 10:00:00'),
+('usr-010', 'owner@example.com', 'owner@example.com', NULL, 'Owner', 'User', 'Owner User', 1, '2026-01-01 00:00:00', '2026-02-03 10:00:00', '2026-02-03 10:00:00');
+
+INSERT INTO sec_role_definition (role_code, role_name, description, approval_level, can_edit, can_report, can_direct_apply, active_flag, updated_at, updated_by) VALUES
+('vendor_admin', 'Vendor Admin', 'Full administrative access across all workflows and data changes.', 3, 1, 1, 1, 1, '2026-01-01 00:00:00', 'bootstrap'),
+('vendor_steward', 'Vendor Steward', 'Data steward with elevated review/apply rights for governed updates.', 2, 1, 1, 1, 1, '2026-01-01 00:00:00', 'bootstrap'),
+('vendor_editor', 'Vendor Editor', 'Contributor role for day-to-day edits and change submissions.', 1, 1, 1, 0, 1, '2026-01-01 00:00:00', 'bootstrap'),
+('vendor_viewer', 'Vendor Viewer', 'Read-only access to vendor inventory and metadata.', 0, 0, 0, 0, 1, '2026-01-01 00:00:00', 'bootstrap'),
+('vendor_auditor', 'Vendor Auditor', 'Read/report access for governance and audit functions.', 0, 0, 1, 0, 1, '2026-01-01 00:00:00', 'bootstrap');
+
+INSERT INTO sec_role_permission (role_code, object_name, action_code, active_flag, updated_at) VALUES
+('vendor_admin', 'change_action', 'create_vendor_profile', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'update_vendor_profile', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'update_offering', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'create_offering', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'map_contract_to_offering', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'map_demo_to_offering', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'add_offering_owner', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'remove_offering_owner', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'add_offering_contact', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'remove_offering_contact', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'create_project', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'update_project', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'update_project_owner', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'attach_project_vendor', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'attach_project_offering', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'add_project_note', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'create_project_demo', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'update_project_demo', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'remove_project_demo', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'create_doc_link', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'remove_doc_link', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'create_demo_outcome', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'record_contract_cancellation', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'grant_role', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'grant_scope', 1, '2026-01-01 00:00:00'),
+('vendor_steward', 'change_action', 'update_vendor_profile', 1, '2026-01-01 00:00:00'),
+('vendor_steward', 'change_action', 'update_offering', 1, '2026-01-01 00:00:00'),
+('vendor_steward', 'change_action', 'create_offering', 1, '2026-01-01 00:00:00'),
+('vendor_steward', 'change_action', 'map_contract_to_offering', 1, '2026-01-01 00:00:00'),
+('vendor_steward', 'change_action', 'map_demo_to_offering', 1, '2026-01-01 00:00:00'),
+('vendor_steward', 'change_action', 'add_offering_owner', 1, '2026-01-01 00:00:00'),
+('vendor_steward', 'change_action', 'remove_offering_owner', 1, '2026-01-01 00:00:00'),
+('vendor_steward', 'change_action', 'add_offering_contact', 1, '2026-01-01 00:00:00'),
+('vendor_steward', 'change_action', 'remove_offering_contact', 1, '2026-01-01 00:00:00'),
+('vendor_steward', 'change_action', 'create_project', 1, '2026-01-01 00:00:00'),
+('vendor_steward', 'change_action', 'update_project', 1, '2026-01-01 00:00:00'),
+('vendor_steward', 'change_action', 'update_project_owner', 1, '2026-01-01 00:00:00'),
+('vendor_steward', 'change_action', 'attach_project_vendor', 1, '2026-01-01 00:00:00'),
+('vendor_steward', 'change_action', 'attach_project_offering', 1, '2026-01-01 00:00:00'),
+('vendor_steward', 'change_action', 'add_project_note', 1, '2026-01-01 00:00:00'),
+('vendor_steward', 'change_action', 'create_project_demo', 1, '2026-01-01 00:00:00'),
+('vendor_steward', 'change_action', 'update_project_demo', 1, '2026-01-01 00:00:00'),
+('vendor_steward', 'change_action', 'remove_project_demo', 1, '2026-01-01 00:00:00'),
+('vendor_steward', 'change_action', 'create_doc_link', 1, '2026-01-01 00:00:00'),
+('vendor_steward', 'change_action', 'remove_doc_link', 1, '2026-01-01 00:00:00'),
+('vendor_steward', 'change_action', 'create_demo_outcome', 1, '2026-01-01 00:00:00'),
+('vendor_editor', 'change_action', 'map_demo_to_offering', 1, '2026-01-01 00:00:00'),
+('vendor_editor', 'change_action', 'add_offering_contact', 1, '2026-01-01 00:00:00'),
+('vendor_editor', 'change_action', 'remove_offering_contact', 1, '2026-01-01 00:00:00'),
+('vendor_editor', 'change_action', 'add_project_note', 1, '2026-01-01 00:00:00'),
+('vendor_editor', 'change_action', 'update_project_demo', 1, '2026-01-01 00:00:00'),
+('vendor_editor', 'change_action', 'remove_project_demo', 1, '2026-01-01 00:00:00'),
+('vendor_editor', 'change_action', 'create_doc_link', 1, '2026-01-01 00:00:00'),
+('vendor_editor', 'change_action', 'remove_doc_link', 1, '2026-01-01 00:00:00');
 
 INSERT INTO sec_user_role_map (user_principal, role_code, active_flag, granted_by, granted_at, revoked_at) VALUES
 ('admin@example.com', 'vendor_admin', 1, 'bootstrap', '2026-01-01 00:00:00', NULL),

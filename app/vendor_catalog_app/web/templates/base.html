@@ -10,12 +10,23 @@
   <header class="topbar">
     <div class="brand">Vendor Catalog</div>
     <div class="user-meta">
-      <span class="pill">{{ user_principal }}</span>
-      <span class="pill">{{ fq_schema }}</span>
-      <span class="pill">{{ "Mock" if use_mock else "Databricks SQL" }}</span>
+      <span class="pill" title="{{ user_principal }}">{{ user_display_name }}</span>
       {% for role in roles %}
       <span class="pill role">{{ role }}</span>
       {% endfor %}
+      {% if has_admin_rights %}
+      <form method="post" action="/admin/testing-role" class="inline-form role-switch-form">
+        <input type="hidden" name="return_to" value="{{ request.url.path }}">
+        <span class="role-switch-label">role</span>
+        <select name="role_override" aria-label="Testing role override">
+          <option value="" {% if not testing_role_override %}selected{% endif %}>No Override</option>
+          {% for role in testing_role_options %}
+          <option value="{{ role }}" {% if role == testing_role_override %}selected{% endif %}>{{ role }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit">Apply</button>
+      </form>
+      {% endif %}
     </div>
   </header>
 
@@ -23,10 +34,13 @@
     <a class="{{ 'active' if active_nav == 'dashboard' else '' }}" href="/dashboard">Dashboard</a>
     <a class="{{ 'active' if active_nav == 'vendors' else '' }}" href="/vendors">Vendor 360</a>
     <a class="{{ 'active' if active_nav == 'projects' else '' }}" href="/projects">Projects</a>
+    {% if can_edit %}
+    <a class="{{ 'active' if active_nav == 'workflows' else '' }}" href="/workflows">Workflows</a>
+    {% endif %}
     {% if can_report %}
     <a class="{{ 'active' if active_nav == 'reports' else '' }}" href="/reports">Reports</a>
     {% endif %}
-    {% if is_admin %}
+    {% if has_admin_rights %}
     <a class="{{ 'active' if active_nav == 'admin' else '' }}" href="/admin">Admin</a>
     {% endif %}
   </nav>

@@ -18,7 +18,12 @@
       <input type="text" name="offering_name" required>
     </label>
     <label>Offering Type
-      <input type="text" name="offering_type">
+      <select name="offering_type">
+        <option value="">none</option>
+        {% for option in offering_types %}
+        <option value="{{ option }}">{{ option }}</option>
+        {% endfor %}
+      </select>
     </label>
     <label>Lifecycle State
       <select name="lifecycle_state">

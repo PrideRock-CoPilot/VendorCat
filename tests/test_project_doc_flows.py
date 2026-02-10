@@ -157,6 +157,7 @@ def test_add_project_note_from_standalone_project_page(client: TestClient) -> No
     notes_page = client.get(f"/projects/{project_id}/notes?return_to=%2Fprojects")
     assert notes_page.status_code == 200
     assert "Owner changed from Bob Smith to Jane Doe." in notes_page.text
+    assert "Note Text =" in notes_page.text
 
 
 def test_quick_add_vendor_and_offering_from_project_tabs(client: TestClient) -> None:
@@ -319,3 +320,43 @@ def test_project_and_offering_doc_links_render(client: TestClient) -> None:
     offering_detail = client.get("/vendors/vnd-001/offerings/off-004?return_to=%2Fvendors")
     assert offering_detail.status_code == 200
     assert "github.com - offering.md" in offering_detail.text
+
+
+def test_doc_link_owner_must_exist_in_user_directory(client: TestClient) -> None:
+    response = client.post(
+        "/vendors/vnd-001/docs/link",
+        data={
+            "return_to": "/vendors",
+            "doc_url": "https://contoso.sharepoint.com/sites/vendors/Ownership_Check.pdf",
+            "doc_type": "",
+            "doc_title": "",
+            "doc_fqdn": "",
+            "tags": ["contract"],
+            "owner": "not-a-user@example.com",
+        },
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "Owner must exist in the app user directory." in response.text
+
+
+def test_admin_doc_link_can_create_owner_from_inline_owner_input(client: TestClient) -> None:
+    response = client.post(
+        "/vendors/vnd-001/docs/link",
+        data={
+            "return_to": "/vendors",
+            "doc_url": "contoso.sharepoint.com/sites/vendors/folders/owner-handbook/",
+            "doc_type": "",
+            "doc_title": "",
+            "tags": ["notes"],
+            "owner_new": "new.owner@example.com",
+            "allow_owner_create": "1",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    owners_response = client.get("/api/users/search?q=new.owner@example.com&limit=20")
+    assert owners_response.status_code == 200
+    payload = owners_response.json()
+    assert any(str(row.get("login_identifier")) == "new.owner@example.com" for row in payload.get("items", []))

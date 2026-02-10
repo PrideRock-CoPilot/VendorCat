@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Workflow Queue</h1>
+
+<section class="card section-divider">
+  <form method="get" action="/workflows" class="inline-form">
+    <label>Status
+      <select name="status">
+        {% for value in status_options %}
+        <option value="{{ value }}" {% if value == selected_status %}selected{% endif %}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div><button type="submit">Filter</button></div>
+  </form>
+</section>
+
+<section class="card section-divider">
+  <table>
+    <thead>
+      <tr>
+        <th>Request ID</th>
+        <th>Vendor</th>
+        <th>Type</th>
+        <th>Requester</th>
+        <th>Status</th>
+        <th>Approval Level</th>
+        <th>Submitted</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.change_request_id }}</td>
+        <td>{{ row._vendor_display }}</td>
+        <td>{{ row.change_type }}</td>
+        <td>{{ row.requestor_user_principal }}</td>
+        <td>{{ row.status }}</td>
+        <td>{{ row._approval_label }}</td>
+        <td>{{ row.submitted_at }}</td>
+        <td>
+          {% if row._can_decide and row.status not in ['approved', 'rejected'] and not locked_mode %}
+          <form method="post" action="/workflows/{{ row.change_request_id }}/decision" class="inline-form">
+            <input type="hidden" name="return_to" value="/workflows?status={{ selected_status }}">
+            <select name="decision">
+              <option value="approved">approve</option>
+              <option value="rejected">reject</option>
+            </select>
+            <input type="text" name="notes" placeholder="notes (optional)">
+            <button type="submit">Apply</button>
+          </form>
+          {% elif locked_mode %}
+          <span class="muted">locked</span>
+          {% elif row.status in ['approved', 'rejected'] %}
+          <span class="muted">final</span>
+          {% else %}
+          <span class="muted">insufficient level</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8">No workflow requests.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

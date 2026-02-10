@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -13,6 +14,42 @@ import pandas as pd
 from vendor_catalog_app.config import AppConfig
 from vendor_catalog_app.db import DatabricksSQLClient
 from vendor_catalog_app import mock_data
+from vendor_catalog_app.security import (
+    CHANGE_APPROVAL_LEVELS,
+    ROLE_ADMIN,
+    ROLE_CHOICES,
+    ROLE_VIEWER,
+    default_change_permissions_for_role,
+    default_role_definitions,
+    required_approval_level,
+)
+
+UNKNOWN_USER_PRINCIPAL = "unknown_user"
+GLOBAL_CHANGE_VENDOR_ID = "__global__"
+OWNER_ROLE_CHOICES = {
+    "application_owner",
+    "business_owner",
+    "executive_owner",
+    "legacy_owner",
+    "platform_owner",
+    "security_owner",
+    "service_owner",
+    "technical_owner",
+}
+ASSIGNMENT_TYPE_CHOICES = {"consumer", "primary", "secondary"}
+CONTACT_TYPE_CHOICES = {
+    "account_manager",
+    "business",
+    "customer_success",
+    "escalation",
+    "product_manager",
+    "security_specialist",
+    "support",
+}
+
+
+class SchemaBootstrapRequiredError(RuntimeError):
+    """Raised when required runtime schema objects are missing or inaccessible."""
 
 
 class VendorRepository:
@@ -21,6 +58,9 @@ class VendorRepository:
         self.client = DatabricksSQLClient(config)
         self._runtime_tables_ensured = False
         self._mock_role_overrides: dict[str, set[str]] = {}
+        self._mock_role_definitions: dict[str, dict[str, Any]] = self._default_role_definition_rows()
+        self._mock_role_permissions: dict[str, set[str]] = self._default_role_permissions_by_role()
+        self._mock_user_directory: dict[str, dict[str, str]] = {}
         self._mock_user_settings: dict[tuple[str, str], dict[str, Any]] = {}
         self._mock_usage_events: list[dict[str, Any]] = []
         self._mock_new_vendors: list[dict[str, Any]] = []
@@ -33,6 +73,12 @@ class VendorRepository:
         self._mock_removed_offering_owner_ids: set[str] = set()
         self._mock_new_offering_contacts: list[dict[str, Any]] = []
         self._mock_removed_offering_contact_ids: set[str] = set()
+        self._mock_new_vendor_owners: list[dict[str, Any]] = []
+        self._mock_removed_vendor_owner_ids: set[str] = set()
+        self._mock_new_vendor_contacts: list[dict[str, Any]] = []
+        self._mock_removed_vendor_contact_ids: set[str] = set()
+        self._mock_new_vendor_org_assignments: list[dict[str, Any]] = []
+        self._mock_removed_vendor_org_assignment_ids: set[str] = set()
         self._mock_change_request_overrides: list[dict[str, Any]] = []
         self._mock_audit_change_overrides: list[dict[str, Any]] = []
         self._mock_new_projects: list[dict[str, Any]] = []
@@ -90,6 +136,22 @@ class VendorRepository:
 
     def _now(self) -> datetime:
         return datetime.now(timezone.utc)
+
+    @staticmethod
+    def _normalize_choice(
+        value: str | None,
+        *,
+        field_name: str,
+        allowed: set[str],
+        default: str,
+    ) -> str:
+        normalized = (value or "").strip().lower()
+        if not normalized:
+            return default
+        if normalized not in allowed:
+            allowed_text = ", ".join(sorted(allowed))
+            raise ValueError(f"{field_name} must be one of: {allowed_text}.")
+        return normalized
 
     def _query_or_empty(
         self, statement: str, params: tuple | None = None, columns: list[str] | None = None
@@ -169,6 +231,379 @@ class VendorRepository:
         return json.dumps(payload)
 
     @staticmethod
+    def _safe_payload_json(payload_json: Any) -> dict[str, Any]:
+        if isinstance(payload_json, dict):
+            return payload_json
+        if not isinstance(payload_json, str):
+            return {}
+        try:
+            parsed = json.loads(payload_json)
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
+    @staticmethod
+    def _audit_field_label(field_name: str) -> str:
+        cleaned = re.sub(r"[_\s]+", " ", str(field_name or "").strip())
+        cleaned = cleaned.strip()
+        return cleaned.title() if cleaned else "Field"
+
+    @staticmethod
+    def _audit_value_for_compare(value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, float) and pd.isna(value):
+            return None
+        if isinstance(value, (dict, list, tuple, set)):
+            return json.dumps(value, default=str, sort_keys=True)
+        if isinstance(value, str):
+            return value.strip()
+        return str(value)
+
+    @classmethod
+    def _audit_values_equal(cls, left: Any, right: Any) -> bool:
+        return cls._audit_value_for_compare(left) == cls._audit_value_for_compare(right)
+
+    @staticmethod
+    def _audit_value_text(value: Any) -> str:
+        if value is None:
+            return "null"
+        if isinstance(value, float) and pd.isna(value):
+            return "null"
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, (dict, list, tuple, set)):
+            text = json.dumps(value, default=str, sort_keys=True)
+        else:
+            text = str(value)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text if len(text) <= 72 else f"{text[:69]}..."
+
+    def _build_audit_change_summary(
+        self,
+        *,
+        action_type: str,
+        before_payload: dict[str, Any],
+        after_payload: dict[str, Any],
+    ) -> str:
+        action = str(action_type or "").strip().lower()
+        ignored_fields = {
+            "created_at",
+            "created_by",
+            "updated_at",
+            "updated_by",
+            "event_ts",
+            "last_seen_at",
+        }
+
+        changes: list[str] = []
+        if action == "insert":
+            for key in sorted(after_payload.keys()):
+                if key in ignored_fields:
+                    continue
+                changes.append(f"{self._audit_field_label(key)} = {self._audit_value_text(after_payload.get(key))}")
+        elif action == "delete":
+            for key in sorted(before_payload.keys()):
+                if key in ignored_fields:
+                    continue
+                changes.append(f"{self._audit_field_label(key)} was {self._audit_value_text(before_payload.get(key))}")
+        else:
+            for key in sorted(set(before_payload.keys()) | set(after_payload.keys())):
+                if key in ignored_fields:
+                    continue
+                before_value = before_payload.get(key)
+                after_value = after_payload.get(key)
+                if self._audit_values_equal(before_value, after_value):
+                    continue
+                changes.append(
+                    f"{self._audit_field_label(key)}: {self._audit_value_text(before_value)} -> {self._audit_value_text(after_value)}"
+                )
+
+        if not changes:
+            if action == "insert":
+                return "Created record."
+            if action == "delete":
+                return "Removed record."
+            return "Updated record (field-level details unavailable)."
+
+        visible = changes[:4]
+        summary = "; ".join(visible)
+        if len(changes) > 4:
+            summary = f"{summary}; +{len(changes) - 4} more"
+        return summary
+
+    def _with_audit_change_summaries(self, df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            out = df.copy()
+            if "change_summary" not in out.columns:
+                out["change_summary"] = pd.Series(dtype="object")
+            return out
+
+        out = df.copy()
+        if "before_json" not in out.columns:
+            out["before_json"] = None
+        if "after_json" not in out.columns:
+            out["after_json"] = None
+
+        summaries: list[str] = []
+        for row in out.to_dict("records"):
+            before_payload = self._safe_payload_json(row.get("before_json"))
+            after_payload = self._safe_payload_json(row.get("after_json"))
+            summaries.append(
+                self._build_audit_change_summary(
+                    action_type=str(row.get("action_type") or ""),
+                    before_payload=before_payload,
+                    after_payload=after_payload,
+                )
+            )
+        out["change_summary"] = summaries
+        return out
+
+    def _prepare_change_request_payload(self, change_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+        out = dict(payload or {})
+        meta = out.get("_meta") if isinstance(out.get("_meta"), dict) else {}
+        required_level = required_approval_level(change_type)
+        try:
+            required_level = int(meta.get("approval_level_required", required_level))
+        except Exception:
+            required_level = required_approval_level(change_type)
+        required_level = max(1, min(required_level, 3))
+        meta["approval_level_required"] = required_level
+        meta["workflow_action"] = (change_type or "").strip().lower()
+        out["_meta"] = meta
+        return out
+
+    @staticmethod
+    def _default_role_definition_rows() -> dict[str, dict[str, Any]]:
+        out: dict[str, dict[str, Any]] = {}
+        for role_code, payload in default_role_definitions().items():
+            out[str(role_code)] = {
+                "role_code": str(role_code),
+                "role_name": str(payload.get("role_name") or role_code),
+                "description": str(payload.get("description") or "").strip() or None,
+                "approval_level": int(payload.get("approval_level", 0) or 0),
+                "can_edit": bool(payload.get("can_edit")),
+                "can_report": bool(payload.get("can_report")),
+                "can_direct_apply": bool(payload.get("can_direct_apply")),
+                "active_flag": True,
+            }
+        return out
+
+    @staticmethod
+    def _default_role_permissions_by_role() -> dict[str, set[str]]:
+        return {role_code: default_change_permissions_for_role(role_code) for role_code in ROLE_CHOICES}
+
+    @staticmethod
+    def _as_bool(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return False
+        if isinstance(value, (int, float)):
+            return int(value) != 0
+        return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+    @staticmethod
+    def _principal_to_display_name(user_principal: str) -> str:
+        raw = str(user_principal or "").strip()
+        if not raw:
+            return "Unknown User"
+
+        normalized = raw.split("\\")[-1].split("/")[-1]
+        if "@" in normalized:
+            normalized = normalized.split("@", 1)[0]
+        normalized = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", normalized)
+        normalized = re.sub(r"[._-]+", " ", normalized)
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+        if not normalized:
+            return "Unknown User"
+
+        parts = [part.capitalize() for part in normalized.split(" ") if part]
+        if not parts:
+            return "Unknown User"
+        if len(parts) == 1:
+            return f"{parts[0]} User"
+        return " ".join(parts)
+
+    @staticmethod
+    def _parse_user_identity(user_principal: str) -> dict[str, str | None]:
+        login_identifier = str(user_principal or "").strip()
+        if not login_identifier:
+            return {
+                "login_identifier": "",
+                "email": None,
+                "network_id": None,
+                "first_name": None,
+                "last_name": None,
+                "display_name": "Unknown User",
+            }
+
+        email: str | None = None
+        network_id: str | None = None
+        if "@" in login_identifier:
+            email = login_identifier
+        elif "\\" in login_identifier or "/" in login_identifier:
+            network_id = login_identifier.split("\\")[-1].split("/")[-1]
+
+        display_name = VendorRepository._principal_to_display_name(login_identifier)
+        parts = [part for part in display_name.split(" ") if part and part.lower() != "user"]
+        first_name = parts[0] if parts else None
+        last_name = " ".join(parts[1:]) if len(parts) > 1 else None
+
+        return {
+            "login_identifier": login_identifier,
+            "email": email,
+            "network_id": network_id,
+            "first_name": first_name,
+            "last_name": last_name,
+            "display_name": display_name,
+        }
+
+    def _ensure_user_directory_entry(self, user_principal: str) -> str:
+        login_identifier = str(user_principal or "").strip()
+        if not login_identifier:
+            return UNKNOWN_USER_PRINCIPAL
+
+        identity = self._parse_user_identity(login_identifier)
+        lookup_key = login_identifier.lower()
+
+        if self.config.use_mock:
+            existing = self._mock_user_directory.get(lookup_key)
+            if existing:
+                return str(existing.get("user_id") or login_identifier)
+            user_id = f"usr-{uuid.uuid5(uuid.NAMESPACE_DNS, lookup_key).hex[:20]}"
+            self._mock_user_directory[lookup_key] = {
+                "user_id": user_id,
+                "login_identifier": login_identifier,
+                "display_name": str(identity["display_name"] or login_identifier),
+            }
+            return user_id
+
+        now = self._now()
+        existing = self._query_file(
+            "ingestion/select_user_directory_by_login.sql",
+            params=(login_identifier,),
+            columns=[
+                "user_id",
+                "login_identifier",
+                "email",
+                "network_id",
+                "first_name",
+                "last_name",
+                "display_name",
+            ],
+            app_user_directory=self._table("app_user_directory"),
+        )
+        if not existing.empty:
+            user_id = str(existing.iloc[0]["user_id"])
+            try:
+                self._execute_file(
+                    "updates/update_user_directory_profile.sql",
+                    params=(
+                        identity["email"],
+                        identity["network_id"],
+                        identity["first_name"],
+                        identity["last_name"],
+                        identity["display_name"],
+                        now,
+                        now,
+                        user_id,
+                    ),
+                    app_user_directory=self._table("app_user_directory"),
+                )
+            except Exception:
+                pass
+            return user_id
+
+        user_id = f"usr-{uuid.uuid4().hex[:20]}"
+        try:
+            self._execute_file(
+                "inserts/create_user_directory.sql",
+                params=(
+                    user_id,
+                    login_identifier,
+                    identity["email"],
+                    identity["network_id"],
+                    identity["first_name"],
+                    identity["last_name"],
+                    identity["display_name"],
+                    True,
+                    now,
+                    now,
+                    now,
+                ),
+                app_user_directory=self._table("app_user_directory"),
+            )
+            return user_id
+        except Exception:
+            return login_identifier
+
+    def _actor_ref(self, user_principal: str) -> str:
+        if self.config.use_mock:
+            return str(user_principal or "")
+        return self._ensure_user_directory_entry(user_principal)
+
+    def _user_display_lookup(self) -> dict[str, str]:
+        lookup: dict[str, str] = {}
+        if self.config.use_mock:
+            for entry in self._mock_user_directory.values():
+                user_id = str(entry.get("user_id") or "").strip()
+                login_identifier = str(entry.get("login_identifier") or "").strip()
+                display_name = str(entry.get("display_name") or "").strip()
+                if user_id and display_name:
+                    lookup[user_id] = display_name
+                if login_identifier and display_name:
+                    lookup[login_identifier] = display_name
+                    lookup[login_identifier.lower()] = display_name
+            return lookup
+
+        df = self._query_file(
+            "ingestion/select_user_directory_all.sql",
+            columns=["user_id", "login_identifier", "display_name"],
+            app_user_directory=self._table("app_user_directory"),
+        )
+        if df.empty:
+            return lookup
+        for row in df.to_dict("records"):
+            user_id = str(row.get("user_id") or "").strip()
+            login_identifier = str(row.get("login_identifier") or "").strip()
+            display_name = str(row.get("display_name") or "").strip()
+            if not display_name:
+                continue
+            if user_id:
+                lookup[user_id] = display_name
+            if login_identifier:
+                lookup[login_identifier] = display_name
+                lookup[login_identifier.lower()] = display_name
+        return lookup
+
+    def _decorate_user_columns(self, df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+        if df.empty:
+            return df
+        out = df.copy()
+        lookup = self._user_display_lookup()
+
+        def _resolve(value: Any) -> Any:
+            if value is None:
+                return value
+            raw = str(value).strip()
+            if not raw:
+                return value
+            if raw in lookup:
+                return lookup[raw]
+            lowered = raw.lower()
+            if lowered in lookup:
+                return lookup[lowered]
+            if raw.startswith("usr-"):
+                return raw
+            return self._principal_to_display_name(raw)
+
+        for column in columns:
+            if column in out.columns:
+                out[column] = out[column].map(_resolve)
+        return out
+
+    @staticmethod
     def _apply_row_overrides(
         df: pd.DataFrame,
         overrides: dict[str, dict[str, Any]],
@@ -216,6 +651,32 @@ class VendorRepository:
             base = base[~base["offering_contact_id"].astype(str).isin(self._mock_removed_offering_contact_ids)].copy()
         return base
 
+    def _mock_vendor_owners_df(self) -> pd.DataFrame:
+        base = mock_data.vendor_business_owners().copy()
+        if self._mock_new_vendor_owners:
+            base = pd.concat([base, pd.DataFrame(self._mock_new_vendor_owners)], ignore_index=True)
+        if "vendor_owner_id" in base.columns and self._mock_removed_vendor_owner_ids:
+            base = base[~base["vendor_owner_id"].astype(str).isin(self._mock_removed_vendor_owner_ids)].copy()
+        return base
+
+    def _mock_vendor_contacts_df(self) -> pd.DataFrame:
+        base = mock_data.contacts().copy()
+        if self._mock_new_vendor_contacts:
+            base = pd.concat([base, pd.DataFrame(self._mock_new_vendor_contacts)], ignore_index=True)
+        if "vendor_contact_id" in base.columns and self._mock_removed_vendor_contact_ids:
+            base = base[~base["vendor_contact_id"].astype(str).isin(self._mock_removed_vendor_contact_ids)].copy()
+        return base
+
+    def _mock_vendor_org_assignments_df(self) -> pd.DataFrame:
+        base = mock_data.vendor_org_assignments().copy()
+        if self._mock_new_vendor_org_assignments:
+            base = pd.concat([base, pd.DataFrame(self._mock_new_vendor_org_assignments)], ignore_index=True)
+        if "vendor_org_assignment_id" in base.columns and self._mock_removed_vendor_org_assignment_ids:
+            base = base[
+                ~base["vendor_org_assignment_id"].astype(str).isin(self._mock_removed_vendor_org_assignment_ids)
+            ].copy()
+        return base
+
     def _mock_append_audit_event(
         self,
         *,
@@ -223,6 +684,8 @@ class VendorRepository:
         entity_id: str,
         action_type: str,
         actor_user_principal: str,
+        before_json: dict[str, Any] | None = None,
+        after_json: dict[str, Any] | None = None,
         request_id: str | None = None,
     ) -> str:
         change_event_id = str(uuid.uuid4())
@@ -234,6 +697,8 @@ class VendorRepository:
                 "action_type": action_type,
                 "event_ts": self._now().isoformat(),
                 "actor_user_principal": actor_user_principal,
+                "before_json": before_json,
+                "after_json": after_json,
                 "request_id": request_id,
             }
         )
@@ -251,12 +716,15 @@ class VendorRepository:
         request_id: str | None = None,
     ) -> str:
         change_event_id = str(uuid.uuid4())
+        actor_ref = self._actor_ref(actor_user_principal)
         if self.config.use_mock:
             return self._mock_append_audit_event(
                 entity_name=entity_name,
                 entity_id=entity_id,
                 action_type=action_type,
-                actor_user_principal=actor_user_principal,
+                actor_user_principal=actor_ref,
+                before_json=before_json,
+                after_json=after_json,
                 request_id=request_id,
             )
         try:
@@ -269,7 +737,7 @@ class VendorRepository:
                     action_type,
                     json.dumps(before_json, default=str) if before_json is not None else None,
                     json.dumps(after_json, default=str) if after_json is not None else None,
-                    actor_user_principal,
+                    actor_ref,
                     self._now(),
                     request_id,
                 ),
@@ -289,6 +757,10 @@ class VendorRepository:
         base = mock_data.change_requests().copy()
         if self._mock_change_request_overrides:
             base = pd.concat([base, pd.DataFrame(self._mock_change_request_overrides)], ignore_index=True)
+        if "change_request_id" in base.columns:
+            if "updated_at" in base.columns:
+                base = base.sort_values("updated_at")
+            base = base.drop_duplicates(subset=["change_request_id"], keep="last")
         return base
 
     def _mock_audit_changes_df(self) -> pd.DataFrame:
@@ -395,6 +867,7 @@ class VendorRepository:
             "core_vendor",
             "sec_user_role_map",
             "app_user_settings",
+            "app_user_directory",
         )
         missing_or_blocked: list[str] = []
         for table_name in required_tables:
@@ -404,7 +877,7 @@ class VendorRepository:
                 missing_or_blocked.append(self._table(table_name))
 
         if missing_or_blocked:
-            raise RuntimeError(
+            raise SchemaBootstrapRequiredError(
                 "Databricks schema is not initialized or access is blocked. "
                 f"Run the bootstrap SQL manually before starting the app: {self.config.schema_bootstrap_sql_path}. "
                 f"Configured schema: {self.config.fq_schema}. "
@@ -414,6 +887,7 @@ class VendorRepository:
         self._runtime_tables_ensured = True
 
     def bootstrap_user_access(self, user_principal: str) -> set[str]:
+        self._ensure_user_directory_entry(user_principal)
         roles = self.get_user_roles(user_principal)
         if roles:
             return roles
@@ -421,6 +895,8 @@ class VendorRepository:
         return self.get_user_roles(user_principal)
 
     def ensure_user_record(self, user_principal: str) -> None:
+        self._ensure_user_directory_entry(user_principal)
+
         if self.config.use_mock:
             current = self.get_user_roles(user_principal)
             if not current:
@@ -455,6 +931,7 @@ class VendorRepository:
             pass
 
     def get_user_setting(self, user_principal: str, setting_key: str) -> dict[str, Any]:
+        self._ensure_user_directory_entry(user_principal)
         if self.config.use_mock:
             return self._mock_user_settings.get((user_principal, setting_key), {})
 
@@ -472,6 +949,7 @@ class VendorRepository:
             return {}
 
     def save_user_setting(self, user_principal: str, setting_key: str, setting_value: dict[str, Any]) -> None:
+        self._ensure_user_directory_entry(user_principal)
         if self.config.use_mock:
             self._mock_user_settings[(user_principal, setting_key)] = setting_value
             return
@@ -495,11 +973,12 @@ class VendorRepository:
     def log_usage_event(
         self, user_principal: str, page_name: str, event_type: str, payload: dict[str, Any] | None = None
     ) -> None:
+        actor_ref = self._actor_ref(user_principal)
         if self.config.use_mock:
             self._mock_usage_events.append(
                 {
                     "usage_event_id": str(uuid.uuid4()),
-                    "user_principal": user_principal,
+                    "user_principal": actor_ref,
                     "page_name": page_name,
                     "event_type": event_type,
                     "event_ts": self._now().isoformat(),
@@ -513,7 +992,7 @@ class VendorRepository:
                 "inserts/log_usage_event.sql",
                 params=(
                     str(uuid.uuid4()),
-                    user_principal,
+                    actor_ref,
                     page_name,
                     event_type,
                     self._now(),
@@ -534,7 +1013,7 @@ class VendorRepository:
             columns=["user_principal"],
         )
         if df.empty:
-            return "unknown_user"
+            return UNKNOWN_USER_PRINCIPAL
         return str(df.iloc[0]["user_principal"])
 
     def get_user_roles(self, user_principal: str) -> set[str]:
@@ -551,6 +1030,127 @@ class VendorRepository:
             sec_user_role_map=self._table("sec_user_role_map"),
         )
         return set(df["role_code"].tolist()) if not df.empty else set()
+
+    def get_user_display_name(self, user_principal: str) -> str:
+        raw = str(user_principal or "").strip()
+        if not raw:
+            return "Unknown User"
+        user_ref = self._ensure_user_directory_entry(raw)
+        lookup = self._user_display_lookup()
+        return lookup.get(user_ref) or lookup.get(raw) or lookup.get(raw.lower()) or self._principal_to_display_name(raw)
+
+    def _mock_seed_user_directory(self) -> None:
+        principals: set[str] = set()
+        try:
+            for row in mock_data.role_map().to_dict("records"):
+                principals.add(str(row.get("user_principal") or "").strip())
+        except Exception:
+            pass
+        for row in self._mock_projects_df().to_dict("records"):
+            principals.add(str(row.get("owner_principal") or "").strip())
+        for row in self._mock_doc_links_df().to_dict("records"):
+            principals.add(str(row.get("owner") or "").strip())
+        for row in self._mock_vendors_df().to_dict("records"):
+            principals.add(str(row.get("updated_by") or "").strip())
+        principals.add("admin@example.com")
+        principals.update(
+            {
+                "pm@example.com",
+                "procurement@example.com",
+                "secops@example.com",
+                "owner@example.com",
+            }
+        )
+        for principal in principals:
+            if principal:
+                self._ensure_user_directory_entry(principal)
+
+    def search_user_directory(self, q: str = "", limit: int = 20) -> pd.DataFrame:
+        normalized_limit = max(1, min(int(limit or 20), 250))
+        columns = ["user_id", "login_identifier", "display_name", "label"]
+        if self.config.use_mock:
+            self._mock_seed_user_directory()
+            rows = [
+                {
+                    "user_id": str(item.get("user_id") or ""),
+                    "login_identifier": str(item.get("login_identifier") or ""),
+                    "display_name": str(item.get("display_name") or ""),
+                }
+                for item in self._mock_user_directory.values()
+            ]
+            df = pd.DataFrame(rows, columns=["user_id", "login_identifier", "display_name"])
+        else:
+            df = self._query_file(
+                "ingestion/select_user_directory_all.sql",
+                columns=["user_id", "login_identifier", "display_name"],
+                app_user_directory=self._table("app_user_directory"),
+            )
+
+        if df.empty:
+            return pd.DataFrame(columns=columns)
+
+        for field in ("user_id", "login_identifier", "display_name"):
+            if field not in df.columns:
+                df[field] = ""
+            df[field] = df[field].fillna("").astype(str).str.strip()
+
+        needle = (q or "").strip().lower()
+        if needle:
+            mask = (
+                df["login_identifier"].str.lower().str.contains(needle, regex=False, na=False)
+                | df["display_name"].str.lower().str.contains(needle, regex=False, na=False)
+            )
+            df = df[mask].copy()
+
+        if df.empty:
+            return pd.DataFrame(columns=columns)
+
+        df = df[df["login_identifier"] != ""].copy()
+        if df.empty:
+            return pd.DataFrame(columns=columns)
+
+        df = df.sort_values(["display_name", "login_identifier"], ascending=[True, True])
+        df = df.drop_duplicates(subset=["login_identifier"], keep="first")
+        df = df.head(normalized_limit).copy()
+        df["label"] = df.apply(
+            lambda row: (
+                f"{row['display_name']} ({row['login_identifier']})"
+                if str(row["display_name"]).strip()
+                else str(row["login_identifier"])
+            ),
+            axis=1,
+        )
+        return df[columns]
+
+    def resolve_user_login_identifier(self, user_value: str) -> str | None:
+        cleaned = str(user_value or "").strip()
+        if not cleaned:
+            return None
+
+        if not self.config.use_mock:
+            exact = self._query_file(
+                "ingestion/select_user_directory_by_login.sql",
+                params=(cleaned,),
+                columns=["login_identifier"],
+                app_user_directory=self._table("app_user_directory"),
+            )
+            if not exact.empty:
+                return str(exact.iloc[0]["login_identifier"]).strip()
+
+        candidates = self.search_user_directory(q=cleaned, limit=250)
+        if candidates.empty:
+            return None
+
+        lowered = cleaned.lower()
+        for row in candidates.to_dict("records"):
+            login_identifier = str(row.get("login_identifier") or "").strip()
+            if login_identifier.lower() == lowered:
+                return login_identifier
+        for row in candidates.to_dict("records"):
+            display_name = str(row.get("display_name") or "").strip()
+            if display_name and display_name.lower() == lowered:
+                return str(row.get("login_identifier") or "").strip() or None
+        return None
 
     def dashboard_kpis(self) -> dict[str, int]:
         if self.config.use_mock:
@@ -1732,7 +2332,7 @@ class VendorRepository:
 
     def get_vendor_contacts(self, vendor_id: str) -> pd.DataFrame:
         if self.config.use_mock:
-            return mock_data.contacts().query("vendor_id == @vendor_id")
+            return self._mock_vendor_contacts_df().query("vendor_id == @vendor_id")
         return self._query_file(
             "ingestion/select_vendor_contacts.sql",
             params=(vendor_id,),
@@ -1758,7 +2358,7 @@ class VendorRepository:
 
     def get_vendor_business_owners(self, vendor_id: str) -> pd.DataFrame:
         if self.config.use_mock:
-            return mock_data.vendor_business_owners().query("vendor_id == @vendor_id")
+            return self._mock_vendor_owners_df().query("vendor_id == @vendor_id")
         return self._query_file(
             "ingestion/select_vendor_business_owners.sql",
             params=(vendor_id,),
@@ -1768,7 +2368,7 @@ class VendorRepository:
 
     def get_vendor_org_assignments(self, vendor_id: str) -> pd.DataFrame:
         if self.config.use_mock:
-            return mock_data.vendor_org_assignments().query("vendor_id == @vendor_id")
+            return self._mock_vendor_org_assignments_df().query("vendor_id == @vendor_id")
         return self._query_file(
             "ingestion/select_vendor_org_assignments.sql",
             params=(vendor_id,),
@@ -1843,8 +2443,9 @@ class VendorRepository:
         if self.config.use_mock:
             contracts = self._mock_contracts_df().query("vendor_id == @vendor_id")[["contract_id"]]
             events = mock_data.contract_events()
-            return events.merge(contracts, on="contract_id", how="inner").sort_values("event_ts", ascending=False)
-        return self._query_file(
+            out = events.merge(contracts, on="contract_id", how="inner").sort_values("event_ts", ascending=False)
+            return self._decorate_user_columns(out, ["actor_user_principal"])
+        out = self._query_file(
             "ingestion/select_vendor_contract_events.sql",
             params=(vendor_id,),
             columns=[
@@ -1859,6 +2460,7 @@ class VendorRepository:
             core_contract_event=self._table("core_contract_event"),
             core_contract=self._table("core_contract"),
         )
+        return self._decorate_user_columns(out, ["actor_user_principal"])
 
     def get_vendor_demos(self, vendor_id: str) -> pd.DataFrame:
         if self.config.use_mock:
@@ -1905,8 +2507,9 @@ class VendorRepository:
 
     def get_vendor_change_requests(self, vendor_id: str) -> pd.DataFrame:
         if self.config.use_mock:
-            return self._mock_change_requests_df().query("vendor_id == @vendor_id").sort_values("submitted_at", ascending=False)
-        return self._query_file(
+            out = self._mock_change_requests_df().query("vendor_id == @vendor_id").sort_values("submitted_at", ascending=False)
+            return self._decorate_user_columns(out, ["requestor_user_principal"])
+        out = self._query_file(
             "ingestion/select_vendor_change_requests.sql",
             params=(vendor_id,),
             columns=[
@@ -1921,14 +2524,138 @@ class VendorRepository:
             ],
             app_vendor_change_request=self._table("app_vendor_change_request"),
         )
+        return self._decorate_user_columns(out, ["requestor_user_principal"])
+
+    def list_change_requests(self, *, status: str = "all") -> pd.DataFrame:
+        normalized_status = str(status or "all").strip().lower()
+        if self.config.use_mock:
+            rows = self._mock_change_requests_df().copy()
+            if normalized_status != "all" and "status" in rows.columns:
+                rows = rows[rows["status"].astype(str).str.lower() == normalized_status].copy()
+            if "submitted_at" in rows.columns:
+                rows = rows.sort_values("submitted_at", ascending=False)
+            return self._decorate_user_columns(rows, ["requestor_user_principal"])
+
+        where_clause = ""
+        params: tuple[Any, ...] = ()
+        if normalized_status != "all":
+            where_clause = "WHERE lower(status) = lower(%s)"
+            params = (normalized_status,)
+        out = self._query_file(
+            "ingestion/select_all_vendor_change_requests.sql",
+            params=params,
+            columns=[
+                "change_request_id",
+                "vendor_id",
+                "requestor_user_principal",
+                "change_type",
+                "requested_payload_json",
+                "status",
+                "submitted_at",
+                "updated_at",
+            ],
+            where_clause=where_clause,
+            app_vendor_change_request=self._table("app_vendor_change_request"),
+        )
+        return self._decorate_user_columns(out, ["requestor_user_principal"])
+
+    def get_change_request_by_id(self, change_request_id: str) -> dict[str, Any] | None:
+        request_id = str(change_request_id or "").strip()
+        if not request_id:
+            return None
+        if self.config.use_mock:
+            rows = self._mock_change_requests_df()
+            if rows.empty:
+                return None
+            match = rows[rows["change_request_id"].astype(str) == request_id]
+            if match.empty:
+                return None
+            out = self._decorate_user_columns(match.tail(1), ["requestor_user_principal"])
+            return out.iloc[-1].to_dict()
+        df = self._query_file(
+            "ingestion/select_vendor_change_request_by_id.sql",
+            params=(request_id,),
+            columns=[
+                "change_request_id",
+                "vendor_id",
+                "requestor_user_principal",
+                "change_type",
+                "requested_payload_json",
+                "status",
+                "submitted_at",
+                "updated_at",
+            ],
+            app_vendor_change_request=self._table("app_vendor_change_request"),
+        )
+        if df.empty:
+            return None
+        out = self._decorate_user_columns(df, ["requestor_user_principal"])
+        return out.iloc[0].to_dict()
+
+    def update_change_request_status(
+        self,
+        *,
+        change_request_id: str,
+        new_status: str,
+        actor_user_principal: str,
+        notes: str | None = None,
+    ) -> dict[str, Any]:
+        request_id = str(change_request_id or "").strip()
+        target_status = str(new_status or "").strip().lower()
+        if not request_id:
+            raise ValueError("Change request ID is required.")
+        if target_status not in {"submitted", "in_review", "approved", "rejected"}:
+            raise ValueError("Unsupported change request status.")
+
+        current = self.get_change_request_by_id(request_id)
+        if not current:
+            raise ValueError("Change request not found.")
+
+        old_status = str(current.get("status") or "").strip().lower() or "submitted"
+        now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
+        if self.config.use_mock:
+            updated = dict(current)
+            updated["status"] = target_status
+            updated["updated_at"] = now.isoformat()
+            self._mock_change_request_overrides.append(updated)
+        else:
+            self._execute_file(
+                "updates/update_vendor_change_request_status.sql",
+                params=(target_status, now, request_id),
+                app_vendor_change_request=self._table("app_vendor_change_request"),
+            )
+
+        try:
+            self._execute_file(
+                "inserts/create_workflow_event.sql",
+                params=(
+                    str(uuid.uuid4()),
+                    "vendor_change_request",
+                    request_id,
+                    old_status,
+                    target_status,
+                    actor_ref,
+                    now,
+                    (notes or "").strip() or f"status changed to {target_status}",
+                ),
+                audit_workflow_event=self._table("audit_workflow_event"),
+            )
+        except Exception:
+            pass
+
+        updated_row = self.get_change_request_by_id(request_id)
+        return updated_row or {"change_request_id": request_id, "status": target_status}
 
     def get_vendor_audit_events(self, vendor_id: str) -> pd.DataFrame:
         if self.config.use_mock:
             events = self._mock_audit_changes_df()
             requests = self._mock_change_requests_df().query("vendor_id == @vendor_id")["change_request_id"].tolist()
             vendor_events = events[(events["entity_id"] == vendor_id) | (events["request_id"].isin(requests))]
-            return vendor_events.sort_values("event_ts", ascending=False)
-        return self._query_file(
+            out = vendor_events.sort_values("event_ts", ascending=False)
+            out = self._with_audit_change_summaries(out)
+            return self._decorate_user_columns(out, ["actor_user_principal"])
+        out = self._query_file(
             "ingestion/select_vendor_audit_events.sql",
             params=(vendor_id, vendor_id),
             columns=[
@@ -1938,11 +2665,15 @@ class VendorRepository:
                 "action_type",
                 "event_ts",
                 "actor_user_principal",
+                "before_json",
+                "after_json",
                 "request_id",
             ],
             audit_entity_change=self._table("audit_entity_change"),
             app_vendor_change_request=self._table("app_vendor_change_request"),
         )
+        out = self._with_audit_change_summaries(out)
+        return self._decorate_user_columns(out, ["actor_user_principal"])
 
     def get_vendor_source_lineage(self, vendor_id: str) -> pd.DataFrame:
         profile = self.get_vendor_profile(vendor_id)
@@ -2427,6 +3158,213 @@ class VendorRepository:
         )
         return {"request_id": request_id, "change_event_id": change_event_id}
 
+    def add_vendor_owner(
+        self,
+        *,
+        vendor_id: str,
+        owner_user_principal: str,
+        owner_role: str,
+        actor_user_principal: str,
+    ) -> str:
+        if self.get_vendor_profile(vendor_id).empty:
+            raise ValueError("Vendor not found.")
+        owner_principal = owner_user_principal.strip()
+        if not owner_principal:
+            raise ValueError("Owner principal is required.")
+        owner_role_value = self._normalize_choice(
+            owner_role,
+            field_name="Owner role",
+            allowed=OWNER_ROLE_CHOICES,
+            default="business_owner",
+        )
+        owner_id = self._new_id("vown")
+        now = self._now()
+        row = {
+            "vendor_owner_id": owner_id,
+            "vendor_id": vendor_id,
+            "owner_user_principal": owner_principal,
+            "owner_role": owner_role_value,
+            "active_flag": True,
+            "updated_at": now.isoformat(),
+            "updated_by": actor_user_principal,
+        }
+        if self.config.use_mock:
+            self._mock_new_vendor_owners.append(row)
+            self._write_audit_entity_change(
+                entity_name="core_vendor_business_owner",
+                entity_id=owner_id,
+                action_type="insert",
+                actor_user_principal=actor_user_principal,
+                before_json=None,
+                after_json=row,
+                request_id=None,
+            )
+            return owner_id
+
+        self._execute_file(
+            "inserts/add_vendor_owner.sql",
+            params=(
+                owner_id,
+                vendor_id,
+                row["owner_user_principal"],
+                row["owner_role"],
+                True,
+                now,
+                actor_user_principal,
+            ),
+            core_vendor_business_owner=self._table("core_vendor_business_owner"),
+        )
+        self._write_audit_entity_change(
+            entity_name="core_vendor_business_owner",
+            entity_id=owner_id,
+            action_type="insert",
+            actor_user_principal=actor_user_principal,
+            before_json=None,
+            after_json=row,
+            request_id=None,
+        )
+        return owner_id
+
+    def add_vendor_org_assignment(
+        self,
+        *,
+        vendor_id: str,
+        org_id: str,
+        assignment_type: str,
+        actor_user_principal: str,
+    ) -> str:
+        if self.get_vendor_profile(vendor_id).empty:
+            raise ValueError("Vendor not found.")
+        org_value = org_id.strip()
+        if not org_value:
+            raise ValueError("Org ID is required.")
+        assignment_type_value = self._normalize_choice(
+            assignment_type,
+            field_name="Assignment type",
+            allowed=ASSIGNMENT_TYPE_CHOICES,
+            default="consumer",
+        )
+        assignment_id = self._new_id("voa")
+        now = self._now()
+        row = {
+            "vendor_org_assignment_id": assignment_id,
+            "vendor_id": vendor_id,
+            "org_id": org_value,
+            "assignment_type": assignment_type_value,
+            "active_flag": True,
+            "updated_at": now.isoformat(),
+            "updated_by": actor_user_principal,
+        }
+        if self.config.use_mock:
+            self._mock_new_vendor_org_assignments.append(row)
+            self._write_audit_entity_change(
+                entity_name="core_vendor_org_assignment",
+                entity_id=assignment_id,
+                action_type="insert",
+                actor_user_principal=actor_user_principal,
+                before_json=None,
+                after_json=row,
+                request_id=None,
+            )
+            return assignment_id
+
+        self._execute_file(
+            "inserts/add_vendor_org_assignment.sql",
+            params=(
+                assignment_id,
+                vendor_id,
+                row["org_id"],
+                row["assignment_type"],
+                True,
+                now,
+                actor_user_principal,
+            ),
+            core_vendor_org_assignment=self._table("core_vendor_org_assignment"),
+        )
+        self._write_audit_entity_change(
+            entity_name="core_vendor_org_assignment",
+            entity_id=assignment_id,
+            action_type="insert",
+            actor_user_principal=actor_user_principal,
+            before_json=None,
+            after_json=row,
+            request_id=None,
+        )
+        return assignment_id
+
+    def add_vendor_contact(
+        self,
+        *,
+        vendor_id: str,
+        full_name: str,
+        contact_type: str,
+        email: str | None,
+        phone: str | None,
+        actor_user_principal: str,
+    ) -> str:
+        if self.get_vendor_profile(vendor_id).empty:
+            raise ValueError("Vendor not found.")
+        contact_name = full_name.strip()
+        if not contact_name:
+            raise ValueError("Contact name is required.")
+        contact_type_value = self._normalize_choice(
+            contact_type,
+            field_name="Contact type",
+            allowed=CONTACT_TYPE_CHOICES,
+            default="business",
+        )
+        contact_id = self._new_id("con")
+        now = self._now()
+        row = {
+            "vendor_contact_id": contact_id,
+            "vendor_id": vendor_id,
+            "contact_type": contact_type_value,
+            "full_name": contact_name,
+            "email": (email or "").strip() or None,
+            "phone": (phone or "").strip() or None,
+            "active_flag": True,
+            "updated_at": now.isoformat(),
+            "updated_by": actor_user_principal,
+        }
+        if self.config.use_mock:
+            self._mock_new_vendor_contacts.append(row)
+            self._write_audit_entity_change(
+                entity_name="core_vendor_contact",
+                entity_id=contact_id,
+                action_type="insert",
+                actor_user_principal=actor_user_principal,
+                before_json=None,
+                after_json=row,
+                request_id=None,
+            )
+            return contact_id
+
+        self._execute_file(
+            "inserts/add_vendor_contact.sql",
+            params=(
+                contact_id,
+                vendor_id,
+                row["contact_type"],
+                row["full_name"],
+                row["email"],
+                row["phone"],
+                True,
+                now,
+                actor_user_principal,
+            ),
+            core_vendor_contact=self._table("core_vendor_contact"),
+        )
+        self._write_audit_entity_change(
+            entity_name="core_vendor_contact",
+            entity_id=contact_id,
+            action_type="insert",
+            actor_user_principal=actor_user_principal,
+            before_json=None,
+            after_json=row,
+            request_id=None,
+        )
+        return contact_id
+
     def add_offering_owner(
         self,
         *,
@@ -2440,12 +3378,18 @@ class VendorRepository:
             raise ValueError("Offering does not belong to vendor.")
         if not owner_user_principal.strip():
             raise ValueError("Owner principal is required.")
+        owner_role_value = self._normalize_choice(
+            owner_role,
+            field_name="Owner role",
+            allowed=OWNER_ROLE_CHOICES,
+            default="business_owner",
+        )
         owner_id = self._new_id("oown")
         row = {
             "offering_owner_id": owner_id,
             "offering_id": offering_id,
             "owner_user_principal": owner_user_principal.strip(),
-            "owner_role": owner_role.strip() or "business_owner",
+            "owner_role": owner_role_value,
             "active_flag": True,
         }
         if self.config.use_mock:
@@ -2536,11 +3480,17 @@ class VendorRepository:
             raise ValueError("Offering does not belong to vendor.")
         if not full_name.strip():
             raise ValueError("Contact name is required.")
+        contact_type_value = self._normalize_choice(
+            contact_type,
+            field_name="Contact type",
+            allowed=CONTACT_TYPE_CHOICES,
+            default="business",
+        )
         contact_id = self._new_id("ocon")
         row = {
             "offering_contact_id": contact_id,
             "offering_id": offering_id,
-            "contact_type": contact_type.strip() or "business",
+            "contact_type": contact_type_value,
             "full_name": full_name.strip(),
             "email": (email or "").strip() or None,
             "phone": (phone or "").strip() or None,
@@ -3727,9 +4677,10 @@ class VendorRepository:
             filtered = events[events["entity_id"].astype(str).isin(ids)].copy()
             if "event_ts" in filtered.columns:
                 filtered = filtered.sort_values("event_ts", ascending=False)
-            return filtered
+            filtered = self._with_audit_change_summaries(filtered)
+            return self._decorate_user_columns(filtered, ["actor_user_principal"])
 
-        return self._query_file(
+        out = self._query_file(
             "ingestion/select_project_activity.sql",
             params=(project_id, project_id, vendor_id, vendor_id, project_id, project_id, vendor_id, vendor_id),
             columns=[
@@ -3739,6 +4690,8 @@ class VendorRepository:
                 "action_type",
                 "event_ts",
                 "actor_user_principal",
+                "before_json",
+                "after_json",
                 "request_id",
             ],
             audit_entity_change=self._table("audit_entity_change"),
@@ -3746,6 +4699,8 @@ class VendorRepository:
             app_document_link=self._table("app_document_link"),
             app_project_note=self._table("app_project_note"),
         )
+        out = self._with_audit_change_summaries(out)
+        return self._decorate_user_columns(out, ["actor_user_principal"])
 
     def get_doc_link(self, doc_id: str) -> dict[str, Any] | None:
         if self.config.use_mock:
@@ -3753,7 +4708,9 @@ class VendorRepository:
             matched = docs[docs["doc_id"].astype(str) == str(doc_id)]
             if matched.empty:
                 return None
-            return matched.iloc[0].to_dict()
+            row = matched.iloc[0].to_dict()
+            row["doc_fqdn"] = re.sub(r"^https?://", "", str(row.get("doc_url") or "")).split("/", 1)[0].lower()
+            return row
         rows = self._query_file(
             "ingestion/select_doc_link_by_id.sql",
             params=(doc_id,),
@@ -3776,7 +4733,9 @@ class VendorRepository:
         )
         if rows.empty:
             return None
-        return rows.iloc[0].to_dict()
+        row = rows.iloc[0].to_dict()
+        row["doc_fqdn"] = re.sub(r"^https?://", "", str(row.get("doc_url") or "")).split("/", 1)[0].lower()
+        return row
 
     def list_docs(self, entity_type: str, entity_id: str) -> pd.DataFrame:
         allowed = {"vendor", "project", "offering", "demo"}
@@ -3805,8 +4764,10 @@ class VendorRepository:
             ].copy()
             if "updated_at" in docs.columns:
                 docs = docs.sort_values("updated_at", ascending=False)
+            if "doc_url" in docs.columns:
+                docs["doc_fqdn"] = docs["doc_url"].fillna("").astype(str).str.extract(r"https?://([^/]+)", expand=False).fillna("").str.lower()
             return docs
-        return self._query_file(
+        out = self._query_file(
             "ingestion/select_docs_by_entity.sql",
             params=(entity_type, entity_id),
             columns=[
@@ -3825,6 +4786,9 @@ class VendorRepository:
             ],
             app_document_link=self._table("app_document_link"),
         )
+        if not out.empty and "doc_url" in out.columns:
+            out["doc_fqdn"] = out["doc_url"].fillna("").astype(str).str.extract(r"https?://([^/]+)", expand=False).fillna("").str.lower()
+        return out
 
     def create_doc_link(
         self,
@@ -3837,6 +4801,7 @@ class VendorRepository:
         tags: str | None,
         owner: str | None,
         actor_user_principal: str,
+        doc_fqdn: str | None = None,
     ) -> str:
         allowed = {"vendor", "project", "offering", "demo"}
         if entity_type not in allowed:
@@ -3850,6 +4815,13 @@ class VendorRepository:
             raise ValueError("Document URL is required.")
         if not clean_type:
             raise ValueError("Document type is required.")
+        clean_fqdn = (doc_fqdn or "").strip().lower()
+        clean_owner = (owner or "").strip()
+        if not clean_owner:
+            clean_owner = str(actor_user_principal or "").strip()
+        resolved_owner = self.resolve_user_login_identifier(clean_owner)
+        if not resolved_owner:
+            raise ValueError("Owner must exist in the app user directory.")
 
         doc_id = self._new_id("doc")
         now = self._now()
@@ -3860,8 +4832,9 @@ class VendorRepository:
             "doc_title": clean_title,
             "doc_url": clean_url,
             "doc_type": clean_type,
+            "doc_fqdn": clean_fqdn or None,
             "tags": (tags or "").strip() or None,
-            "owner": (owner or "").strip() or None,
+            "owner": resolved_owner,
             "active_flag": True,
             "created_at": now.isoformat(),
             "created_by": actor_user_principal,
@@ -3891,7 +4864,7 @@ class VendorRepository:
                 clean_url,
                 clean_type,
                 row["tags"],
-                row["owner"],
+                resolved_owner,
                 True,
                 now,
                 actor_user_principal,
@@ -3921,6 +4894,11 @@ class VendorRepository:
         clean_updates = {k: v for k, v in updates.items() if k in allowed}
         if not clean_updates:
             raise ValueError("No updates were provided.")
+        if "owner" in clean_updates:
+            resolved_owner = self.resolve_user_login_identifier(str(clean_updates.get("owner") or "").strip())
+            if not resolved_owner:
+                raise ValueError("Owner must exist in the app user directory.")
+            clean_updates["owner"] = resolved_owner
         before = dict(current)
         after = dict(current)
         after.update(clean_updates)
@@ -4006,30 +4984,36 @@ class VendorRepository:
     ) -> str:
         request_id = str(uuid.uuid4())
         now = self._now()
+        change_type_clean = (change_type or "").strip().lower()
+        vendor_id_clean = str(vendor_id or "").strip() or GLOBAL_CHANGE_VENDOR_ID
+        payload_clean = self._prepare_change_request_payload(change_type_clean, payload or {})
+        requestor_ref = self._actor_ref(requestor_user_principal)
 
         if self.config.use_mock:
             self._mock_change_request_overrides.append(
                 {
                     "change_request_id": request_id,
-                    "vendor_id": vendor_id,
-                    "requestor_user_principal": requestor_user_principal,
-                    "change_type": change_type,
-                    "requested_payload_json": self._serialize_payload(payload),
+                    "vendor_id": vendor_id_clean,
+                    "requestor_user_principal": requestor_ref,
+                    "change_type": change_type_clean,
+                    "requested_payload_json": self._serialize_payload(payload_clean),
                     "status": "submitted",
                     "submitted_at": now.isoformat(),
                     "updated_at": now.isoformat(),
                 }
             )
-            self._mock_audit_change_overrides.append(
-                {
-                    "change_event_id": str(uuid.uuid4()),
-                    "entity_name": "app_vendor_change_request",
-                    "entity_id": request_id,
-                    "action_type": "insert",
-                    "event_ts": now.isoformat(),
-                    "actor_user_principal": requestor_user_principal,
-                    "request_id": request_id,
-                }
+            self._write_audit_entity_change(
+                entity_name="app_vendor_change_request",
+                entity_id=request_id,
+                action_type="insert",
+                actor_user_principal=requestor_ref,
+                before_json=None,
+                after_json={
+                    "vendor_id": vendor_id_clean,
+                    "change_type": change_type_clean,
+                    "status": "submitted",
+                },
+                request_id=request_id,
             )
             return request_id
 
@@ -4038,18 +5022,18 @@ class VendorRepository:
                 "inserts/create_vendor_change_request.sql",
                 params=(
                     request_id,
-                    vendor_id,
-                    requestor_user_principal,
-                    change_type,
-                    json.dumps(payload),
+                    vendor_id_clean,
+                    requestor_ref,
+                    change_type_clean,
+                    self._serialize_payload(payload_clean),
                     "submitted",
                     now,
                     now,
                 ),
                 app_vendor_change_request=self._table("app_vendor_change_request"),
             )
-        except Exception:
-            return request_id
+        except Exception as exc:
+            raise RuntimeError("Could not persist change request.") from exc
 
         try:
             self._execute_file(
@@ -4060,9 +5044,9 @@ class VendorRepository:
                     request_id,
                     None,
                     "submitted",
-                    requestor_user_principal,
+                    requestor_ref,
                     now,
-                    f"{change_type} request created",
+                    f"{change_type_clean} request created",
                 ),
                 audit_workflow_event=self._table("audit_workflow_event"),
             )
@@ -4086,6 +5070,7 @@ class VendorRepository:
             raise ValueError("A reason is required for audited updates.")
 
         now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
         request_id = str(uuid.uuid4())
         change_event_id = str(uuid.uuid4())
 
@@ -4104,7 +5089,7 @@ class VendorRepository:
                 {
                     "change_request_id": request_id,
                     "vendor_id": vendor_id,
-                    "requestor_user_principal": actor_user_principal,
+                    "requestor_user_principal": actor_ref,
                     "change_type": "direct_update_vendor_profile",
                     "requested_payload_json": self._serialize_payload({"updates": clean_updates, "reason": reason}),
                     "status": "approved",
@@ -4112,16 +5097,14 @@ class VendorRepository:
                     "updated_at": now.isoformat(),
                 }
             )
-            self._mock_audit_change_overrides.append(
-                {
-                    "change_event_id": change_event_id,
-                    "entity_name": "core_vendor",
-                    "entity_id": vendor_id,
-                    "action_type": "update",
-                    "event_ts": now.isoformat(),
-                    "actor_user_principal": actor_user_principal,
-                    "request_id": request_id,
-                }
+            change_event_id = self._write_audit_entity_change(
+                entity_name="core_vendor",
+                entity_id=vendor_id,
+                action_type="update",
+                actor_user_principal=actor_ref,
+                before_json=old_row,
+                after_json=new_row,
+                request_id=request_id,
             )
             self.log_usage_event(
                 user_principal=actor_user_principal,
@@ -4148,7 +5131,7 @@ class VendorRepository:
                 params=(
                     request_id,
                     vendor_id,
-                    actor_user_principal,
+                    actor_ref,
                     "direct_update_vendor_profile",
                     self._serialize_payload({"updates": clean_updates, "reason": reason}),
                     "approved",
@@ -4165,7 +5148,7 @@ class VendorRepository:
                     request_id,
                     "submitted",
                     "approved",
-                    actor_user_principal,
+                    actor_ref,
                     now,
                     "Direct vendor profile update approved and applied.",
                 ),
@@ -4217,7 +5200,7 @@ class VendorRepository:
                     None,
                     True,
                     json.dumps(new_row, default=str),
-                    actor_user_principal,
+                    actor_ref,
                     reason,
                 ),
                 hist_vendor=self._table("hist_vendor"),
@@ -4235,7 +5218,7 @@ class VendorRepository:
                     "update",
                     json.dumps(old_row, default=str),
                     json.dumps(new_row, default=str),
-                    actor_user_principal,
+                    actor_ref,
                     now,
                     request_id,
                 ),
@@ -4269,6 +5252,7 @@ class VendorRepository:
     ) -> str:
         demo_id = str(uuid.uuid4())
         now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
         if self.config.use_mock:
             return demo_id
 
@@ -4284,35 +5268,27 @@ class VendorRepository:
                 non_selection_reason_code,
                 notes,
                 now,
-                actor_user_principal,
+                actor_ref,
             ),
             core_vendor_demo=self._table("core_vendor_demo"),
         )
 
-        self._execute_file(
-            "inserts/audit_entity_change.sql",
-            params=(
-                str(uuid.uuid4()),
-                "core_vendor_demo",
-                demo_id,
-                "insert",
-                None,
-                json.dumps(
-                    {
-                        "vendor_id": vendor_id,
-                        "offering_id": offering_id,
-                        "demo_date": demo_date,
-                        "overall_score": overall_score,
-                        "selection_outcome": selection_outcome,
-                        "non_selection_reason_code": non_selection_reason_code,
-                        "notes": notes,
-                    }
-                ),
-                actor_user_principal,
-                now,
-                None,
-            ),
-            audit_entity_change=self._table("audit_entity_change"),
+        self._write_audit_entity_change(
+            entity_name="core_vendor_demo",
+            entity_id=demo_id,
+            action_type="insert",
+            actor_user_principal=actor_ref,
+            before_json=None,
+            after_json={
+                "vendor_id": vendor_id,
+                "offering_id": offering_id,
+                "demo_date": demo_date,
+                "overall_score": overall_score,
+                "selection_outcome": selection_outcome,
+                "non_selection_reason_code": non_selection_reason_code,
+                "notes": notes,
+            },
+            request_id=None,
         )
         return demo_id
 
@@ -4331,53 +5307,322 @@ class VendorRepository:
     ) -> str:
         event_id = str(uuid.uuid4())
         now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
         if self.config.use_mock:
             return event_id
 
         self._execute_file(
             "inserts/record_contract_cancellation_event.sql",
-            params=(event_id, contract_id, "contract_cancelled", now, reason_code, notes, actor_user_principal),
+            params=(event_id, contract_id, "contract_cancelled", now, reason_code, notes, actor_ref),
             core_contract_event=self._table("core_contract_event"),
         )
 
         self._execute_file(
             "updates/record_contract_cancellation_contract_update.sql",
-            params=("cancelled", True, now, actor_user_principal, contract_id),
+            params=("cancelled", True, now, actor_ref, contract_id),
             core_contract=self._table("core_contract"),
         )
 
-        self._execute_file(
-            "inserts/audit_entity_change.sql",
-            params=(
-                str(uuid.uuid4()),
-                "core_contract",
-                contract_id,
-                "update",
-                None,
-                json.dumps(
-                    {
-                        "contract_status": "cancelled",
-                        "cancelled_flag": True,
-                        "reason_code": reason_code,
-                        "notes": notes,
-                    }
-                ),
-                actor_user_principal,
-                now,
-                None,
-            ),
-            audit_entity_change=self._table("audit_entity_change"),
+        self._write_audit_entity_change(
+            entity_name="core_contract",
+            entity_id=contract_id,
+            action_type="update",
+            actor_user_principal=actor_ref,
+            before_json=None,
+            after_json={
+                "contract_status": "cancelled",
+                "cancelled_flag": True,
+                "reason_code": reason_code,
+                "notes": notes,
+            },
+            request_id=None,
         )
         return event_id
 
-    def list_role_grants(self) -> pd.DataFrame:
+    def list_role_definitions(self) -> pd.DataFrame:
+        columns = [
+            "role_code",
+            "role_name",
+            "description",
+            "approval_level",
+            "can_edit",
+            "can_report",
+            "can_direct_apply",
+            "active_flag",
+            "updated_at",
+            "updated_by",
+        ]
+        defaults = self._default_role_definition_rows()
         if self.config.use_mock:
-            return mock_data.role_map()
-        return self.client.query(
-            self._sql(
-                "reporting/list_role_grants.sql",
-                sec_user_role_map=self._table("sec_user_role_map"),
+            records = dict(defaults)
+            records.update(self._mock_role_definitions)
+            out = pd.DataFrame(list(records.values()))
+            if out.empty:
+                return pd.DataFrame(columns=columns)
+            return out.sort_values("role_code")
+
+        rows = self._query_file(
+            "reporting/list_role_definitions.sql",
+            columns=columns,
+            sec_role_definition=self._table("sec_role_definition"),
+        )
+        records = dict(defaults)
+        if not rows.empty:
+            for row in rows.to_dict("records"):
+                role_code = str(row.get("role_code") or "").strip()
+                if not role_code:
+                    continue
+                records[role_code] = {
+                    "role_code": role_code,
+                    "role_name": str(row.get("role_name") or role_code),
+                    "description": str(row.get("description") or "").strip() or None,
+                    "approval_level": int(row.get("approval_level") or 0),
+                    "can_edit": self._as_bool(row.get("can_edit")),
+                    "can_report": self._as_bool(row.get("can_report")),
+                    "can_direct_apply": self._as_bool(row.get("can_direct_apply")),
+                    "active_flag": self._as_bool(row.get("active_flag")),
+                    "updated_at": row.get("updated_at"),
+                    "updated_by": row.get("updated_by"),
+                }
+        out = pd.DataFrame(list(records.values()))
+        if out.empty:
+            return pd.DataFrame(columns=columns)
+        return out.sort_values("role_code")
+
+    def list_role_permissions(self) -> pd.DataFrame:
+        columns = ["role_code", "object_name", "action_code", "active_flag", "updated_at"]
+        if self.config.use_mock:
+            rows: list[dict[str, Any]] = []
+            for role_code, actions in self._mock_role_permissions.items():
+                for action_code in sorted(actions):
+                    rows.append(
+                        {
+                            "role_code": role_code,
+                            "object_name": "change_action",
+                            "action_code": action_code,
+                            "active_flag": True,
+                            "updated_at": self._now().isoformat(),
+                        }
+                    )
+            return pd.DataFrame(rows, columns=columns)
+
+        out = self._query_file(
+            "reporting/list_role_permissions.sql",
+            columns=columns,
+            sec_role_permission=self._table("sec_role_permission"),
+        )
+        if out.empty:
+            rows: list[dict[str, Any]] = []
+            for role_code, actions in self._default_role_permissions_by_role().items():
+                for action_code in sorted(actions):
+                    rows.append(
+                        {
+                            "role_code": role_code,
+                            "object_name": "change_action",
+                            "action_code": action_code,
+                            "active_flag": True,
+                            "updated_at": None,
+                        }
+                    )
+            return pd.DataFrame(rows, columns=columns)
+        return out
+
+    def list_known_roles(self) -> list[str]:
+        roles = set(self._default_role_definition_rows().keys())
+        role_defs = self.list_role_definitions()
+        if not role_defs.empty and "role_code" in role_defs.columns:
+            roles.update(role_defs["role_code"].dropna().astype(str).tolist())
+
+        if self.config.use_mock:
+            base = mock_data.role_map()
+            if not base.empty and "role_code" in base.columns:
+                roles.update(base["role_code"].dropna().astype(str).tolist())
+            for granted in self._mock_role_overrides.values():
+                roles.update(granted)
+            return sorted(role for role in roles if role)
+
+        grants = self._query_file(
+            "reporting/list_role_grants.sql",
+            columns=["role_code"],
+            sec_user_role_map=self._table("sec_user_role_map"),
+        )
+        if not grants.empty and "role_code" in grants.columns:
+            roles.update(grants["role_code"].dropna().astype(str).tolist())
+        return sorted(role for role in roles if role)
+
+    def resolve_role_policy(self, user_roles: set[str]) -> dict[str, Any]:
+        active_roles = {str(role).strip() for role in (user_roles or set()) if str(role).strip()}
+        definitions = self.list_role_definitions()
+        def_by_role: dict[str, dict[str, Any]] = {}
+        for row in definitions.to_dict("records"):
+            role_code = str(row.get("role_code") or "").strip()
+            if not role_code:
+                continue
+            if not self._as_bool(row.get("active_flag", True)):
+                continue
+            def_by_role[role_code] = row
+
+        selected_defs: list[dict[str, Any]] = []
+        for role in active_roles:
+            payload = def_by_role.get(role)
+            if payload:
+                selected_defs.append(payload)
+                continue
+            fallback = self._default_role_definition_rows().get(role)
+            if fallback:
+                selected_defs.append(fallback)
+
+        if not selected_defs:
+            selected_defs.append(self._default_role_definition_rows()[ROLE_VIEWER])
+
+        approval_level = max(int(item.get("approval_level") or 0) for item in selected_defs)
+        can_edit = any(self._as_bool(item.get("can_edit")) for item in selected_defs)
+        can_report = any(self._as_bool(item.get("can_report")) for item in selected_defs)
+        can_direct_apply = any(self._as_bool(item.get("can_direct_apply")) for item in selected_defs)
+
+        permissions = self.list_role_permissions()
+        allowed_actions: set[str] = set()
+        for row in permissions.to_dict("records"):
+            role_code = str(row.get("role_code") or "").strip()
+            if role_code not in active_roles:
+                continue
+            if not self._as_bool(row.get("active_flag", True)):
+                continue
+            object_name = str(row.get("object_name") or "change_action").strip().lower()
+            if object_name not in {"change_action", "workflow", "app"}:
+                continue
+            action_code = str(row.get("action_code") or "").strip().lower()
+            if action_code in CHANGE_APPROVAL_LEVELS:
+                allowed_actions.add(action_code)
+
+        if ROLE_ADMIN in active_roles:
+            can_edit = True
+            can_report = True
+            can_direct_apply = True
+            approval_level = max(approval_level, 3)
+            allowed_actions = set(CHANGE_APPROVAL_LEVELS.keys())
+
+        if not allowed_actions:
+            allowed_actions = {
+                action for action, required in CHANGE_APPROVAL_LEVELS.items() if int(required) <= int(approval_level)
+            }
+
+        return {
+            "roles": sorted(active_roles),
+            "can_edit": bool(can_edit),
+            "can_report": bool(can_report),
+            "can_direct_apply": bool(can_direct_apply),
+            "approval_level": int(approval_level),
+            "allowed_change_actions": sorted(allowed_actions),
+        }
+
+    def save_role_definition(
+        self,
+        *,
+        role_code: str,
+        role_name: str,
+        description: str | None,
+        approval_level: int,
+        can_edit: bool,
+        can_report: bool,
+        can_direct_apply: bool,
+        updated_by: str,
+    ) -> None:
+        role_key = str(role_code or "").strip().lower()
+        if not role_key:
+            raise ValueError("Role code is required.")
+        now = self._now()
+        if self.config.use_mock:
+            self._mock_role_definitions[role_key] = {
+                "role_code": role_key,
+                "role_name": str(role_name or role_key).strip() or role_key,
+                "description": str(description or "").strip() or None,
+                "approval_level": max(0, min(int(approval_level or 0), 3)),
+                "can_edit": bool(can_edit),
+                "can_report": bool(can_report),
+                "can_direct_apply": bool(can_direct_apply),
+                "active_flag": True,
+                "updated_at": now.isoformat(),
+                "updated_by": updated_by,
+            }
+            self._mock_role_permissions.setdefault(role_key, set())
+            return
+
+        self._execute_file(
+            "updates/delete_role_definition_by_code.sql",
+            params=(role_key,),
+            sec_role_definition=self._table("sec_role_definition"),
+        )
+        self._execute_file(
+            "inserts/create_role_definition.sql",
+            params=(
+                role_key,
+                str(role_name or role_key).strip() or role_key,
+                str(description or "").strip() or None,
+                max(0, min(int(approval_level or 0), 3)),
+                bool(can_edit),
+                bool(can_report),
+                bool(can_direct_apply),
+                True,
+                now,
+                updated_by,
+            ),
+            sec_role_definition=self._table("sec_role_definition"),
+        )
+
+    def replace_role_permissions(self, *, role_code: str, action_codes: set[str], updated_by: str) -> None:
+        role_key = str(role_code or "").strip().lower()
+        if not role_key:
+            raise ValueError("Role code is required.")
+        normalized_actions = {
+            str(action).strip().lower()
+            for action in (action_codes or set())
+            if str(action).strip().lower() in CHANGE_APPROVAL_LEVELS
+        }
+        if self.config.use_mock:
+            self._mock_role_permissions[role_key] = set(normalized_actions)
+            return
+
+        self._execute_file(
+            "updates/delete_role_permissions_by_role.sql",
+            params=(role_key,),
+            sec_role_permission=self._table("sec_role_permission"),
+        )
+        now = self._now()
+        for action_code in sorted(normalized_actions):
+            self._execute_file(
+                "inserts/create_role_permission.sql",
+                params=(role_key, "change_action", action_code, True, now),
+                sec_role_permission=self._table("sec_role_permission"),
             )
+
+    def list_role_grants(self) -> pd.DataFrame:
+        columns = ["user_principal", "role_code", "active_flag", "granted_by", "granted_at", "revoked_at"]
+        if self.config.use_mock:
+            base = mock_data.role_map().copy()
+            rows: list[dict[str, Any]] = []
+            for user_principal, roles in self._mock_role_overrides.items():
+                for role in roles:
+                    rows.append(
+                        {
+                            "user_principal": user_principal,
+                            "role_code": role,
+                            "active_flag": True,
+                            "granted_by": "mock-admin",
+                            "granted_at": self._now().isoformat(),
+                            "revoked_at": None,
+                        }
+                    )
+            if rows:
+                base = pd.concat([base, pd.DataFrame(rows)], ignore_index=True)
+            if base.empty:
+                return pd.DataFrame(columns=columns)
+            base = base.drop_duplicates(subset=["user_principal", "role_code"], keep="last")
+            return base[columns]
+        return self._query_file(
+            "reporting/list_role_grants.sql",
+            columns=columns,
+            sec_user_role_map=self._table("sec_user_role_map"),
         )
 
     def list_scope_grants(self) -> pd.DataFrame:
@@ -4392,7 +5637,14 @@ class VendorRepository:
 
     def grant_role(self, target_user_principal: str, role_code: str, granted_by: str) -> None:
         if self.config.use_mock:
+            target = str(target_user_principal or "").strip()
+            role = str(role_code or "").strip().lower()
+            if target and role:
+                grants = self._mock_role_overrides.setdefault(target, set())
+                grants.add(role)
             return
+        self._ensure_user_directory_entry(target_user_principal)
+        self._ensure_user_directory_entry(granted_by)
         now = self._now()
         self._execute_file(
             "inserts/grant_role.sql",
@@ -4412,6 +5664,8 @@ class VendorRepository:
     ) -> None:
         if self.config.use_mock:
             return
+        self._ensure_user_directory_entry(target_user_principal)
+        self._ensure_user_directory_entry(granted_by)
         now = self._now()
         self._execute_file(
             "inserts/grant_org_scope.sql",
@@ -4436,13 +5690,15 @@ class VendorRepository:
     ) -> None:
         if self.config.use_mock:
             return
+        actor_ref = self._actor_ref(actor_user_principal)
+        target_ref = self._actor_ref(target_user_principal) if target_user_principal else None
         self._execute_file(
             "inserts/audit_access.sql",
             params=(
                 str(uuid.uuid4()),
-                actor_user_principal,
+                actor_ref,
                 action_type,
-                target_user_principal,
+                target_ref,
                 target_role,
                 self._now(),
                 notes,

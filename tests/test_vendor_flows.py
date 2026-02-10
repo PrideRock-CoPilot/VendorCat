@@ -137,6 +137,34 @@ def test_create_offering_and_map_unassigned_records(client: TestClient) -> None:
     assert "demo-002" in offering_detail_page.text
 
 
+def test_offering_type_uses_dropdown_in_new_and_edit_forms(client: TestClient) -> None:
+    new_form = client.get("/vendors/vnd-001/offerings/new?return_to=%2Fvendors")
+    assert new_form.status_code == 200
+    assert '<select name="offering_type">' in new_form.text
+    assert '<option value="SaaS">' in new_form.text
+
+    edit_form = client.get("/vendors/vnd-001/offerings/off-001?return_to=%2Fvendors&edit=1")
+    assert edit_form.status_code == 200
+    assert '<select name="offering_type">' in edit_form.text
+    assert '<option value="SaaS" selected' in edit_form.text
+
+
+def test_create_offering_rejects_invalid_offering_type(client: TestClient) -> None:
+    response = client.post(
+        "/vendors/vnd-003/offerings/new",
+        data={
+            "return_to": "/vendors",
+            "offering_name": "Legacy Bridge",
+            "offering_type": "invalid_type",
+            "lifecycle_state": "draft",
+            "criticality_tier": "tier_2",
+        },
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "Offering type must be one of:" in response.text
+
+
 def test_search_matches_related_contract_and_owner_data(client: TestClient) -> None:
     by_contract = client.get("/vendors?search=ctr-101")
     assert by_contract.status_code == 200
@@ -196,3 +224,75 @@ def test_typeahead_vendor_offering_and_project_api(client: TestClient) -> None:
     assert project_response.status_code == 200
     project_payload = project_response.json()
     assert any("Defender" in str(row.get("label", "")) for row in project_payload.get("items", []))
+
+    user_response = client.get("/api/users/search?q=admin&limit=10")
+    assert user_response.status_code == 200
+    user_payload = user_response.json()
+    assert any(str(row.get("login_identifier")) == "admin@example.com" for row in user_payload.get("items", []))
+
+
+def test_vendor_change_trail_shows_field_level_diff(client: TestClient) -> None:
+    update_response = client.post(
+        "/vendors/vnd-001/direct-update",
+        data={
+            "return_to": "/vendors/vnd-001/changes",
+            "legal_name": "Microsoft Corporation",
+            "display_name": "Microsoft",
+            "lifecycle_state": "active",
+            "owner_org_id": "IT-ENT",
+            "risk_tier": "high",
+            "reason": "Escalate risk after review",
+        },
+        follow_redirects=False,
+    )
+    assert update_response.status_code == 303
+
+    changes_page = client.get("/vendors/vnd-001/changes?return_to=%2Fvendors")
+    assert changes_page.status_code == 200
+    assert ("Risk Tier: medium -&gt; high" in changes_page.text) or ("Risk Tier: medium -> high" in changes_page.text)
+
+
+def test_vendor_ownership_allows_adding_owner_assignment_and_contact(client: TestClient) -> None:
+    owner_response = client.post(
+        "/vendors/vnd-002/owners/add",
+        data={
+            "return_to": "/vendors/vnd-002/ownership",
+            "owner_user_principal": "new.owner@example.com",
+            "owner_role": "business_owner",
+            "reason": "Add current service owner.",
+        },
+        follow_redirects=False,
+    )
+    assert owner_response.status_code == 303
+
+    assignment_response = client.post(
+        "/vendors/vnd-002/org-assignments/add",
+        data={
+            "return_to": "/vendors/vnd-002/ownership",
+            "org_id": "FIN-OPS",
+            "assignment_type": "consumer",
+            "reason": "Finance now consumes this vendor.",
+        },
+        follow_redirects=False,
+    )
+    assert assignment_response.status_code == 303
+
+    contact_response = client.post(
+        "/vendors/vnd-002/contacts/add",
+        data={
+            "return_to": "/vendors/vnd-002/ownership",
+            "full_name": "Taylor Ops",
+            "contact_type": "support",
+            "email": "taylor.ops@example.com",
+            "phone": "555-0999",
+            "reason": "Primary support contact.",
+        },
+        follow_redirects=False,
+    )
+    assert contact_response.status_code == 303
+
+    ownership_page = client.get("/vendors/vnd-002/ownership?return_to=%2Fvendors")
+    assert ownership_page.status_code == 200
+    assert "new.owner@example.com" in ownership_page.text
+    assert "FIN-OPS" in ownership_page.text
+    assert "Taylor Ops" in ownership_page.text

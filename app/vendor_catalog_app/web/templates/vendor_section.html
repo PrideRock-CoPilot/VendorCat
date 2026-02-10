@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% from "doc_link_form.html" import render_doc_link_form with context %}
+{% from "owner_forms.html" import vendor_owner_add_form, vendor_org_assignment_add_form, vendor_contact_add_form with context %}
 {% block content %}
 <div class="section-header">
   <div>
@@ -113,41 +115,32 @@
   <section class="card section-divider">
     <h2>Documents</h2>
     <table>
-      <thead><tr><th>Title</th><th>Type</th><th>Owner</th><th>Link</th></tr></thead>
+      <thead><tr><th>Title</th><th>Type</th><th>Owner</th><th>Tags</th><th>Link</th></tr></thead>
       <tbody>
       {% for row in docs_preview %}
       <tr>
         <td>{{ row.doc_title }}</td>
         <td>{{ row.doc_type }}</td>
         <td>{{ row.owner }}</td>
+        <td>{{ row.tags or "-" }}</td>
         <td><a href="{{ row.doc_url }}" target="_blank" rel="noopener">Open</a></td>
       </tr>
       {% else %}
-      <tr><td colspan="4">No vendor documents linked.</td></tr>
+      <tr><td colspan="5">No documents linked yet. Add SharePoint links for contracts, invoices, and governance records.</td></tr>
       {% endfor %}
       </tbody>
     </table>
     {% if can_edit and not locked_mode %}
-    <h3>Add Link</h3>
-    <form method="post" action="/vendors/{{ vendor_id }}/docs/link" class="grid grid-3" data-doc-link-form>
-      <input type="hidden" name="return_to" value="{{ return_to }}">
-      <label>URL
-        <input type="url" name="doc_url" placeholder="https://..." required data-doc-url>
-        <small class="muted">We'll auto-detect the link type from the URL. You can change it.</small>
-      </label>
-      <label>Type
-        <select name="doc_type" data-doc-type>
-          <option value="">auto</option>
-          {% for type in doc_types %}
-          <option value="{{ type }}">{{ type }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Title<input type="text" name="doc_title" maxlength="120" placeholder="Optional"></label>
-      <label>Tags<input type="text" name="tags"></label>
-      <label>Owner<input type="text" name="owner"></label>
-      <div><button type="submit">Add Link</button></div>
-    </form>
+    <details style="margin-top:12px;">
+      <summary><strong>Add New Document Link</strong></summary>
+      <div style="margin-top:10px;">
+        {{ render_doc_link_form(
+             post_url="/vendors/" ~ vendor_id ~ "/docs/link",
+             return_to=return_to,
+             submit_label="Add Link"
+           ) }}
+      </div>
+    </details>
     {% endif %}
   </section>
 </div>
@@ -221,6 +214,19 @@
       {% endfor %}
       </tbody>
     </table>
+    {% if can_edit and not locked_mode %}
+    <details style="margin-top:10px;">
+      <summary><strong>Add Owner</strong></summary>
+      <div style="margin-top:10px;">
+        {{ vendor_owner_add_form(
+             post_url="/vendors/" ~ vendor_id ~ "/owners/add",
+             return_to="/vendors/" ~ vendor_id ~ "/ownership",
+             default_role="business_owner",
+             submit_label="Add Owner"
+           ) }}
+      </div>
+    </details>
+    {% endif %}
   </section>
   <section class="card section-divider">
     <h2>Org Assignments</h2>
@@ -234,6 +240,18 @@
       {% endfor %}
       </tbody>
     </table>
+    {% if can_edit and not locked_mode %}
+    <details style="margin-top:10px;">
+      <summary><strong>Add Assignment</strong></summary>
+      <div style="margin-top:10px;">
+        {{ vendor_org_assignment_add_form(
+             post_url="/vendors/" ~ vendor_id ~ "/org-assignments/add",
+             return_to="/vendors/" ~ vendor_id ~ "/ownership",
+             submit_label="Add Assignment"
+           ) }}
+      </div>
+    </details>
+    {% endif %}
   </section>
   <section class="card section-divider">
     <h2>Vendor Contacts</h2>
@@ -247,6 +265,18 @@
       {% endfor %}
       </tbody>
     </table>
+    {% if can_edit and not locked_mode %}
+    <details style="margin-top:10px;">
+      <summary><strong>Add Contact</strong></summary>
+      <div style="margin-top:10px;">
+        {{ vendor_contact_add_form(
+             post_url="/vendors/" ~ vendor_id ~ "/contacts/add",
+             return_to="/vendors/" ~ vendor_id ~ "/ownership",
+             submit_label="Add Contact"
+           ) }}
+      </div>
+    </details>
+    {% endif %}
   </section>
 </div>
 {% endif %}
@@ -358,12 +388,12 @@
   <section class="card section-divider">
     <h2>Audit Events</h2>
     <table>
-      <thead><tr><th>When</th><th>Entity</th><th>Action</th><th>Actor</th></tr></thead>
+      <thead><tr><th>When</th><th>Entity</th><th>Action</th><th>Details</th><th>Actor</th></tr></thead>
       <tbody>
       {% for row in audit_events %}
-      <tr><td>{{ row.event_ts }}</td><td>{{ row.entity_name }}</td><td>{{ row.action_type }}</td><td>{{ row.actor_user_principal }}</td></tr>
+      <tr><td>{{ row.event_ts }}</td><td>{{ row.entity_name }}</td><td>{{ row.action_type }}</td><td>{{ row.change_summary }}</td><td>{{ row.actor_user_principal }}</td></tr>
       {% else %}
-      <tr><td colspan="4">No audit events</td></tr>
+      <tr><td colspan="5">No audit events</td></tr>
       {% endfor %}
       </tbody>
     </table>
@@ -432,41 +462,15 @@
 <section class="card section-divider">
   <h2>Recent Audited Changes (Last 5)</h2>
   <table>
-    <thead><tr><th>When</th><th>Entity</th><th>Action</th><th>Actor</th><th>Request</th></tr></thead>
+    <thead><tr><th>When</th><th>Entity</th><th>Action</th><th>Details</th><th>Actor</th><th>Request</th></tr></thead>
     <tbody>
     {% for row in recent_audit %}
-    <tr><td>{{ row.event_ts }}</td><td>{{ row.entity_name }}</td><td>{{ row.action_type }}</td><td>{{ row.actor_user_principal }}</td><td>{{ row.request_id }}</td></tr>
+    <tr><td>{{ row.event_ts }}</td><td>{{ row.entity_name }}</td><td>{{ row.action_type }}</td><td>{{ row.change_summary }}</td><td>{{ row.actor_user_principal }}</td><td>{{ row.request_id }}</td></tr>
     {% else %}
-    <tr><td colspan="5">No recent changes</td></tr>
+    <tr><td colspan="6">No recent changes</td></tr>
     {% endfor %}
     </tbody>
   </table>
 </section>
 {% endif %}
-{% endblock %}
-
-{% block scripts %}
-<script>
-document.querySelectorAll("[data-doc-link-form]").forEach((form) => {
-  const urlInput = form.querySelector("[data-doc-url]");
-  const typeSelect = form.querySelector("[data-doc-type]");
-  if (!urlInput || !typeSelect) return;
-  const suggestType = (url) => {
-    const v = (url || "").toLowerCase();
-    if (v.includes("sharepoint.com") || v.includes("/sites/") || v.includes("/teams/")) return "sharepoint";
-    if (v.includes("onedrive.live.com") || v.includes("1drv.ms")) return "onedrive";
-    if (v.includes("atlassian.net/wiki") || v.includes("/confluence")) return "confluence";
-    if (v.includes("docs.google.com") || v.includes("drive.google.com")) return "google_drive";
-    if (v.includes("box.com")) return "box";
-    if (v.includes("dropbox.com")) return "dropbox";
-    if (v.includes("github.com")) return "github";
-    return "other";
-  };
-  urlInput.addEventListener("input", () => {
-    if (!typeSelect.value || typeSelect.value === "other") {
-      typeSelect.value = suggestType(urlInput.value);
-    }
-  });
-});
-</script>
 {% endblock %}

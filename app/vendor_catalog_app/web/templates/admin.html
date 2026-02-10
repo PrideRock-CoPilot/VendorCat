@@ -2,6 +2,83 @@
 {% block content %}
 <h1>Admin Permissions</h1>
 
+<section class="card">
+  <h2>Role Catalog</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Role Code</th>
+        <th>Name</th>
+        <th>Approval</th>
+        <th>Edit</th>
+        <th>Report</th>
+        <th>Direct Apply</th>
+        <th>Change Permissions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in role_definitions %}
+      <tr>
+        <td>{{ row.role_code }}</td>
+        <td>{{ row.role_name }}</td>
+        <td>{{ row.approval_level }}</td>
+        <td>{{ row.can_edit }}</td>
+        <td>{{ row.can_report }}</td>
+        <td>{{ row.can_direct_apply }}</td>
+        <td>{{ row.actions_summary }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7">No roles configured.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Create Or Update Role</h2>
+  <form method="post" action="/admin/roles/save" class="grid grid-2">
+    <label>Role Code
+      <input list="role-code-options" type="text" name="role_code" placeholder="vendor_editor" required>
+      <datalist id="role-code-options">
+        {% for role_code in role_code_options %}
+        <option value="{{ role_code }}"></option>
+        {% endfor %}
+      </datalist>
+    </label>
+    <label>Role Name
+      <input type="text" name="role_name" placeholder="Vendor Editor" required>
+    </label>
+    <label class="full">Description
+      <input type="text" name="description" placeholder="Describe what this role can do.">
+    </label>
+    <label>Approval Level
+      <select name="approval_level">
+        <option value="0">0</option>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+      </select>
+    </label>
+    <div class="full inline-form">
+      <label><input type="checkbox" name="can_edit"> Can Edit</label>
+      <label><input type="checkbox" name="can_report"> Can Report</label>
+      <label><input type="checkbox" name="can_direct_apply"> Can Direct Apply</label>
+    </div>
+    <div class="full">
+      <h3>Per-Action Change Permissions</h3>
+      <div class="role-permission-grid">
+        {% for action in change_actions %}
+        <label class="role-permission-option">
+          <input type="checkbox" name="perm_{{ action }}">
+          <span>{{ action }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    <div><button type="submit">Save Role</button></div>
+  </form>
+</section>
+
 <div class="grid grid-2">
   <section class="card">
     <h2>Role Grants</h2>
@@ -50,7 +127,7 @@
       <label>User Principal<input type="text" name="target_user" required></label>
       <label>Role
         <select name="role_code">
-          {% for role in roles %}
+          {% for role in grantable_roles %}
           <option value="{{ role }}">{{ role }}</option>
           {% endfor %}
         </select>
@@ -75,4 +152,3 @@
   </section>
 </div>
 {% endblock %}
-

@@ -11,13 +11,32 @@ if exist "%TVENDOR_ENV_FILE%" (
   )
 )
 
+if "%TVENDOR_ENV%"=="" set "TVENDOR_ENV=dev"
 if "%TVENDOR_USE_MOCK%"=="" set "TVENDOR_USE_MOCK=false"
-if "%TVENDOR_USE_LOCAL_DB%"=="" set "TVENDOR_USE_LOCAL_DB=true"
+if "%TVENDOR_USE_LOCAL_DB%"=="" (
+  if /I "%TVENDOR_ENV%"=="dev" (
+    set "TVENDOR_USE_LOCAL_DB=true"
+  ) else if /I "%TVENDOR_ENV%"=="development" (
+    set "TVENDOR_USE_LOCAL_DB=true"
+  ) else if /I "%TVENDOR_ENV%"=="local" (
+    set "TVENDOR_USE_LOCAL_DB=true"
+  ) else (
+    set "TVENDOR_USE_LOCAL_DB=false"
+  )
+)
 if "%TVENDOR_LOCAL_DB_PATH%"=="" set "TVENDOR_LOCAL_DB_PATH=setup\local_db\twvendor_local.db"
 if "%TVENDOR_CATALOG%"=="" set "TVENDOR_CATALOG=vendor_dev"
 if "%TVENDOR_SCHEMA%"=="" set "TVENDOR_SCHEMA=twvendor"
 if "%TVENDOR_LOCKED_MODE%"=="" set "TVENDOR_LOCKED_MODE=false"
 if "%PORT%"=="" set "PORT=8000"
+
+if /I "%TVENDOR_USE_LOCAL_DB%"=="true" (
+  if /I not "%TVENDOR_ENV%"=="dev" if /I not "%TVENDOR_ENV%"=="development" if /I not "%TVENDOR_ENV%"=="local" (
+    echo ERROR: TVENDOR_USE_LOCAL_DB=true is only allowed for TVENDOR_ENV=dev/development/local.
+    echo Current TVENDOR_ENV=%TVENDOR_ENV%
+    exit /b 1
+  )
+)
 
 if exist ".venv\Scripts\python.exe" (
   set "PYTHON_EXE=.venv\Scripts\python.exe"
@@ -27,6 +46,7 @@ if exist ".venv\Scripts\python.exe" (
 
 echo Launching Vendor Catalog app...
 echo Using Python: %PYTHON_EXE%
+echo TVENDOR_ENV=%TVENDOR_ENV%
 echo TVENDOR_USE_MOCK=%TVENDOR_USE_MOCK%
 echo TVENDOR_USE_LOCAL_DB=%TVENDOR_USE_LOCAL_DB%
 echo TVENDOR_LOCAL_DB_PATH=%TVENDOR_LOCAL_DB_PATH%

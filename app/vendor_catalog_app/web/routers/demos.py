@@ -5,6 +5,7 @@ from datetime import date
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
+from vendor_catalog_app.repository import GLOBAL_CHANGE_VENDOR_ID
 from vendor_catalog_app.web.flash import add_flash
 from vendor_catalog_app.web.services import (
     base_template_context,
@@ -44,6 +45,9 @@ async def create_demo(request: Request):
     user = get_user_context(request)
     form = await request.form()
 
+    if user.config.locked_mode:
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url="/demos", status_code=303)
     if not user.can_edit:
         add_flash(request, "View-only mode. You cannot add demo outcomes.", "error")
         return RedirectResponse(url="/demos", status_code=303)
@@ -65,22 +69,41 @@ async def create_demo(request: Request):
         add_flash(request, "Non-selection reason is required for not_selected outcomes.", "error")
         return RedirectResponse(url="/demos", status_code=303)
 
-    demo_id = repo.create_demo_outcome(
-        vendor_id=vendor_id,
-        offering_id=offering_id,
-        demo_date=demo_date,
-        overall_score=overall_score,
-        selection_outcome=selection_outcome,
-        non_selection_reason_code=non_selection_reason,
-        notes=notes,
-        actor_user_principal=user.user_principal,
-    )
-    repo.log_usage_event(
-        user_principal=user.user_principal,
-        page_name="demos",
-        event_type="create_demo_outcome",
-        payload={"demo_id": demo_id, "vendor_id": vendor_id},
-    )
-    add_flash(request, f"Demo outcome saved: {demo_id}", "success")
+    try:
+        if user.can_apply_change("create_demo_outcome"):
+            demo_id = repo.create_demo_outcome(
+                vendor_id=vendor_id,
+                offering_id=offering_id,
+                demo_date=demo_date,
+                overall_score=overall_score,
+                selection_outcome=selection_outcome,
+                non_selection_reason_code=non_selection_reason,
+                notes=notes,
+                actor_user_principal=user.user_principal,
+            )
+            repo.log_usage_event(
+                user_principal=user.user_principal,
+                page_name="demos",
+                event_type="create_demo_outcome",
+                payload={"demo_id": demo_id, "vendor_id": vendor_id},
+            )
+            add_flash(request, f"Demo outcome saved: {demo_id}", "success")
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id or GLOBAL_CHANGE_VENDOR_ID,
+                requestor_user_principal=user.user_principal,
+                change_type="create_demo_outcome",
+                payload={
+                    "vendor_id": vendor_id,
+                    "offering_id": offering_id,
+                    "demo_date": demo_date,
+                    "overall_score": overall_score,
+                    "selection_outcome": selection_outcome,
+                    "non_selection_reason_code": non_selection_reason,
+                    "notes": notes,
+                },
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+    except Exception as exc:
+        add_flash(request, f"Could not submit demo change: {exc}", "error")
     return RedirectResponse(url="/demos", status_code=303)
-
