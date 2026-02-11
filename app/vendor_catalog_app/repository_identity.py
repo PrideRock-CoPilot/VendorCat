@@ -1,0 +1,286 @@
+from __future__ import annotations
+
+import json
+import logging
+import os
+import uuid
+from typing import Any
+
+import pandas as pd
+
+from .db import DataConnectionError, DataExecutionError, DataQueryError
+from .repository_constants import UNKNOWN_USER_PRINCIPAL
+from .repository_errors import SchemaBootstrapRequiredError
+
+LOGGER = logging.getLogger(__name__)
+
+class RepositoryIdentityMixin:
+    def ensure_runtime_tables(self) -> None:
+        if self._runtime_tables_ensured:
+            return
+        if self.config.use_local_db:
+            self._local_table_columns("core_vendor")
+            self._local_table_columns("sec_user_role_map")
+            self._local_table_columns("app_user_settings")
+            self._local_table_columns("app_user_directory")
+            self._ensure_local_lookup_option_table()
+            self._ensure_local_offering_columns()
+            self._ensure_local_offering_extension_tables()
+            self._runtime_tables_ensured = True
+            return
+
+        try:
+            self._probe_file("health/select_connectivity_check.sql")
+        except Exception as exc:
+            raise SchemaBootstrapRequiredError(
+                "Databricks connection failed before schema validation. "
+                "Verify DATABRICKS_SERVER_HOSTNAME (or DATABRICKS_HOST), DATABRICKS_HTTP_PATH, "
+                "DATABRICKS_TOKEN, and SQL warehouse/network access. "
+                f"Configured schema: {self.config.fq_schema}. "
+                f"Connection error: {exc}"
+            ) from exc
+
+        required_tables = (
+            "core_vendor",
+            "sec_user_role_map",
+            "app_user_settings",
+            "app_user_directory",
+            "app_lookup_option",
+        )
+        missing_or_blocked: list[str] = []
+        for table_name in required_tables:
+            try:
+                self._probe_file(
+                    "health/select_runtime_table_probe.sql",
+                    table_name=self._table(table_name),
+                )
+            except (DataQueryError, DataConnectionError):
+                missing_or_blocked.append(self._table(table_name))
+
+        try:
+            self._probe_file(
+                "health/select_runtime_offering_columns_probe.sql",
+                core_vendor_offering=self._table("core_vendor_offering"),
+            )
+        except (DataQueryError, DataConnectionError):
+            missing_or_blocked.append(f"{self._table('core_vendor_offering')}.lob")
+            missing_or_blocked.append(f"{self._table('core_vendor_offering')}.service_type")
+        try:
+            self._probe_file(
+                "health/select_runtime_lookup_scd_probe.sql",
+                app_lookup_option=self._table("app_lookup_option"),
+            )
+        except (DataQueryError, DataConnectionError):
+            missing_or_blocked.append(f"{self._table('app_lookup_option')}.valid_from_ts")
+            missing_or_blocked.append(f"{self._table('app_lookup_option')}.valid_to_ts")
+            missing_or_blocked.append(f"{self._table('app_lookup_option')}.is_current")
+            missing_or_blocked.append(f"{self._table('app_lookup_option')}.deleted_flag")
+
+        if missing_or_blocked:
+            raise SchemaBootstrapRequiredError(
+                "Databricks schema is not initialized or access is blocked. "
+                "Run the bootstrap SQL and migrations manually before starting the app: "
+                f"{self.config.schema_bootstrap_sql_path}, "
+                "setup/databricks/002_add_offering_lob_service_type.sql, "
+                "setup/databricks/003_add_lookup_scd_columns.sql, "
+                "setup/databricks/004_add_offering_profile_ticket.sql, "
+                "setup/databricks/005_add_offering_profile_dataflow_columns.sql, "
+                "setup/databricks/006_add_offering_data_flow.sql. "
+                f"Configured schema: {self.config.fq_schema}. "
+                f"Missing/inaccessible objects: {', '.join(missing_or_blocked)}"
+            )
+
+        self._runtime_tables_ensured = True
+
+    def bootstrap_user_access(self, user_principal: str) -> set[str]:
+        self._ensure_user_directory_entry(user_principal)
+        roles = self.get_user_roles(user_principal)
+        if roles:
+            return roles
+        self.ensure_user_record(user_principal)
+        return self.get_user_roles(user_principal)
+
+    def ensure_user_record(self, user_principal: str) -> None:
+        self._ensure_user_directory_entry(user_principal)
+
+        current = self._query_file(
+            "ingestion/select_user_role_presence.sql",
+            params=(user_principal,),
+            columns=["has_role"],
+            sec_user_role_map=self._table("sec_user_role_map"),
+        )
+        if not current.empty:
+            return
+
+        now = self._now()
+        try:
+            self._execute_file(
+                "inserts/grant_role.sql",
+                params=(user_principal, "vendor_viewer", True, "system:auto-bootstrap", now, None),
+                sec_user_role_map=self._table("sec_user_role_map"),
+            )
+            self._audit_access(
+                actor_user_principal="system:auto-bootstrap",
+                action_type="auto_provision_viewer",
+                target_user_principal=user_principal,
+                target_role="vendor_viewer",
+                notes="User auto-provisioned with basic view rights.",
+            )
+        except (DataExecutionError, DataConnectionError):
+            # If role table is unavailable or write is blocked, app still falls back to view-only in UI.
+            LOGGER.warning(
+                "Failed to auto-provision '%s' with vendor_viewer role.",
+                user_principal,
+                exc_info=True,
+            )
+
+    def get_user_setting(self, user_principal: str, setting_key: str) -> dict[str, Any]:
+        self._ensure_user_directory_entry(user_principal)
+        df = self._query_file(
+            "ingestion/select_user_setting_latest.sql",
+            params=(user_principal, setting_key),
+            columns=["setting_value_json"],
+            app_user_settings=self._table("app_user_settings"),
+        )
+        if df.empty:
+            return {}
+        try:
+            return json.loads(str(df.iloc[0]["setting_value_json"]))
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return {}
+
+    def save_user_setting(self, user_principal: str, setting_key: str, setting_value: dict[str, Any]) -> None:
+        self._ensure_user_directory_entry(user_principal)
+        now = self._now()
+        payload = self._serialize_payload(setting_value)
+        try:
+            self._execute_file(
+                "inserts/save_user_setting.sql",
+                params=(str(uuid.uuid4()), user_principal, setting_key, payload, now, user_principal),
+                app_user_settings=self._table("app_user_settings"),
+            )
+        except (DataExecutionError, DataConnectionError):
+            LOGGER.debug("Failed to save user setting '%s' for '%s'.", setting_key, user_principal, exc_info=True)
+
+    def log_usage_event(
+        self, user_principal: str, page_name: str, event_type: str, payload: dict[str, Any] | None = None
+    ) -> None:
+        actor_ref = self._actor_ref(user_principal)
+        try:
+            self._execute_file(
+                "inserts/log_usage_event.sql",
+                params=(
+                    str(uuid.uuid4()),
+                    actor_ref,
+                    page_name,
+                    event_type,
+                    self._now(),
+                    self._serialize_payload(payload),
+                ),
+                app_usage_log=self._table("app_usage_log"),
+            )
+        except (DataExecutionError, DataConnectionError):
+            LOGGER.debug("Failed to write usage event '%s' for '%s'.", event_type, user_principal, exc_info=True)
+
+    def get_current_user(self) -> str:
+        if self.config.use_local_db:
+            return os.getenv("TVENDOR_TEST_USER", UNKNOWN_USER_PRINCIPAL)
+        df = self._query_file(
+            "ingestion/select_current_user.sql",
+            columns=["user_principal"],
+        )
+        if df.empty:
+            return UNKNOWN_USER_PRINCIPAL
+        return str(df.iloc[0]["user_principal"])
+
+    def get_user_roles(self, user_principal: str) -> set[str]:
+        df = self._query_file(
+            "ingestion/select_user_roles.sql",
+            params=(user_principal,),
+            columns=["role_code"],
+            sec_user_role_map=self._table("sec_user_role_map"),
+        )
+        return set(df["role_code"].tolist()) if not df.empty else set()
+
+    def get_user_display_name(self, user_principal: str) -> str:
+        raw = str(user_principal or "").strip()
+        if not raw:
+            return "Unknown User"
+        user_ref = self._ensure_user_directory_entry(raw)
+        lookup = self._user_display_lookup()
+        return lookup.get(user_ref) or lookup.get(raw) or lookup.get(raw.lower()) or self._principal_to_display_name(raw)
+
+    def search_user_directory(self, q: str = "", limit: int = 20) -> pd.DataFrame:
+        normalized_limit = max(1, min(int(limit or 20), 250))
+        columns = ["user_id", "login_identifier", "display_name", "label"]
+        df = self._query_file(
+            "ingestion/select_user_directory_all.sql",
+            columns=["user_id", "login_identifier", "display_name"],
+            app_user_directory=self._table("app_user_directory"),
+        )
+
+        if df.empty:
+            return pd.DataFrame(columns=columns)
+
+        for field in ("user_id", "login_identifier", "display_name"):
+            if field not in df.columns:
+                df[field] = ""
+            df[field] = df[field].fillna("").astype(str).str.strip()
+
+        needle = (q or "").strip().lower()
+        if needle:
+            mask = (
+                df["login_identifier"].str.lower().str.contains(needle, regex=False, na=False)
+                | df["display_name"].str.lower().str.contains(needle, regex=False, na=False)
+            )
+            df = df[mask].copy()
+
+        if df.empty:
+            return pd.DataFrame(columns=columns)
+
+        df = df[df["login_identifier"] != ""].copy()
+        if df.empty:
+            return pd.DataFrame(columns=columns)
+
+        df = df.sort_values(["display_name", "login_identifier"], ascending=[True, True])
+        df = df.drop_duplicates(subset=["login_identifier"], keep="first")
+        df = df.head(normalized_limit).copy()
+        df["label"] = df.apply(
+            lambda row: (
+                f"{row['display_name']} ({row['login_identifier']})"
+                if str(row["display_name"]).strip()
+                else str(row["login_identifier"])
+            ),
+            axis=1,
+        )
+        return df[columns]
+
+    def resolve_user_login_identifier(self, user_value: str) -> str | None:
+        cleaned = str(user_value or "").strip()
+        if not cleaned:
+            return None
+
+        exact = self._query_file(
+            "ingestion/select_user_directory_by_login.sql",
+            params=(cleaned,),
+            columns=["login_identifier"],
+            app_user_directory=self._table("app_user_directory"),
+        )
+        if not exact.empty:
+            return str(exact.iloc[0]["login_identifier"]).strip()
+
+        candidates = self.search_user_directory(q=cleaned, limit=250)
+        if candidates.empty:
+            return None
+
+        lowered = cleaned.lower()
+        for row in candidates.to_dict("records"):
+            login_identifier = str(row.get("login_identifier") or "").strip()
+            if login_identifier.lower() == lowered:
+                return login_identifier
+        for row in candidates.to_dict("records"):
+            display_name = str(row.get("display_name") or "").strip()
+            if display_name and display_name.lower() == lowered:
+                return str(row.get("login_identifier") or "").strip() or None
+        return None
+

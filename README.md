@@ -1,6 +1,6 @@
 # Vendor Catalog
 
-Databricks-compatible Vendor Catalog application with a complete `twvendor` data model, governed write flows, auditability, and reporting.
+Databricks-compatible Vendor Catalog application with a complete data model, governed write flows, auditability, and reporting across parameterized Unity Catalog schemas.
 
 ## What This Repo Contains
 - Production-style FastAPI + Jinja web app: `app/vendor_catalog_app`
@@ -27,17 +27,24 @@ Databricks-compatible Vendor Catalog application with a complete `twvendor` data
   - queued email extract requests
 
 ## Runtime Modes
-- Mock mode (`TVENDOR_USE_MOCK=true`): in-memory test data
 - Local DB mode (`TVENDOR_ENV=dev` + `TVENDOR_USE_LOCAL_DB=true`): SQLite-backed local schema
-- Databricks mode: SQL warehouse + Unity Catalog schema (`<catalog>.twvendor`)
+- Databricks mode: SQL warehouse + Unity Catalog schema (`<catalog>.<schema>`, example `a1_dlk.twanalytics`)
+  - Auth supports either PAT (`DATABRICKS_TOKEN`) or OAuth service principal (`DATABRICKS_CLIENT_ID` + `DATABRICKS_CLIENT_SECRET`) for Databricks Apps.
+  - User identity is sourced from Databricks forwarded headers and persisted to `app_user_directory` on first access.
+  - HTTP path can be provided directly (`DATABRICKS_HTTP_PATH`) or derived from `DATABRICKS_WAREHOUSE_ID`.
+  - Prod SQL policy can be enforced with `TVENDOR_ENFORCE_PROD_SQL_POLICY=true` and `TVENDOR_ALLOWED_WRITE_VERBS=INSERT,UPDATE`.
 
 Safety guard: local DB is enabled only for `TVENDOR_ENV` values `dev`, `development`, or `local`.
 
 Databricks schema bootstrap is intentionally manual (security boundary). Use:
 - Environment config: `setup/config/tvendor.env`
-- Bootstrap SQL: `setup/databricks/001_create_databricks_schema.sql`
-- Existing-schema migration (LOB/Service Type columns): `setup/databricks/002_add_offering_lob_service_type.sql`
-- Existing-schema migration (lookup SCD validity columns): `setup/databricks/003_add_lookup_scd_columns.sql`
+- Render SQL for your target schema: `python setup/databricks/render_sql.py --fq-schema a1_dlk.twanalytics`
+- Bootstrap SQL: `setup/databricks/rendered/001_create_databricks_schema.sql`
+- Existing-schema migration (LOB/Service Type columns): `setup/databricks/rendered/002_add_offering_lob_service_type.sql`
+- Existing-schema migration (lookup SCD validity columns): `setup/databricks/rendered/003_add_lookup_scd_columns.sql`
+- Existing-schema migration (offering profile + ticket tables): `setup/databricks/rendered/004_add_offering_profile_ticket.sql`
+- Existing-schema migration (offering profile dataflow columns): `setup/databricks/rendered/005_add_offering_profile_dataflow_columns.sql`
+- Existing-schema migration (offering data flow table): `setup/databricks/rendered/006_add_offering_data_flow.sql`
 
 ## Quick Start
 1. Install dependencies:
@@ -82,7 +89,18 @@ Run tests:
 python -m pytest -q tests
 ```
 
+Health endpoint:
+```text
+/api/health
+```
+
+Production checklist:
+```text
+docs/production-readiness.md
+```
+
 ## Notes
 - This repo is intentionally server-rendered (no SPA rewrite).
 - All write flows are permission-gated and telemetry-aware.
-- In production Databricks, keep `twvendor` as the single schema boundary.
+- In production Databricks, set schema by environment variables (`TVENDOR_FQ_SCHEMA` or `TVENDOR_CATALOG` + `TVENDOR_SCHEMA`).
+- In production Databricks, enable runtime SQL policy to block DDL and allow only approved write verbs.

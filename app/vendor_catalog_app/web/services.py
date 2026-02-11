@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 from functools import lru_cache
@@ -14,6 +15,7 @@ from vendor_catalog_app.web.context import UserContext
 from vendor_catalog_app.web.flash import pop_flashes
 
 ADMIN_ROLE_OVERRIDE_SESSION_KEY = "tvendor_admin_role_override"
+LOGGER = logging.getLogger(__name__)
 
 
 @lru_cache(maxsize=1)
@@ -26,12 +28,60 @@ def get_repo() -> VendorRepository:
     return VendorRepository(get_config())
 
 
-def _resolve_user_principal(repo: VendorRepository, config: AppConfig, request: Request) -> str:
+def _first_header(request: Request, names: list[str]) -> str:
+    for name in names:
+        raw = str(request.headers.get(name, "")).strip()
+        if raw:
+            return raw
+    return ""
+
+
+def resolve_databricks_request_identity(request: Request) -> dict[str, str]:
+    email = _first_header(request, ["x-forwarded-email"])
+    preferred_username = _first_header(request, ["x-forwarded-preferred-username"])
+    forwarded_user = _first_header(request, ["x-forwarded-user"])
+
+    principal = preferred_username or email or forwarded_user
+    network_id = ""
+    if principal and "@" not in principal:
+        network_id = principal.split("\\")[-1].split("/")[-1]
+
+    first_name = ""
+    last_name = ""
+    display_name = ""
+    if principal:
+        parsed_name = _display_name_for_principal(principal)
+        display_name = parsed_name if parsed_name != "Unknown User" else ""
+        parts = [part for part in display_name.split(" ") if part and part.lower() != "user"]
+        if parts:
+            first_name = parts[0]
+            last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
+
+    return {
+        "principal": principal,
+        "email": email or (principal if "@" in principal else ""),
+        "network_id": network_id,
+        "first_name": first_name,
+        "last_name": last_name,
+        "display_name": display_name,
+    }
+
+
+def _resolve_user_principal(
+    repo: VendorRepository,
+    config: AppConfig,
+    request: Request,
+    forwarded_identity: dict[str, str] | None = None,
+) -> str:
     forced_user = request.query_params.get("as_user")
-    if config.use_mock and forced_user:
+    if config.use_local_db and config.is_dev_env and forced_user:
         return forced_user
-    if config.use_mock:
-        return os.getenv("TVENDOR_TEST_USER", "admin@example.com")
+    if config.use_local_db and config.is_dev_env:
+        return os.getenv("TVENDOR_TEST_USER", UNKNOWN_USER_PRINCIPAL)
+    identity = forwarded_identity or {}
+    principal = str(identity.get("principal") or "").strip()
+    if principal:
+        return principal
     return repo.get_current_user()
 
 
@@ -86,8 +136,21 @@ def get_user_context(request: Request) -> UserContext:
     repo = get_repo()
     config = get_config()
     repo.ensure_runtime_tables()
+    forwarded_identity = resolve_databricks_request_identity(request)
 
-    user_principal = _resolve_user_principal(repo, config, request)
+    user_principal = _resolve_user_principal(repo, config, request, forwarded_identity)
+    if user_principal != UNKNOWN_USER_PRINCIPAL:
+        try:
+            repo.sync_user_directory_identity(
+                login_identifier=user_principal,
+                email=forwarded_identity.get("email") or None,
+                network_id=forwarded_identity.get("network_id") or None,
+                first_name=forwarded_identity.get("first_name") or None,
+                last_name=forwarded_identity.get("last_name") or None,
+                display_name=forwarded_identity.get("display_name") or None,
+            )
+        except Exception:
+            LOGGER.warning("Failed to sync user directory identity for '%s'.", user_principal, exc_info=True)
     if user_principal == UNKNOWN_USER_PRINCIPAL:
         raw_roles = {ROLE_VIEWER}
     else:
@@ -117,7 +180,7 @@ def ensure_session_started(request: Request, context: UserContext) -> None:
         user_principal=context.user_principal,
         page_name="app",
         event_type="session_start",
-        payload={"locked_mode": context.config.locked_mode, "use_mock": context.config.use_mock},
+        payload={"locked_mode": context.config.locked_mode},
     )
     request.session[session_key] = True
 
@@ -216,7 +279,6 @@ def base_template_context(
         "testing_role_override": context.role_override or "",
         "testing_role_options": role_options,
         "fq_schema": context.config.fq_schema,
-        "use_mock": context.config.use_mock,
         "use_local_db": context.config.use_local_db,
         "local_db_path": context.config.local_db_path,
         "locked_mode": context.config.locked_mode,

@@ -35,14 +35,14 @@
 - Reworked Project Offerings quick-attach controls to typeahead vendor/offering search with no full preload, while preserving auto-attach vendor behavior.
 - Updated project vendor filtering UI on `/projects` to use vendor typeahead instead of loading full vendor option lists.
 - Added backend helpers for selected entity hydration (`get_vendors_by_ids`, `get_offerings_by_ids`) and server-side dedupe/auto-attach behavior when offerings imply vendor linkage.
-- Added tests for new typeahead APIs covering vendor, offering, and project search paths in mock mode.
+- Added tests for new typeahead APIs covering vendor, offering, and project search paths.
 
 ## 2026-02-09T21:13:44Z | VC-20260209-211344-6816
 - Completed Step A stability fix: updated all router template rendering calls to the modern Starlette signature `TemplateResponse(request, template, context, ...)`, removing deprecation warnings.
 - Added server-side Vendor 360 list paging/sort/search controls with URL state:
   - `q`, `page`, `page_size`, `sort_by`, `sort_dir`
   - retained backward-compatible `search` query support.
-- Added repository-level paged vendor query method for mock/local/dbx modes:
+- Added repository-level paged vendor query method for local/dbx modes:
   - `list_vendors_page(...)` with validated sort columns and deterministic ordering.
 - Added batched offering lookup for current vendor page to avoid per-row offering queries:
   - `list_vendor_offerings_for_vendors(...)`.
@@ -135,20 +135,20 @@
 - Reworked `Owner Org ID` input into a dropdown of existing orgs with a `+ Add new org` option and conditional input for new org IDs.
 - Added explanatory helper text clarifying `Owner Org ID` as the internal owning organization.
 - Added styling for invalid-field highlighting and hidden-field toggling.
-- Added mock-mode test coverage to confirm validation errors keep form values and mark invalid fields.
+- Added test coverage to confirm validation errors keep form values and mark invalid fields.
 
 ## 2026-02-09T19:17:02Z | VC-20260209-191702-5834
 - Added local runtime mode flags to config: `TVENDOR_USE_LOCAL_DB` and `TVENDOR_LOCAL_DB_PATH`.
 - Updated DB client to support SQLite execution in local mode, including `%s` to `?` parameter conversion and schema-prefix normalization.
 - Updated repository table resolution and runtime setup logic so local DB mode uses local table names and skips Databricks runtime DDL bootstrap.
 - Updated repository current-user resolution for local DB mode to use `TVENDOR_TEST_USER` fallback.
-- Updated `launch_app.bat` defaults to run against the local DB (`TVENDOR_USE_MOCK=false`, `TVENDOR_USE_LOCAL_DB=true`) and auto-initialize DB if missing.
+- Updated `launch_app.bat` defaults to run against the local DB (`TVENDOR_USE_LOCAL_DB=true`) and auto-initialize DB if missing.
 - Added local DB runtime env guidance to `setup/local_db/README.md`.
 
 ## 2026-02-09T19:12:05Z | VC-20260209-191205-7412
 - Refactored local DB bootstrap to file-based SQL folders under `setup/local_db/sql` with `schema/`, `seed/`, and `queries/`.
 - Updated `setup/local_db/init_local_db.py` to execute ordered SQL scripts from folders (or optional explicit schema/seed files), with default seeded initialization and `--skip-seed` support.
-- Added `setup/local_db/sql/seed/001_seed_mock_data.sql` to seed a complete mock-aligned dataset across vendor, offering, contracts, demos, projects, docs, security, and audit workflow tables.
+- Added `setup/local_db/sql/seed/001_seed_reference_data.sql` to seed a complete reference dataset across vendor, offering, contracts, demos, projects, docs, security, and audit workflow tables.
 - Added reusable query files in `setup/local_db/sql/queries/` including broad Vendor 360 search and projects-by-owner lookups to keep SQL out of Python.
 - Converted `setup/local_db/schema_sqlite.sql` into a compatibility stub and documented canonical SQL locations.
 - Updated local DB docs and bootstrap batch messaging to reflect schema + seed initialization.
@@ -163,7 +163,7 @@
 
 ## 2026-02-09T19:00:42Z | VC-20260209-190042-8569
 - Added explicit add-object quick actions on standalone project pages for users with edit permissions (`+ Add Demo`, `+ Add Document`, `+ Add Note`).
-- Added first-class Project Notes support with repository methods, runtime table bootstrap (`app_project_note`), mock data parity, telemetry (`project_note_add`), and audited writes.
+- Added first-class Project Notes support with repository methods, runtime table bootstrap (`app_project_note`), telemetry (`project_note_add`), and audited writes.
 - Added standalone project note creation route: `POST /projects/{project_id}/notes/add` with permission and locked-mode enforcement.
 - Enhanced standalone project summary/changes pages to show note counts and note history, including recent notes on summary.
 - Added test coverage for adding notes from standalone project pages.
@@ -188,9 +188,9 @@
 - Added Project Demo management: create/map/update/remove flows plus demo-level document linking from project detail pages.
 - Added Document Links hub behavior (links only, no uploads) for vendor, project, offering, and project-demo entities with telemetry and audited write paths.
 - Added URL smart defaults for document links: server and UI doc-type suggestion, generated default titles, `https://` validation, and doc-type enum validation.
-- Expanded repository/runtime support with new app tables (`app_project`, `app_project_offering_map`, `app_project_demo`, `app_document_link`) and full mock-mode parity.
+- Expanded repository/runtime support with new app tables (`app_project`, `app_project_offering_map`, `app_project_demo`, `app_document_link`).
 - Updated Vendor 360 summary with Projects/Documents preview cards and added offerings-page document link controls.
-- Added test coverage for doc-link heuristics and project/demo/doc end-to-end flows in mock mode.
+- Added test coverage for doc-link heuristics and project/demo/doc end-to-end flows.
 
 ## 2026-02-09T18:16:37Z | VC-20260209-181637-9314
 - Expanded Vendor 360 search to match related entity data (offerings, contracts, vendor/offering owners, contacts, demos, and key vendor/source fields).
@@ -203,7 +203,7 @@
 - Added dedicated offerings deep-dive route and page at `/vendors/{vendor_id}/offerings` with offering-level metrics and unassigned contract/demo mapping controls.
 - Added vendor creation flow (`GET/POST /vendors/new`) and offering creation flow (`GET/POST /vendors/{vendor_id}/offerings/new`).
 - Upgraded offering detail page to support editing offering fields, moving contract/demo mappings, and basic add/remove actions for offering owners and contacts.
-- Added repository write APIs for vendor/offering creation, offering updates, mapping actions, and owner/contact CRUD with mock-mode parity and best-effort auditing.
+- Added repository write APIs for vendor/offering creation, offering updates, mapping actions, and owner/contact CRUD with best-effort auditing.
 - Enforced `locked_mode` and role checks across all vendor/offering write actions.
 - Added telemetry events for vendor/offering create and offering-level write actions.
-- Added pytest coverage for Vendor 360 baseline load, permission behavior for vendor create form, vendor creation, offering creation, and mapping flows in mock mode.
+- Added pytest coverage for Vendor 360 baseline load, permission behavior for vendor create form, vendor creation, offering creation, and mapping flows.

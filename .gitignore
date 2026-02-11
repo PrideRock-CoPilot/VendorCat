@@ -4,7 +4,13 @@ __pycache__/
 *.pyd
 .Python
 .env
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 .venv/
 venv/
 .streamlit/secrets.toml
 setup/local_db/*.db
+setup/databricks/rendered/

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any
 from urllib.parse import quote
@@ -21,6 +22,7 @@ from vendor_catalog_app.web.services import (
 
 
 router = APIRouter(prefix="/workflows")
+LOGGER = logging.getLogger(__name__)
 
 WORKFLOW_QUEUES = ["all", "pending_review", "my_submissions", "my_approvals"]
 ENTERPRISE_SCOPE_VALUES = {"*", "all", "enterprise"}
@@ -199,7 +201,13 @@ def _user_refs(repo, user) -> set[str]:
         if resolved:
             refs.add(resolved)
     except Exception:
-        pass
+        LOGGER.debug("Failed to resolve login identifier for '%s'.", user.user_principal, exc_info=True)
+    try:
+        actor_ref = str(repo._actor_ref(user.user_principal) or "").strip().lower()
+        if actor_ref:
+            refs.add(actor_ref)
+    except Exception:
+        LOGGER.debug("Failed to resolve actor reference for '%s'.", user.user_principal, exc_info=True)
     return {ref for ref in refs if ref}
 
 
@@ -340,13 +348,13 @@ def _build_side_by_side_rows(repo, row: dict[str, Any], payload: dict[str, Any])
         if vendor_id:
             snapshots["vendor"] = _first_row(repo.get_vendor_profile(vendor_id))
     except Exception:
-        pass
+        LOGGER.debug("Failed to load vendor snapshot for '%s'.", vendor_id, exc_info=True)
 
     try:
         if offering_id:
             snapshots["offering"] = _first_row(repo.get_offerings_by_ids([offering_id]))
     except Exception:
-        pass
+        LOGGER.debug("Failed to load offering snapshot for '%s'.", offering_id, exc_info=True)
 
     if not vendor_id and snapshots["offering"]:
         vendor_id = str(snapshots["offering"].get("vendor_id") or "").strip()
@@ -355,13 +363,18 @@ def _build_side_by_side_rows(repo, row: dict[str, Any], payload: dict[str, Any])
         if vendor_id and offering_id:
             snapshots["offering_profile"] = dict(repo.get_offering_profile(vendor_id, offering_id) or {})
     except Exception:
-        pass
+        LOGGER.debug(
+            "Failed to load offering profile snapshot for vendor '%s' offering '%s'.",
+            vendor_id,
+            offering_id,
+            exc_info=True,
+        )
 
     try:
         if project_id:
             snapshots["project"] = dict(repo.get_project_by_id(project_id) or {})
     except Exception:
-        pass
+        LOGGER.debug("Failed to load project snapshot for '%s'.", project_id, exc_info=True)
 
     if not vendor_id and snapshots["project"]:
         vendor_id = str(snapshots["project"].get("vendor_id") or "").strip()
@@ -370,7 +383,7 @@ def _build_side_by_side_rows(repo, row: dict[str, Any], payload: dict[str, Any])
         if doc_id:
             snapshots["doc_link"] = dict(repo.get_doc_link(doc_id) or {})
     except Exception:
-        pass
+        LOGGER.debug("Failed to load document snapshot for '%s'.", doc_id, exc_info=True)
 
     try:
         if vendor_id and offering_id and data_flow_id:
@@ -378,7 +391,13 @@ def _build_side_by_side_rows(repo, row: dict[str, Any], payload: dict[str, Any])
                 repo.get_offering_data_flow(vendor_id=vendor_id, offering_id=offering_id, data_flow_id=data_flow_id) or {}
             )
     except Exception:
-        pass
+        LOGGER.debug(
+            "Failed to load data-flow snapshot for vendor '%s' offering '%s' flow '%s'.",
+            vendor_id,
+            offering_id,
+            data_flow_id,
+            exc_info=True,
+        )
 
     proposed_rows: list[tuple[str, Any]] = []
     updates = payload.get("updates")

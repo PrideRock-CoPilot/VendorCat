@@ -4,12 +4,14 @@ import sqlite3
 import sys
 from pathlib import Path
 
+import pytest
+
 APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
 from vendor_catalog_app.config import AppConfig
-from vendor_catalog_app.repository import VendorRepository
+from vendor_catalog_app.repository import SchemaBootstrapRequiredError, VendorRepository
 
 
 def _create_legacy_lookup_table(db_path: Path) -> None:
@@ -30,16 +32,37 @@ def _create_legacy_lookup_table(db_path: Path) -> None:
         )
         conn.commit()
 
+def _create_lookup_table_with_scd(db_path: Path) -> None:
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS app_lookup_option (
+              option_id TEXT PRIMARY KEY,
+              lookup_type TEXT NOT NULL,
+              option_code TEXT NOT NULL,
+              option_label TEXT NOT NULL,
+              sort_order INTEGER NOT NULL DEFAULT 100,
+              active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+              valid_from_ts TEXT NOT NULL,
+              valid_to_ts TEXT,
+              is_current INTEGER NOT NULL DEFAULT 1 CHECK (is_current IN (0, 1)),
+              deleted_flag INTEGER NOT NULL DEFAULT 0 CHECK (deleted_flag IN (0, 1)),
+              updated_at TEXT NOT NULL,
+              updated_by TEXT NOT NULL
+            );
+            """
+        )
+        conn.commit()
+
 
 def test_lookup_options_use_scd_history_with_validity_dates(tmp_path: Path) -> None:
     db_path = tmp_path / "lookup.db"
-    _create_legacy_lookup_table(db_path)
+    _create_lookup_table_with_scd(db_path)
     repo = VendorRepository(
         AppConfig(
             databricks_server_hostname="",
             databricks_http_path="",
             databricks_token="",
-            use_mock=False,
             use_local_db=True,
             local_db_path=str(db_path),
         )
@@ -89,3 +112,20 @@ def test_lookup_options_use_scd_history_with_validity_dates(tmp_path: Path) -> N
     contract_rows = active_visible[active_visible["option_code"].astype(str) == "contract"]
     assert len(contract_rows) >= 1
     assert "Contract Updated" in contract_rows["option_label"].astype(str).tolist()
+
+
+def test_lookup_option_legacy_schema_requires_bootstrap(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy_lookup.db"
+    _create_legacy_lookup_table(db_path)
+    repo = VendorRepository(
+        AppConfig(
+            databricks_server_hostname="",
+            databricks_http_path="",
+            databricks_token="",
+            use_local_db=True,
+            local_db_path=str(db_path),
+        )
+    )
+
+    with pytest.raises(SchemaBootstrapRequiredError):
+        repo.list_lookup_options("doc_tag", active_only=False)

@@ -16,9 +16,7 @@ from vendor_catalog_app.web.services import get_config, get_repo
 
 
 @pytest.fixture()
-def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    monkeypatch.setenv("TVENDOR_USE_MOCK", "1")
-    monkeypatch.setenv("TVENDOR_TEST_USER", "admin@example.com")
+def client(monkeypatch: pytest.MonkeyPatch, isolated_local_db: Path) -> TestClient:
     get_config.cache_clear()
     get_repo.cache_clear()
     app = create_app()
@@ -525,3 +523,4 @@ def test_offering_tickets_and_notes_can_be_added(client: TestClient) -> None:
     notes_page = client.get("/vendors/vnd-001/offerings/off-004?section=notes&return_to=%2Fvendors")
     assert notes_page.status_code == 200
     assert "API latency increased after tenant policy update." in notes_page.text
+

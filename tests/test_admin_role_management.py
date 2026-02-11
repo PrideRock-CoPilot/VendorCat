@@ -15,9 +15,7 @@ from vendor_catalog_app.web.services import get_config, get_repo
 
 
 @pytest.fixture()
-def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    monkeypatch.setenv("TVENDOR_USE_MOCK", "1")
-    monkeypatch.setenv("TVENDOR_TEST_USER", "admin@example.com")
+def client(monkeypatch: pytest.MonkeyPatch, isolated_local_db: Path) -> TestClient:
     get_config.cache_clear()
     get_repo.cache_clear()
     app = create_app()
@@ -178,3 +176,4 @@ def test_admin_defaults_section_resequences_sort_order(client: TestClient) -> No
     active_rows = repo.list_lookup_options("doc_tag", active_only=True)
     assert "priority_review" not in active_rows["option_code"].tolist()
     assert active_rows["sort_order"].tolist() == list(range(1, len(active_rows) + 1))
+

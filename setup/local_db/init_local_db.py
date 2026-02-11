@@ -6,6 +6,63 @@ from pathlib import Path
 from typing import Iterable
 
 
+REQUIRED_SCHEMA: dict[str, tuple[str, ...]] = {
+    "core_vendor": ("vendor_id", "display_name", "lifecycle_state", "owner_org_id"),
+    "sec_user_role_map": ("user_principal", "role_code", "active_flag"),
+    "app_user_settings": ("user_principal", "setting_key", "setting_value_json"),
+    "app_user_directory": (
+        "user_id",
+        "login_identifier",
+        "display_name",
+        "first_name",
+        "last_name",
+    ),
+    "app_lookup_option": (
+        "option_id",
+        "lookup_type",
+        "option_code",
+        "option_label",
+        "sort_order",
+        "active_flag",
+        "valid_from_ts",
+        "valid_to_ts",
+        "is_current",
+        "deleted_flag",
+    ),
+    "core_vendor_offering": ("offering_id", "vendor_id", "lob", "service_type"),
+    "app_offering_profile": (
+        "offering_id",
+        "vendor_id",
+        "estimated_monthly_cost",
+        "implementation_notes",
+        "data_sent",
+        "data_received",
+        "integration_method",
+        "inbound_method",
+        "outbound_method",
+    ),
+    "app_offering_ticket": (
+        "ticket_id",
+        "offering_id",
+        "vendor_id",
+        "ticket_system",
+        "external_ticket_id",
+        "title",
+        "status",
+    ),
+    "app_offering_data_flow": (
+        "data_flow_id",
+        "offering_id",
+        "vendor_id",
+        "direction",
+        "flow_name",
+        "method",
+        "data_description",
+        "endpoint_details",
+    ),
+}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Initialize a local SQLite DB with full twvendor schema and seed data.")
     parser.add_argument(
@@ -38,6 +95,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Delete existing database file before creating.",
     )
+    parser.add_argument(
+        "--skip-verify",
+        action="store_true",
+        help="Skip post-bootstrap schema verification.",
+    )
     return parser.parse_args()
 
 
@@ -56,6 +118,26 @@ def _apply_sql_files(conn: sqlite3.Connection, files: Iterable[Path]) -> int:
         conn.executescript(sql_file.read_text(encoding="utf-8"))
         count += 1
     return count
+
+
+def _table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
+    cursor = conn.execute(f"PRAGMA table_info({table_name})")
+    rows = cursor.fetchall()
+    columns = {str(row[1]).strip().lower() for row in rows if len(row) > 1 and str(row[1]).strip()}
+    return columns
+
+
+def verify_required_schema(conn: sqlite3.Connection) -> list[str]:
+    errors: list[str] = []
+    for table_name, required_columns in REQUIRED_SCHEMA.items():
+        present = _table_columns(conn, table_name)
+        if not present:
+            errors.append(f"missing table: {table_name}")
+            continue
+        missing = [column for column in required_columns if column.lower() not in present]
+        if missing:
+            errors.append(f"{table_name} missing columns: {', '.join(missing)}")
+    return errors
 
 
 def count_objects(conn: sqlite3.Connection, object_type: str, count_query_path: Path) -> int:
@@ -109,6 +191,16 @@ def main() -> None:
         schema_script_count = _apply_sql_files(conn, schema_files)
         seed_script_count = _apply_sql_files(conn, seed_files) if seed_files else 0
         conn.commit()
+        if not args.skip_verify:
+            schema_errors = verify_required_schema(conn)
+            if schema_errors:
+                details = "; ".join(schema_errors)
+                raise RuntimeError(
+                    "Local schema validation failed. "
+                    "The database is out of date for current app requirements. "
+                    "Run with --reset to rebuild the database. "
+                    f"Details: {details}"
+                )
         table_count = count_objects(conn, "table", count_query_path)
         view_count = count_objects(conn, "view", count_query_path)
 

@@ -21,6 +21,7 @@ class _FakeRepo:
         self.roles = roles
         self.bootstrap_called = 0
         self.ensure_called = 0
+        self.synced_users: list[str] = []
 
     def ensure_runtime_tables(self) -> None:
         self.ensure_called += 1
@@ -31,6 +32,11 @@ class _FakeRepo:
     def bootstrap_user_access(self, user_principal: str) -> set[str]:
         self.bootstrap_called += 1
         return self.roles
+
+    def sync_user_directory_identity(self, **kwargs):
+        login_identifier = str(kwargs.get("login_identifier") or "").strip()
+        if login_identifier:
+            self.synced_users.append(login_identifier)
 
     def list_known_roles(self) -> list[str]:
         return sorted(self.roles or {"vendor_viewer"})
@@ -46,13 +52,21 @@ class _FakeRepo:
         }
 
 
-def _request(path: str = "/dashboard") -> Request:
-    return Request({"type": "http", "method": "GET", "path": path, "query_string": b""})
+def _request(path: str = "/dashboard", headers: list[tuple[bytes, bytes]] | None = None) -> Request:
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": path,
+            "query_string": b"",
+            "headers": headers or [],
+        }
+    )
 
 
 def test_unknown_user_gets_viewer_without_bootstrap(monkeypatch) -> None:
     repo = _FakeRepo(current_user=UNKNOWN_USER_PRINCIPAL, roles={"vendor_admin"})
-    config = AppConfig("", "", "", use_mock=False, use_local_db=False)
+    config = AppConfig("", "", "", use_local_db=False)
     monkeypatch.setattr(services, "get_repo", lambda: repo)
     monkeypatch.setattr(services, "get_config", lambda: config)
 
@@ -66,7 +80,7 @@ def test_unknown_user_gets_viewer_without_bootstrap(monkeypatch) -> None:
 
 def test_non_unknown_user_uses_bootstrap_roles(monkeypatch) -> None:
     repo = _FakeRepo(current_user="editor@example.com", roles={"vendor_editor"})
-    config = AppConfig("", "", "", use_mock=False, use_local_db=False)
+    config = AppConfig("", "", "", use_local_db=False)
     monkeypatch.setattr(services, "get_repo", lambda: repo)
     monkeypatch.setattr(services, "get_config", lambda: config)
 
@@ -76,6 +90,26 @@ def test_non_unknown_user_uses_bootstrap_roles(monkeypatch) -> None:
     assert context.roles == {"vendor_editor"}
     assert repo.bootstrap_called == 1
     assert repo.ensure_called == 1
+
+
+def test_forwarded_identity_header_takes_precedence(monkeypatch) -> None:
+    repo = _FakeRepo(current_user="service_principal@databricks", roles={"vendor_editor"})
+    config = AppConfig("", "", "", use_local_db=False)
+    monkeypatch.setattr(services, "get_repo", lambda: repo)
+    monkeypatch.setattr(services, "get_config", lambda: config)
+    request = _request(
+        headers=[
+            (b"x-forwarded-preferred-username", b"jane.doe@example.com"),
+            (b"x-forwarded-email", b"jane.doe@example.com"),
+        ]
+    )
+
+    context = services.get_user_context(request)
+
+    assert context.user_principal == "jane.doe@example.com"
+    assert context.roles == {"vendor_editor"}
+    assert repo.bootstrap_called == 1
+    assert "jane.doe@example.com" in repo.synced_users
 
 
 def test_display_name_formats_email_to_first_last() -> None:

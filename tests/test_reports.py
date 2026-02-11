@@ -15,9 +15,7 @@ from vendor_catalog_app.web.services import get_config, get_repo
 
 
 @pytest.fixture()
-def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    monkeypatch.setenv("TVENDOR_USE_MOCK", "1")
-    monkeypatch.setenv("TVENDOR_TEST_USER", "admin@example.com")
+def client(monkeypatch: pytest.MonkeyPatch, isolated_local_db: Path) -> TestClient:
     get_config.cache_clear()
     get_repo.cache_clear()
     app = create_app()
@@ -76,3 +74,4 @@ def test_reports_email_request(client: TestClient) -> None:
     )
     assert response.status_code == 200
     assert "Email extract request queued." in response.text
+

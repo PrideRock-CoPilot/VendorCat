@@ -17,9 +17,7 @@ from vendor_catalog_app.web.services import get_config, get_repo
 
 
 @pytest.fixture()
-def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    monkeypatch.setenv("TVENDOR_USE_MOCK", "1")
-    monkeypatch.setenv("TVENDOR_TEST_USER", "admin@example.com")
+def client(monkeypatch: pytest.MonkeyPatch, isolated_local_db: Path) -> TestClient:
     get_config.cache_clear()
     get_repo.cache_clear()
     app = create_app()
@@ -210,7 +208,7 @@ def test_workflow_request_detail_shows_change_payload(client: TestClient) -> Non
 def test_pending_approvals_respects_business_unit_scope(client: TestClient) -> None:
     repo = get_repo()
     in_scope_request = repo.create_vendor_change_request(
-        vendor_id="vnd-001",  # IT-ENT for admin mock scope
+        vendor_id="vnd-001",  # IT-ENT for admin scope
         requestor_user_principal="admin@example.com",
         change_type="update_vendor_profile",
         payload={"updates": {"risk_tier": "high"}, "reason": "IT update"},
@@ -284,3 +282,4 @@ def test_workflow_decision_status_is_admin_managed(client: TestClient) -> None:
     queued = client.get("/workflows?status=awaiting_info&queue=all")
     assert queued.status_code == 200
     assert request_id in queued.text
+

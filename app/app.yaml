@@ -5,17 +5,24 @@ command:
 env:
   - name: "TVENDOR_ENV"
     value: "prod"
-  - name: "TVENDOR_USE_MOCK"
-    value: "false"
   - name: "TVENDOR_USE_LOCAL_DB"
     value: "false"
   - name: "TVENDOR_LOCKED_MODE"
     value: "false"
+  # Set schema per environment.
+  # Option A: set TVENDOR_FQ_SCHEMA=<catalog>.<schema>
+  # Option B: set TVENDOR_CATALOG + TVENDOR_SCHEMA
+  - name: "TVENDOR_FQ_SCHEMA"
+    value: "a1_dlk.twanalytics"
   - name: "TVENDOR_CATALOG"
-    value: "vendor_dev"
+    value: "a1_dlk"
   - name: "TVENDOR_SCHEMA"
-    value: "twvendor"
-  - name: "DATABRICKS_HTTP_PATH"
-    value: "<sql-warehouse-http-path>"
-  - name: "DATABRICKS_TOKEN"
-    valueFrom: "databricks_sql_token"
+    value: "twanalytics"
+  - name: "TVENDOR_ENFORCE_PROD_SQL_POLICY"
+    value: "true"
+  - name: "TVENDOR_ALLOWED_WRITE_VERBS"
+    value: "INSERT,UPDATE"
+  # In Databricks Apps, DATABRICKS_HOST is provided by platform.
+  # Provide either DATABRICKS_HTTP_PATH or DATABRICKS_WAREHOUSE_ID.
+  - name: "DATABRICKS_WAREHOUSE_ID"
+    value: ""

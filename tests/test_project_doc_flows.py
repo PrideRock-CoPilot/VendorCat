@@ -16,9 +16,7 @@ from vendor_catalog_app.web.services import get_config, get_repo
 
 
 @pytest.fixture()
-def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    monkeypatch.setenv("TVENDOR_USE_MOCK", "1")
-    monkeypatch.setenv("TVENDOR_TEST_USER", "admin@example.com")
+def client(monkeypatch: pytest.MonkeyPatch, isolated_local_db: Path) -> TestClient:
     get_config.cache_clear()
     get_repo.cache_clear()
     app = create_app()
@@ -355,3 +353,4 @@ def test_doc_link_rejects_unknown_tag_not_in_admin_lookup(client: TestClient) ->
     )
     assert response.status_code == 200
     assert "Tags must be selected from admin-managed options" in response.text
+

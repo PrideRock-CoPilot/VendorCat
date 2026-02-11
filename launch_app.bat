@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal EnableDelayedExpansion
 
 cd /d "%~dp0"
 
@@ -12,7 +12,6 @@ if exist "%TVENDOR_ENV_FILE%" (
 )
 
 if "%TVENDOR_ENV%"=="" set "TVENDOR_ENV=dev"
-if "%TVENDOR_USE_MOCK%"=="" set "TVENDOR_USE_MOCK=false"
 if "%TVENDOR_USE_LOCAL_DB%"=="" (
   if /I "%TVENDOR_ENV%"=="dev" (
     set "TVENDOR_USE_LOCAL_DB=true"
@@ -29,6 +28,9 @@ if "%TVENDOR_CATALOG%"=="" set "TVENDOR_CATALOG=vendor_dev"
 if "%TVENDOR_SCHEMA%"=="" set "TVENDOR_SCHEMA=twvendor"
 if "%TVENDOR_LOCKED_MODE%"=="" set "TVENDOR_LOCKED_MODE=false"
 if "%TVENDOR_OPEN_BROWSER%"=="" set "TVENDOR_OPEN_BROWSER=true"
+if "%TVENDOR_LOCAL_DB_AUTO_RESET%"=="" set "TVENDOR_LOCAL_DB_AUTO_RESET=true"
+if "%TVENDOR_LOCAL_DB_SEED%"=="" set "TVENDOR_LOCAL_DB_SEED=false"
+if "%TVENDOR_LOCAL_DB_REBUILD_MODE%"=="" set "TVENDOR_LOCAL_DB_REBUILD_MODE=always"
 if "%PORT%"=="" set "PORT=8000"
 
 if /I "%TVENDOR_USE_LOCAL_DB%"=="true" (
@@ -48,24 +50,77 @@ if exist ".venv\Scripts\python.exe" (
 echo Launching Vendor Catalog app...
 echo Using Python: %PYTHON_EXE%
 echo TVENDOR_ENV=%TVENDOR_ENV%
-echo TVENDOR_USE_MOCK=%TVENDOR_USE_MOCK%
 echo TVENDOR_USE_LOCAL_DB=%TVENDOR_USE_LOCAL_DB%
 echo TVENDOR_LOCAL_DB_PATH=%TVENDOR_LOCAL_DB_PATH%
 echo TVENDOR_LOCKED_MODE=%TVENDOR_LOCKED_MODE%
 echo TVENDOR_OPEN_BROWSER=%TVENDOR_OPEN_BROWSER%
+echo TVENDOR_LOCAL_DB_AUTO_RESET=%TVENDOR_LOCAL_DB_AUTO_RESET%
+echo TVENDOR_LOCAL_DB_SEED=%TVENDOR_LOCAL_DB_SEED%
+echo TVENDOR_LOCAL_DB_REBUILD_MODE=%TVENDOR_LOCAL_DB_REBUILD_MODE%
 echo PORT=%PORT%
 echo URL=http://localhost:%PORT%/dashboard
 echo.
 
 if /I "%TVENDOR_USE_LOCAL_DB%"=="true" (
-  if not exist "%TVENDOR_LOCAL_DB_PATH%" (
-    echo Local DB not found. Initializing...
-    %PYTHON_EXE% setup\local_db\init_local_db.py --reset
+  set "LOCAL_DB_APPLY_ARGS=--skip-seed"
+  if /I "%TVENDOR_LOCAL_DB_SEED%"=="true" set "LOCAL_DB_APPLY_ARGS="
+  set "LOCAL_DB_RESET_ARGS=--reset !LOCAL_DB_APPLY_ARGS!"
+
+  set "LOCAL_DB_REBUILD_MODE=%TVENDOR_LOCAL_DB_REBUILD_MODE%"
+  if /I not "!LOCAL_DB_REBUILD_MODE!"=="always" if /I not "!LOCAL_DB_REBUILD_MODE!"=="prompt" if /I not "!LOCAL_DB_REBUILD_MODE!"=="keep" (
+    echo WARNING: Unknown TVENDOR_LOCAL_DB_REBUILD_MODE=!LOCAL_DB_REBUILD_MODE!
+    echo Falling back to TVENDOR_LOCAL_DB_REBUILD_MODE=always
+    set "LOCAL_DB_REBUILD_MODE=always"
+  )
+
+  set "LOCAL_DB_ACTION="
+  if /I "!LOCAL_DB_REBUILD_MODE!"=="always" (
+    set "LOCAL_DB_ACTION=clean"
+  ) else if /I "!LOCAL_DB_REBUILD_MODE!"=="keep" (
+    set "LOCAL_DB_ACTION=keep"
+  ) else if /I "!LOCAL_DB_REBUILD_MODE!"=="prompt" (
+    if not exist "%TVENDOR_LOCAL_DB_PATH%" (
+      set "LOCAL_DB_ACTION=clean"
+    ) else (
+      set "LOCAL_DB_ACTION_CHOICE=C"
+      set /p "LOCAL_DB_ACTION_CHOICE=Local DB action [C=clean rebuild, K=keep data + apply schema updates], default C: "
+      if /I not "!LOCAL_DB_ACTION_CHOICE!"=="" set "LOCAL_DB_ACTION_CHOICE=!LOCAL_DB_ACTION_CHOICE:~0,1!"
+      if /I "!LOCAL_DB_ACTION_CHOICE!"=="K" set "LOCAL_DB_ACTION=keep"
+      if /I not "!LOCAL_DB_ACTION!"=="keep" set "LOCAL_DB_ACTION=clean"
+    )
+  )
+  if "!LOCAL_DB_ACTION!"=="" set "LOCAL_DB_ACTION=clean"
+
+  if /I "!LOCAL_DB_ACTION!"=="clean" (
+    echo Rebuilding local DB - clean reset...
+    %PYTHON_EXE% setup\local_db\init_local_db.py !LOCAL_DB_RESET_ARGS!
     if errorlevel 1 (
       echo.
-      echo Failed to initialize local database.
+      echo Failed to rebuild local database.
       pause
       exit /b 1
+    )
+    echo.
+  ) else (
+    echo Applying local DB schema updates while keeping existing data...
+    %PYTHON_EXE% setup\local_db\init_local_db.py !LOCAL_DB_APPLY_ARGS!
+    if errorlevel 1 (
+      if /I "%TVENDOR_LOCAL_DB_AUTO_RESET%"=="true" (
+        echo Local DB schema update failed. Rebuilding local DB from scratch...
+        %PYTHON_EXE% setup\local_db\init_local_db.py !LOCAL_DB_RESET_ARGS!
+        if errorlevel 1 (
+          echo.
+          echo Failed to rebuild local database.
+          pause
+          exit /b 1
+        )
+      ) else (
+        echo.
+        echo Failed to apply local database schema updates.
+        echo Set TVENDOR_LOCAL_DB_AUTO_RESET=true to auto-rebuild local DB when schema updates fail.
+        pause
+        exit /b 1
+      )
     )
     echo.
   )

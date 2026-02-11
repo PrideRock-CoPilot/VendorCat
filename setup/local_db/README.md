@@ -5,7 +5,7 @@ This folder provides a simple local SQLite database bootstrap for the full logic
 ## Files
 - `init_local_db.py`: Creates the SQLite DB, applies schema SQL scripts, and seeds sample data.
 - `sql/schema/*.sql`: Canonical schema DDL scripts.
-- `sql/seed/*.sql`: Seed scripts (mock-aligned sample data).
+- `sql/seed/*.sql`: Seed scripts (sample baseline data).
 - `sql/queries/*.sql`: Reusable local query files.
 - `schema_sqlite.sql`: Deprecated compatibility stub pointing to the `sql/` folders.
 
@@ -48,7 +48,6 @@ python setup\local_db\init_local_db.py --reset --sql-root setup\local_db\sql
 Set these environment variables (the `launch_app.bat` defaults now do this):
 
 ```bat
-set TVENDOR_USE_MOCK=false
 set TVENDOR_USE_LOCAL_DB=true
 set TVENDOR_LOCAL_DB_PATH=setup\local_db\twvendor_local.db
 ```

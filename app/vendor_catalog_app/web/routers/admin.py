@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timezone
 
@@ -32,6 +33,8 @@ from vendor_catalog_app.web.services import (
     get_user_context,
     log_page_view,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/admin")
@@ -106,7 +109,7 @@ def _normalize_as_of_date(raw: str | None) -> str:
         try:
             return datetime.fromisoformat(value).date().isoformat()
         except Exception:
-            pass
+            LOGGER.debug("Invalid as_of date '%s'; falling back to current UTC date.", value, exc_info=True)
     return datetime.now(timezone.utc).date().isoformat()
 
 

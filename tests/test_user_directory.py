@@ -44,7 +44,6 @@ def test_actor_ref_persists_user_directory_entry_for_local_db(tmp_path: Path) ->
             databricks_server_hostname="",
             databricks_http_path="",
             databricks_token="",
-            use_mock=False,
             use_local_db=True,
             local_db_path=str(db_path),
         )
@@ -76,7 +75,6 @@ def test_decorate_user_columns_resolves_user_id_to_display_name(tmp_path: Path) 
             databricks_server_hostname="",
             databricks_http_path="",
             databricks_token="",
-            use_mock=False,
             use_local_db=True,
             local_db_path=str(db_path),
         )
