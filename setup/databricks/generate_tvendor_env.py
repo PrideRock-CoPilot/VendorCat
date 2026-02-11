@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -10,11 +11,16 @@ from typing import Any
 from urllib.parse import urlparse
 
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_ENV_FILE = REPO_ROOT / "setup" / "config" / "tvendor.env"
+DEFAULT_APP_YAML_FILE = REPO_ROOT / "app" / "app.yaml"
+
+
 def _parse_fq_schema(value: str) -> tuple[str, str]:
     raw = str(value or "").strip()
     parts = [item.strip() for item in raw.split(".", 1)]
     if len(parts) != 2 or not parts[0] or not parts[1]:
-        raise ValueError("Expected --fq-schema in '<catalog>.<schema>' format.")
+        raise ValueError("Expected schema in '<catalog>.<schema>' format.")
     return parts[0], parts[1]
 
 
@@ -41,7 +47,6 @@ def _workspace_host_from_spark() -> str:
         from pyspark.sql import SparkSession  # type: ignore
     except Exception:
         return ""
-
     spark = SparkSession.getActiveSession()
     if spark is None:
         return ""
@@ -52,7 +57,6 @@ def _workspace_host_from_spark() -> str:
 
 
 def _workspace_host_from_dbutils() -> str:
-    # Works when run in Databricks notebook Python context.
     try:
         dbutils_obj: Any = globals().get("dbutils")
         if dbutils_obj is None:
@@ -88,7 +92,59 @@ def _resolve_http_path(http_path: str, warehouse_id: str) -> str:
     warehouse = str(warehouse_id or "").strip()
     if warehouse:
         return f"/sql/1.0/warehouses/{warehouse}"
-    raise ValueError("Provide --http-path or --warehouse-id.")
+    return ""
+
+
+def _as_bool(value: str | None, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _load_app_yaml_env(path: Path) -> dict[str, str]:
+    if not path.exists():
+        return {}
+
+    name_re = re.compile(r'^\s*-\s*name:\s*"([^"]+)"\s*$')
+    value_re = re.compile(r'^\s*value:\s*"([^"]*)"\s*$')
+    env_map: dict[str, str] = {}
+    pending_name: str | None = None
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        name_match = name_re.match(raw_line)
+        if name_match:
+            pending_name = name_match.group(1).strip()
+            continue
+        value_match = value_re.match(raw_line)
+        if value_match and pending_name:
+            env_map[pending_name] = value_match.group(1)
+            pending_name = None
+            continue
+    return env_map
+
+
+def _resolve_catalog_schema(
+    *,
+    fq_schema_arg: str,
+    catalog_arg: str,
+    schema_arg: str,
+    app_env: dict[str, str],
+) -> tuple[str, str]:
+    if str(fq_schema_arg or "").strip():
+        return _parse_fq_schema(fq_schema_arg)
+
+    app_fq = str(app_env.get("TVENDOR_FQ_SCHEMA", "")).strip()
+    if app_fq:
+        return _parse_fq_schema(app_fq)
+
+    catalog = str(catalog_arg or "").strip() or str(app_env.get("TVENDOR_CATALOG", "")).strip()
+    schema = str(schema_arg or "").strip() or str(app_env.get("TVENDOR_SCHEMA", "")).strip()
+    if not catalog or not schema:
+        raise ValueError(
+            "Set catalog/schema once in app/app.yaml (TVENDOR_CATALOG + TVENDOR_SCHEMA), "
+            "or pass --fq-schema."
+        )
+    return catalog, schema
 
 
 def _build_env_text(
@@ -146,14 +202,76 @@ def _build_env_text(
     )
 
 
+def _build_app_yaml_text(
+    *,
+    env_name: str,
+    catalog: str,
+    schema: str,
+    warehouse_id: str,
+    http_path: str,
+    locked_mode: bool,
+) -> str:
+    lines = [
+        "command:",
+        '  - "python"',
+        '  - "main.py"',
+        "",
+        "# Edit only these values per environment:",
+        "# - TVENDOR_CATALOG",
+        "# - TVENDOR_SCHEMA",
+        "# Optional override if your environment does not auto-populate SQL path:",
+        "# - DATABRICKS_WAREHOUSE_ID (or DATABRICKS_HTTP_PATH)",
+        "env:",
+        '  - name: "TVENDOR_ENV"',
+        f'    value: "{env_name}"',
+        '  - name: "TVENDOR_USE_LOCAL_DB"',
+        '    value: "false"',
+        '  - name: "TVENDOR_LOCKED_MODE"',
+        f'    value: "{"true" if locked_mode else "false"}"',
+        '  - name: "TVENDOR_CATALOG"',
+        f'    value: "{catalog}"',
+        '  - name: "TVENDOR_SCHEMA"',
+        f'    value: "{schema}"',
+        '  - name: "TVENDOR_ENFORCE_PROD_SQL_POLICY"',
+        '    value: "true"',
+        '  - name: "TVENDOR_ALLOWED_WRITE_VERBS"',
+        '    value: "INSERT,UPDATE"',
+    ]
+    if str(http_path or "").strip():
+        lines.extend(
+            [
+                '  - name: "DATABRICKS_HTTP_PATH"',
+                f'    value: "{http_path}"',
+            ]
+        )
+    lines.extend(
+        [
+            '  - name: "DATABRICKS_WAREHOUSE_ID"',
+            f'    value: "{warehouse_id}"',
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate setup/config/tvendor.env for Databricks + OAuth runtime."
+        description=(
+            "Generate setup/config/tvendor.env and app/app.yaml from one source "
+            "of truth (catalog/schema in app.yaml or CLI)."
+        )
     )
     parser.add_argument(
         "--fq-schema",
-        required=True,
-        help="Target '<catalog>.<schema>' (example: a1_dlk.twanalytics).",
+        default="",
+        help="Target '<catalog>.<schema>' (overrides catalog/schema sources).",
+    )
+    parser.add_argument("--catalog", default="", help="Target catalog (used with --schema).")
+    parser.add_argument("--schema", default="", help="Target schema (used with --catalog).")
+    parser.add_argument(
+        "--from-app-yaml",
+        default=str(DEFAULT_APP_YAML_FILE),
+        help="Read existing app YAML env values from this path.",
     )
     parser.add_argument(
         "--workspace-hostname",
@@ -167,8 +285,8 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--warehouse-id",
-        default=os.getenv("DATABRICKS_WAREHOUSE_ID", ""),
-        help="Databricks SQL warehouse id; used to derive /sql/1.0/warehouses/<id>.",
+        default="",
+        help="Databricks SQL warehouse id.",
     )
     parser.add_argument(
         "--oauth-client-id",
@@ -180,26 +298,23 @@ def _parse_args() -> argparse.Namespace:
         default=os.getenv("DATABRICKS_CLIENT_SECRET", ""),
         help="OAuth service principal client secret (optional at generation time).",
     )
-    parser.add_argument(
-        "--env",
-        default="prod",
-        help="TVENDOR_ENV value (default: prod).",
-    )
-    parser.add_argument(
-        "--locked-mode",
-        action="store_true",
-        help="Write TVENDOR_LOCKED_MODE=true.",
-    )
-    parser.add_argument(
-        "--port",
-        default=8000,
-        type=int,
-        help="PORT value for the app (default: 8000).",
-    )
+    parser.add_argument("--env", default="", help="TVENDOR_ENV value (default: prod).")
+    parser.add_argument("--locked-mode", action="store_true", help="Write TVENDOR_LOCKED_MODE=true.")
+    parser.add_argument("--port", default=8000, type=int, help="PORT value (default: 8000).")
     parser.add_argument(
         "--output-file",
-        default=str(Path(__file__).resolve().parents[1] / "config" / "tvendor.env"),
-        help="Output env file path.",
+        default=str(DEFAULT_ENV_FILE),
+        help="Output tvendor.env file path.",
+    )
+    parser.add_argument(
+        "--app-yaml-file",
+        default=str(DEFAULT_APP_YAML_FILE),
+        help="Output app.yaml path.",
+    )
+    parser.add_argument(
+        "--skip-app-yaml-write",
+        action="store_true",
+        help="Do not update app.yaml.",
     )
     parser.add_argument(
         "--bootstrap-admin",
@@ -235,39 +350,83 @@ def _parse_args() -> argparse.Namespace:
 def main() -> int:
     args = _parse_args()
     try:
-        catalog, schema = _parse_fq_schema(args.fq_schema)
+        app_yaml_path = Path(str(args.from_app_yaml or "")).expanduser().resolve()
+        app_env = _load_app_yaml_env(app_yaml_path)
+
+        catalog, schema = _resolve_catalog_schema(
+            fq_schema_arg=args.fq_schema,
+            catalog_arg=args.catalog,
+            schema_arg=args.schema,
+            app_env=app_env,
+        )
         fq_schema = f"{catalog}.{schema}"
+
+        env_name = (
+            str(args.env or "").strip().lower()
+            or str(app_env.get("TVENDOR_ENV", "")).strip().lower()
+            or "prod"
+        )
+        locked_mode = bool(args.locked_mode) or _as_bool(app_env.get("TVENDOR_LOCKED_MODE"), default=False)
+        warehouse_id = (
+            str(args.warehouse_id or "").strip()
+            or str(app_env.get("DATABRICKS_WAREHOUSE_ID", "")).strip()
+            or str(os.getenv("DATABRICKS_WAREHOUSE_ID", "")).strip()
+        )
+        http_path_raw = (
+            str(args.http_path or "").strip()
+            or str(app_env.get("DATABRICKS_HTTP_PATH", "")).strip()
+            or str(os.getenv("DATABRICKS_HTTP_PATH", "")).strip()
+        )
+        http_path = _resolve_http_path(http_path_raw, warehouse_id)
+
         host = _clean_host(args.workspace_hostname) or _detect_workspace_host()
         if not host:
             raise ValueError(
                 "Unable to detect workspace host. Provide --workspace-hostname explicitly."
             )
-        http_path = _resolve_http_path(args.http_path, args.warehouse_id)
-        text = _build_env_text(
-            env_name=str(args.env or "prod").strip().lower() or "prod",
+
+        env_text = _build_env_text(
+            env_name=env_name,
             host=host,
             http_path=http_path,
-            warehouse_id=str(args.warehouse_id or "").strip(),
+            warehouse_id=warehouse_id,
             catalog=catalog,
             schema=schema,
             fq_schema=fq_schema,
             oauth_client_id=str(args.oauth_client_id or "").strip(),
             oauth_client_secret=str(args.oauth_client_secret or "").strip(),
-            locked_mode=bool(args.locked_mode),
+            locked_mode=locked_mode,
             port=int(args.port),
+        )
+        app_yaml_text = _build_app_yaml_text(
+            env_name=env_name,
+            catalog=catalog,
+            schema=schema,
+            warehouse_id=warehouse_id,
+            http_path=http_path,
+            locked_mode=locked_mode,
         )
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
-    output_path = Path(str(args.output_file or "").strip()).expanduser().resolve()
+    output_path = Path(str(args.output_file or "")).expanduser().resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(text, encoding="utf-8")
+    output_path.write_text(env_text, encoding="utf-8")
+
+    app_yaml_output_path = Path(str(args.app_yaml_file or "")).expanduser().resolve()
+    if not args.skip_app_yaml_write:
+        app_yaml_output_path.parent.mkdir(parents=True, exist_ok=True)
+        app_yaml_output_path.write_text(app_yaml_text, encoding="utf-8")
+        print(f"Wrote app config YAML: {app_yaml_output_path}")
 
     print(f"Wrote Databricks env config: {output_path}")
     print(f"TVENDOR_FQ_SCHEMA={fq_schema}")
     print(f"DATABRICKS_SERVER_HOSTNAME={host}")
-    print(f"DATABRICKS_HTTP_PATH={http_path}")
+    if http_path:
+        print(f"DATABRICKS_HTTP_PATH={http_path}")
+    else:
+        print("WARNING: DATABRICKS_HTTP_PATH is blank. Ensure runtime provides HTTP path or warehouse id.")
     print("DATABRICKS_TOKEN is intentionally blank (OAuth-only mode).")
 
     if args.bootstrap_admin:

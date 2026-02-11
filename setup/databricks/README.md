@@ -17,20 +17,34 @@ Rendered files are written to:
 setup/databricks/rendered/
 ```
 
-## Generate `tvendor.env` For Databricks OAuth
+## Single Source Config (`app/app.yaml`)
 
-Generate an app config file with Databricks connection values (no PAT token) using:
+`generate_tvendor_env.py` treats `app/app.yaml` as the primary source of deploy settings.
+Only update these per environment:
+
+1. `TVENDOR_CATALOG`
+2. `TVENDOR_SCHEMA`
+
+Optional override:
+
+1. `DATABRICKS_WAREHOUSE_ID` (or `DATABRICKS_HTTP_PATH`) if your runtime does not auto-populate SQL path.
+
+Then generate runtime env:
 
 ```bash
-python setup/databricks/generate_tvendor_env.py --fq-schema a1_dlk.twanalytics --warehouse-id <warehouse-id>
+python setup/databricks/generate_tvendor_env.py
 ```
+
+This writes:
+
+1. `setup/config/tvendor.env`
+2. `app/app.yaml` (normalized template unless `--skip-app-yaml-write` is used)
 
 Notes:
 
-1. `DATABRICKS_TOKEN` is left blank intentionally.
-2. `DATABRICKS_HTTP_PATH` is derived from `--warehouse-id` when `--http-path` is not supplied.
-3. `DATABRICKS_SERVER_HOSTNAME` is auto-detected in Databricks when possible; otherwise pass `--workspace-hostname`.
-4. Output defaults to `setup/config/tvendor.env` and can be overridden with `--output-file`.
+1. `DATABRICKS_TOKEN` is left blank intentionally (OAuth-only).
+2. `DATABRICKS_SERVER_HOSTNAME` is auto-detected in Databricks when possible; otherwise pass `--workspace-hostname`.
+3. You can still override any value with CLI args (for example `--fq-schema`, `--warehouse-id`, `--http-path`).
 
 ## Validate Schema + Bootstrap Admin User
 
@@ -53,10 +67,7 @@ python setup/databricks/validate_schema_and_bootstrap_admin.py \
 You can chain both actions:
 
 ```bash
-python setup/databricks/generate_tvendor_env.py \
-  --fq-schema a1_dlk.twanalytics \
-  --warehouse-id <warehouse-id> \
-  --bootstrap-admin
+python setup/databricks/generate_tvendor_env.py --bootstrap-admin
 ```
 
 ## Execute Order

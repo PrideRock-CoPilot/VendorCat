@@ -2,6 +2,11 @@ command:
   - "python"
   - "main.py"
 
+# Edit only these values per environment:
+# - TVENDOR_CATALOG
+# - TVENDOR_SCHEMA
+# Optional if your runtime does not auto-populate SQL path:
+# - DATABRICKS_WAREHOUSE_ID (or DATABRICKS_HTTP_PATH)
 env:
   - name: "TVENDOR_ENV"
     value: "prod"
@@ -9,11 +14,6 @@ env:
     value: "false"
   - name: "TVENDOR_LOCKED_MODE"
     value: "false"
-  # Set schema per environment.
-  # Option A: set TVENDOR_FQ_SCHEMA=<catalog>.<schema>
-  # Option B: set TVENDOR_CATALOG + TVENDOR_SCHEMA
-  - name: "TVENDOR_FQ_SCHEMA"
-    value: "a1_dlk.twanalytics"
   - name: "TVENDOR_CATALOG"
     value: "a1_dlk"
   - name: "TVENDOR_SCHEMA"
@@ -22,7 +22,5 @@ env:
     value: "true"
   - name: "TVENDOR_ALLOWED_WRITE_VERBS"
     value: "INSERT,UPDATE"
-  # In Databricks Apps, DATABRICKS_HOST is provided by platform.
-  # Provide either DATABRICKS_HTTP_PATH or DATABRICKS_WAREHOUSE_ID.
   - name: "DATABRICKS_WAREHOUSE_ID"
     value: ""
