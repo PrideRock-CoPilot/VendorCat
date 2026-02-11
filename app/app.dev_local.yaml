@@ -1,0 +1,29 @@
+command:
+  - "python"
+  - "main.py"
+
+# Databricks Apps dev fallback profile:
+# - Uses local SQLite in app container (no warehouse attachment required).
+env:
+  - name: "TVENDOR_ENV"
+    value: "dev"
+  - name: "TVENDOR_USE_LOCAL_DB"
+    value: "true"
+  - name: "TVENDOR_LOCAL_DB_PATH"
+    value: "/tmp/twvendor_local.db"
+  - name: "TVENDOR_LOCAL_DB_AUTO_INIT"
+    value: "true"
+  - name: "TVENDOR_LOCAL_DB_RESET_ON_START"
+    value: "false"
+  - name: "TVENDOR_LOCAL_DB_SEED"
+    value: "false"
+  - name: "TVENDOR_LOCKED_MODE"
+    value: "false"
+  - name: "TVENDOR_CATALOG"
+    value: "a1_dlk"
+  - name: "TVENDOR_SCHEMA"
+    value: "twvendor"
+  - name: "TVENDOR_ENFORCE_PROD_SQL_POLICY"
+    value: "true"
+  - name: "TVENDOR_ALLOWED_WRITE_VERBS"
+    value: "INSERT,UPDATE"

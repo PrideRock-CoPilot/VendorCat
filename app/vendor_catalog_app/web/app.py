@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
+from vendor_catalog_app.local_db_bootstrap import ensure_local_db_ready
 from vendor_catalog_app.repository import SchemaBootstrapRequiredError
 from vendor_catalog_app.web.bootstrap_diagnostics import build_bootstrap_diagnostics_payload
 from vendor_catalog_app.web.routers import router as web_router
@@ -52,6 +53,11 @@ def create_app() -> FastAPI:
             {"request": request, "error_message": str(exc)},
             status_code=503,
         )
+
+    @app.on_event("startup")
+    async def _startup_local_db_bootstrap() -> None:
+        config = get_config()
+        ensure_local_db_ready(config)
 
     app.mount("/static", StaticFiles(directory=str(base_dir / "static")), name="static")
     app.include_router(web_router)

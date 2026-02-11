@@ -111,3 +111,14 @@ Interpretation:
 
 1. `connectivity_probe` failed: check warehouse app resource binding (`valueFrom: "sql-warehouse"`), OAuth/runtime auth, network access, and warehouse `Can use` permission for the app service principal.
 2. `connectivity_probe` passed but table/column probe failed: check Unity Catalog privileges and run missing bootstrap/migration SQL for the configured schema.
+
+## Dev Fallback Without Warehouse Attach
+
+If app/warehouse permissions are blocked in dev, deploy with local DB mode:
+
+1. Use `app/app.dev_local.yaml` values (or equivalent env vars in your dev app).
+2. Keep:
+   - `TVENDOR_USE_LOCAL_DB=true`
+   - `TVENDOR_LOCAL_DB_AUTO_INIT=true`
+   - `TVENDOR_LOCAL_DB_SEED=false`
+3. The app will auto-bootstrap `/tmp/twvendor_local.db` at startup.

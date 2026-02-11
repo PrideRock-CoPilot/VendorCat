@@ -64,6 +64,11 @@ launch_app_dev_pat.bat
 Then set these values in `setup/config/tvendor.dev_pat.env`:
 `DATABRICKS_SERVER_HOSTNAME`, `DATABRICKS_HTTP_PATH` (or `DATABRICKS_WAREHOUSE_ID`), and `DATABRICKS_TOKEN`.
 
+- Databricks Apps dev fallback (no warehouse attach required):
+Use `app/app.dev_local.yaml` values in your app config:
+`TVENDOR_USE_LOCAL_DB=true`, `TVENDOR_LOCAL_DB_AUTO_INIT=true`, and `TVENDOR_LOCAL_DB_SEED=false`.
+On startup, the app bootstraps a small local SQLite DB automatically (schema-only by default).
+
 For Databricks Apps, prefer binding a SQL warehouse resource and use:
 ```yaml
 - name: "DATABRICKS_WAREHOUSE_ID"
