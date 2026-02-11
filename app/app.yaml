@@ -5,7 +5,7 @@ command:
 # Edit only these values per environment:
 # - TVENDOR_CATALOG
 # - TVENDOR_SCHEMA
-# Optional if your runtime does not auto-populate SQL path:
+# Optional override if your environment does not use app resource binding:
 # - DATABRICKS_WAREHOUSE_ID (or DATABRICKS_HTTP_PATH)
 env:
   - name: "TVENDOR_ENV"
@@ -17,10 +17,10 @@ env:
   - name: "TVENDOR_CATALOG"
     value: "a1_dlk"
   - name: "TVENDOR_SCHEMA"
-    value: "twanalytics"
+    value: "twvendor"
   - name: "TVENDOR_ENFORCE_PROD_SQL_POLICY"
     value: "true"
   - name: "TVENDOR_ALLOWED_WRITE_VERBS"
     value: "INSERT,UPDATE"
   - name: "DATABRICKS_WAREHOUSE_ID"
-    value: ""
+    valueFrom: "sql-warehouse"

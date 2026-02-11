@@ -107,6 +107,7 @@ def _load_app_yaml_env(path: Path) -> dict[str, str]:
 
     name_re = re.compile(r'^\s*-\s*name:\s*"([^"]+)"\s*$')
     value_re = re.compile(r'^\s*value:\s*"([^"]*)"\s*$')
+    value_from_re = re.compile(r'^\s*valueFrom:\s*"([^"]+)"\s*$')
     env_map: dict[str, str] = {}
     pending_name: str | None = None
 
@@ -118,6 +119,11 @@ def _load_app_yaml_env(path: Path) -> dict[str, str]:
         value_match = value_re.match(raw_line)
         if value_match and pending_name:
             env_map[pending_name] = value_match.group(1)
+            pending_name = None
+            continue
+        value_from_match = value_from_re.match(raw_line)
+        if value_from_match and pending_name:
+            env_map[f"{pending_name}__value_from"] = value_from_match.group(1).strip()
             pending_name = None
             continue
     return env_map
@@ -210,6 +216,7 @@ def _build_app_yaml_text(
     warehouse_id: str,
     http_path: str,
     locked_mode: bool,
+    warehouse_resource_key: str,
 ) -> str:
     lines = [
         "command:",
@@ -219,7 +226,7 @@ def _build_app_yaml_text(
         "# Edit only these values per environment:",
         "# - TVENDOR_CATALOG",
         "# - TVENDOR_SCHEMA",
-        "# Optional override if your environment does not auto-populate SQL path:",
+        "# Optional override if your environment does not use app resource binding:",
         "# - DATABRICKS_WAREHOUSE_ID (or DATABRICKS_HTTP_PATH)",
         "env:",
         '  - name: "TVENDOR_ENV"',
@@ -244,13 +251,21 @@ def _build_app_yaml_text(
                 f'    value: "{http_path}"',
             ]
         )
-    lines.extend(
-        [
-            '  - name: "DATABRICKS_WAREHOUSE_ID"',
-            f'    value: "{warehouse_id}"',
-            "",
-        ]
-    )
+    if str(warehouse_id or "").strip():
+        lines.extend(
+            [
+                '  - name: "DATABRICKS_WAREHOUSE_ID"',
+                f'    value: "{warehouse_id}"',
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                '  - name: "DATABRICKS_WAREHOUSE_ID"',
+                f'    valueFrom: "{warehouse_resource_key}"',
+            ]
+        )
+    lines.append("")
     return "\n".join(lines)
 
 
@@ -287,6 +302,11 @@ def _parse_args() -> argparse.Namespace:
         "--warehouse-id",
         default="",
         help="Databricks SQL warehouse id.",
+    )
+    parser.add_argument(
+        "--warehouse-resource-key",
+        default="",
+        help="Databricks Apps SQL warehouse resource key for app.yaml valueFrom (default: sql-warehouse).",
     )
     parser.add_argument(
         "--oauth-client-id",
@@ -372,6 +392,11 @@ def main() -> int:
             or str(app_env.get("DATABRICKS_WAREHOUSE_ID", "")).strip()
             or str(os.getenv("DATABRICKS_WAREHOUSE_ID", "")).strip()
         )
+        warehouse_resource_key = (
+            str(args.warehouse_resource_key or "").strip()
+            or str(app_env.get("DATABRICKS_WAREHOUSE_ID__value_from", "")).strip()
+            or "sql-warehouse"
+        )
         http_path_raw = (
             str(args.http_path or "").strip()
             or str(app_env.get("DATABRICKS_HTTP_PATH", "")).strip()
@@ -405,6 +430,7 @@ def main() -> int:
             warehouse_id=warehouse_id,
             http_path=http_path,
             locked_mode=locked_mode,
+            warehouse_resource_key=warehouse_resource_key,
         )
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

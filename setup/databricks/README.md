@@ -28,6 +28,7 @@ Only update these per environment:
 Optional override:
 
 1. `DATABRICKS_WAREHOUSE_ID` (or `DATABRICKS_HTTP_PATH`) if your runtime does not auto-populate SQL path.
+2. In Databricks Apps, prefer `valueFrom: "sql-warehouse"` for `DATABRICKS_WAREHOUSE_ID` in `app/app.yaml`.
 
 Then generate runtime env:
 
@@ -45,6 +46,7 @@ Notes:
 1. `DATABRICKS_TOKEN` is left blank intentionally (OAuth-only).
 2. `DATABRICKS_SERVER_HOSTNAME` is auto-detected in Databricks when possible; otherwise pass `--workspace-hostname`.
 3. You can still override any value with CLI args (for example `--fq-schema`, `--warehouse-id`, `--http-path`).
+4. If `--warehouse-id` is not set, generator writes `valueFrom: "sql-warehouse"` for app resource binding.
 
 ## Validate Schema + Bootstrap Admin User
 

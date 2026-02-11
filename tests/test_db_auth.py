@@ -9,6 +9,7 @@ APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
+import vendor_catalog_app.db as db_module
 from vendor_catalog_app.config import AppConfig
 from vendor_catalog_app.db import DatabricksSQLClient
 
@@ -37,7 +38,8 @@ def test_databricks_validate_accepts_oauth_service_principal_credentials() -> No
     client._validate()
 
 
-def test_databricks_validate_rejects_missing_auth() -> None:
+def test_databricks_validate_rejects_missing_auth_without_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(db_module, "DatabricksSDKConfig", None)
     config = AppConfig(
         databricks_server_hostname="example.cloud.databricks.com",
         databricks_http_path="/sql/1.0/warehouses/abc",
@@ -49,6 +51,38 @@ def test_databricks_validate_rejects_missing_auth() -> None:
     client = DatabricksSQLClient(config)
     with pytest.raises(RuntimeError):
         client._validate()
+
+
+def test_databricks_connect_supports_runtime_oauth_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FakeConfig:
+        def __init__(self, host: str) -> None:
+            self.host = host
+
+        def authenticate(self) -> dict[str, str]:
+            return {"Authorization": "Bearer runtime-token"}
+
+    def _fake_connect(**kwargs):
+        return kwargs
+
+    monkeypatch.setattr(db_module, "DatabricksSDKConfig", _FakeConfig)
+    monkeypatch.setattr(db_module.dbsql, "connect", _fake_connect)
+
+    config = AppConfig(
+        databricks_server_hostname="example.cloud.databricks.com",
+        databricks_http_path="/sql/1.0/warehouses/abc",
+        databricks_token="",
+        databricks_client_id="",
+        databricks_client_secret="",
+        use_local_db=False,
+    )
+    client = DatabricksSQLClient(config)
+    result = client._connect_databricks()
+
+    assert "credentials_provider" in result
+    provider = result["credentials_provider"]
+    header_factory = provider()
+    assert callable(header_factory)
+    assert header_factory()["Authorization"] == "Bearer runtime-token"
 
 
 def test_prod_sql_policy_blocks_ddl_and_delete() -> None:

@@ -52,6 +52,13 @@ set DATABRICKS_CLIENT_SECRET=<service-principal-client-secret>
 PAT is still supported via `DATABRICKS_TOKEN`, but Databricks Apps should use OAuth service principal credentials.
 `DATABRICKS_HTTP_PATH` is also supported directly and takes precedence when provided.
 
+For Databricks Apps, prefer binding a SQL warehouse resource and use:
+```yaml
+- name: "DATABRICKS_WAREHOUSE_ID"
+  valueFrom: "sql-warehouse"
+```
+The app service principal must have warehouse `CAN USE` and Unity Catalog access to the target catalog/schema/tables.
+
 ### Databricks App Identity
 - The app reads Databricks forwarded identity headers (`X-Forwarded-Preferred-Username`, `X-Forwarded-Email`, `X-Forwarded-User`) per request.
 - On first sign-in, users are auto-added to `app_user_directory` and auto-provisioned with lowest access (`vendor_viewer`) if no role grant exists.

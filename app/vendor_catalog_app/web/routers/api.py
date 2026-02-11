@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
@@ -33,6 +35,16 @@ def api_health(request: Request):
         "auth_context": {
             "forwarded_email": bool(identity.get("email")),
             "forwarded_network_id": bool(identity.get("network_id")),
+        },
+        "connection_context": {
+            "has_server_hostname": bool(config.databricks_server_hostname),
+            "has_http_path": bool(config.databricks_http_path),
+            "has_warehouse_id_env": bool(str(os.getenv("DATABRICKS_WAREHOUSE_ID", "")).strip()),
+            "has_pat_token": bool(str(config.databricks_token or "").strip()),
+            "has_client_credentials": bool(
+                str(config.databricks_client_id or "").strip()
+                and str(config.databricks_client_secret or "").strip()
+            ),
         },
     }
     try:

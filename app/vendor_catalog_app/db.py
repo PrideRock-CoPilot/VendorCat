@@ -47,7 +47,8 @@ class DatabricksSQLClient:
         has_client_creds = bool(str(self.config.databricks_client_id or "").strip()) and bool(
             str(self.config.databricks_client_secret or "").strip()
         )
-        if not has_pat and not has_client_creds:
+        has_sdk_fallback = DatabricksSDKConfig is not None
+        if not has_pat and not has_client_creds and not has_sdk_fallback:
             missing.append("DATABRICKS_TOKEN or DATABRICKS_CLIENT_ID + DATABRICKS_CLIENT_SECRET")
         if missing:
             raise RuntimeError(f"Missing Databricks settings: {', '.join(missing)}")
@@ -61,19 +62,42 @@ class DatabricksSQLClient:
         if token:
             return dbsql.connect(access_token=token, **common)
 
-        if DatabricksSDKConfig is None or oauth_service_principal is None:
-            raise RuntimeError(
-                "OAuth service-principal auth requires databricks-sdk. "
-                "Install dependencies from app/requirements.txt."
-            )
         host_url = f"https://{self.config.databricks_server_hostname}"
-        cfg = DatabricksSDKConfig(
-            host=host_url,
-            client_id=self.config.databricks_client_id,
-            client_secret=self.config.databricks_client_secret,
-        )
-        credentials_provider = oauth_service_principal(cfg)
-        return dbsql.connect(credentials_provider=credentials_provider, **common)
+        client_id = str(self.config.databricks_client_id or "").strip()
+        client_secret = str(self.config.databricks_client_secret or "").strip()
+
+        if client_id and client_secret:
+            if DatabricksSDKConfig is None or oauth_service_principal is None:
+                raise RuntimeError(
+                    "OAuth service-principal auth requires databricks-sdk. "
+                    "Install dependencies from app/requirements.txt."
+                )
+            cfg = DatabricksSDKConfig(
+                host=host_url,
+                client_id=client_id,
+                client_secret=client_secret,
+            )
+            credentials_provider = oauth_service_principal(cfg)
+            return dbsql.connect(credentials_provider=credentials_provider, **common)
+
+        if DatabricksSDKConfig is None:
+            raise RuntimeError(
+                "No Databricks auth configured. Provide DATABRICKS_TOKEN, "
+                "or DATABRICKS_CLIENT_ID + DATABRICKS_CLIENT_SECRET."
+            )
+
+        try:
+            runtime_cfg = DatabricksSDKConfig(host=host_url)
+        except Exception as exc:
+            raise RuntimeError(
+                "No explicit Databricks auth configured and runtime OAuth credentials were not detected. "
+                "In Databricks Apps, ensure SQL scope consent is granted and SQL warehouse resource binding is configured."
+            ) from exc
+
+        def _runtime_credentials_provider():
+            return runtime_cfg.authenticate
+
+        return dbsql.connect(credentials_provider=_runtime_credentials_provider, **common)
 
     @contextmanager
     def _connection(self):
@@ -92,7 +116,11 @@ class DatabricksSQLClient:
             try:
                 conn = self._connect_databricks()
             except Exception as exc:
-                raise DataConnectionError("Failed to connect to Databricks SQL warehouse.") from exc
+                details = str(exc).strip()
+                message = "Failed to connect to Databricks SQL warehouse."
+                if details:
+                    message = f"{message} Details: {details}"
+                raise DataConnectionError(message) from exc
         try:
             yield conn
         finally:

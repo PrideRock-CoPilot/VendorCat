@@ -34,8 +34,10 @@ class RepositoryIdentityMixin:
         except Exception as exc:
             raise SchemaBootstrapRequiredError(
                 "Databricks connection failed before schema validation. "
-                "Verify DATABRICKS_SERVER_HOSTNAME (or DATABRICKS_HOST), DATABRICKS_HTTP_PATH, "
-                "DATABRICKS_TOKEN, and SQL warehouse/network access. "
+                "Verify DATABRICKS_SERVER_HOSTNAME (or DATABRICKS_HOST), DATABRICKS_HTTP_PATH "
+                "(or DATABRICKS_WAREHOUSE_ID), OAuth credentials "
+                "(DATABRICKS_CLIENT_ID + DATABRICKS_CLIENT_SECRET) or DATABRICKS_TOKEN, "
+                "and SQL warehouse/network access. "
                 f"Configured schema: {self.config.fq_schema}. "
                 f"Connection error: {exc}"
             ) from exc
