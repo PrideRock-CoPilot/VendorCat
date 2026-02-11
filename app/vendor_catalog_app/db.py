@@ -77,8 +77,14 @@ class DatabricksSQLClient:
                 client_id=client_id,
                 client_secret=client_secret,
             )
-            credentials_provider = oauth_service_principal(cfg)
-            return dbsql.connect(credentials_provider=credentials_provider, **common)
+            sdk_credentials_provider = oauth_service_principal(cfg)
+
+            # databricks-sql-connector expects credentials_provider() -> header_factory_callable,
+            # where header_factory_callable() -> auth headers dict.
+            def _credentials_provider():
+                return sdk_credentials_provider
+
+            return dbsql.connect(credentials_provider=_credentials_provider, **common)
 
         if DatabricksSDKConfig is None:
             raise RuntimeError(
