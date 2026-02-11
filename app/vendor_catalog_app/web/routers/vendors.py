@@ -1453,10 +1453,8 @@ def offering_detail_page(
         add_flash(
             request,
             (
-                "Offering operations tables are not available. Run setup/databricks/004_add_offering_profile_ticket.sql "
-                "and setup/databricks/005_add_offering_profile_dataflow_columns.sql "
-                "and setup/databricks/006_add_offering_data_flow.sql "
-                f"for existing Databricks schemas. Details: {exc}"
+                "Offering operations tables are not available. Run setup/databricks/001_create_databricks_schema.sql "
+                f"for this Databricks schema. Details: {exc}"
             ),
             "error",
         )

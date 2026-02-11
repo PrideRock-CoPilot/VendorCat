@@ -116,7 +116,7 @@ def diagnostic_recommendations(
         )
     if object_probe_failures:
         recs.append(
-            "Run bootstrap/migration SQL for this schema: setup/databricks/001_create_databricks_schema.sql through setup/databricks/006_add_offering_data_flow.sql."
+            "Run bootstrap SQL for this schema: setup/databricks/001_create_databricks_schema.sql."
         )
     return recs
 

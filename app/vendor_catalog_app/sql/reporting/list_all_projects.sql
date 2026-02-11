@@ -7,7 +7,7 @@ SELECT
   p.status,
   p.start_date,
   p.target_date,
-  p.owner_principal,
+  coalesce(ou.display_name, p.owner_principal) AS owner_principal,
   p.description,
   p.updated_at,
   COALESCE(d.demo_count, 0) AS demo_count,
@@ -18,6 +18,9 @@ SELECT
 FROM {app_project} p
 LEFT JOIN {core_vendor} v
   ON p.vendor_id = v.vendor_id
+LEFT JOIN {app_user_directory} ou
+  ON lower(p.owner_principal) = lower(ou.user_id)
+  OR lower(p.owner_principal) = lower(ou.login_identifier)
 LEFT JOIN (
   SELECT project_id, COUNT(*) AS demo_count, MAX(updated_at) AS last_demo_at
   FROM {app_project_demo}

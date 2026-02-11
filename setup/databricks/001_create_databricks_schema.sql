@@ -563,6 +563,158 @@ CREATE TABLE IF NOT EXISTS {fq_schema}.sec_role_permission (
   updated_at TIMESTAMP NOT NULL
 ) USING DELTA;
 
+-- Backward-compatible column additions for older schemas.
+ALTER TABLE {fq_schema}.core_vendor_offering
+ADD COLUMN IF NOT EXISTS lob STRING;
+
+ALTER TABLE {fq_schema}.core_vendor_offering
+ADD COLUMN IF NOT EXISTS service_type STRING;
+
+ALTER TABLE {fq_schema}.app_lookup_option
+ADD COLUMN IF NOT EXISTS valid_from_ts TIMESTAMP;
+
+ALTER TABLE {fq_schema}.app_lookup_option
+ADD COLUMN IF NOT EXISTS valid_to_ts TIMESTAMP;
+
+ALTER TABLE {fq_schema}.app_lookup_option
+ADD COLUMN IF NOT EXISTS is_current BOOLEAN;
+
+ALTER TABLE {fq_schema}.app_lookup_option
+ADD COLUMN IF NOT EXISTS deleted_flag BOOLEAN;
+
+UPDATE {fq_schema}.app_lookup_option
+SET
+  valid_from_ts = COALESCE(valid_from_ts, updated_at, current_timestamp()),
+  valid_to_ts = COALESCE(valid_to_ts, TIMESTAMP('9999-12-31 23:59:59')),
+  is_current = COALESCE(is_current, true),
+  deleted_flag = COALESCE(
+    deleted_flag,
+    CASE WHEN COALESCE(active_flag, true) = false THEN true ELSE false END
+  )
+WHERE valid_from_ts IS NULL OR is_current IS NULL OR deleted_flag IS NULL;
+
+ALTER TABLE {fq_schema}.app_offering_profile
+ADD COLUMN IF NOT EXISTS inbound_method STRING;
+
+ALTER TABLE {fq_schema}.app_offering_profile
+ADD COLUMN IF NOT EXISTS inbound_landing_zone STRING;
+
+ALTER TABLE {fq_schema}.app_offering_profile
+ADD COLUMN IF NOT EXISTS inbound_identifiers STRING;
+
+ALTER TABLE {fq_schema}.app_offering_profile
+ADD COLUMN IF NOT EXISTS inbound_reporting_layer STRING;
+
+ALTER TABLE {fq_schema}.app_offering_profile
+ADD COLUMN IF NOT EXISTS inbound_ingestion_notes STRING;
+
+ALTER TABLE {fq_schema}.app_offering_profile
+ADD COLUMN IF NOT EXISTS outbound_method STRING;
+
+ALTER TABLE {fq_schema}.app_offering_profile
+ADD COLUMN IF NOT EXISTS outbound_creation_process STRING;
+
+ALTER TABLE {fq_schema}.app_offering_profile
+ADD COLUMN IF NOT EXISTS outbound_delivery_process STRING;
+
+ALTER TABLE {fq_schema}.app_offering_profile
+ADD COLUMN IF NOT EXISTS outbound_responsible_owner STRING;
+
+ALTER TABLE {fq_schema}.app_offering_profile
+ADD COLUMN IF NOT EXISTS outbound_notes STRING;
+
+-- Normalize legacy login/principal string references to canonical app_user_directory.user_id values.
+-- This is a no-op for new schemas and safe to re-run.
+MERGE INTO {fq_schema}.core_vendor_business_owner t
+USING {fq_schema}.app_user_directory u
+ON lower(t.owner_user_principal) = lower(u.login_identifier)
+WHEN MATCHED THEN UPDATE SET t.owner_user_principal = u.user_id;
+
+MERGE INTO {fq_schema}.core_offering_business_owner t
+USING {fq_schema}.app_user_directory u
+ON lower(t.owner_user_principal) = lower(u.login_identifier)
+WHEN MATCHED THEN UPDATE SET t.owner_user_principal = u.user_id;
+
+MERGE INTO {fq_schema}.core_contract_event t
+USING {fq_schema}.app_user_directory u
+ON lower(t.actor_user_principal) = lower(u.login_identifier)
+WHEN MATCHED THEN UPDATE SET t.actor_user_principal = u.user_id;
+
+MERGE INTO {fq_schema}.audit_entity_change t
+USING {fq_schema}.app_user_directory u
+ON lower(t.actor_user_principal) = lower(u.login_identifier)
+WHEN MATCHED THEN UPDATE SET t.actor_user_principal = u.user_id;
+
+MERGE INTO {fq_schema}.audit_workflow_event t
+USING {fq_schema}.app_user_directory u
+ON lower(t.actor_user_principal) = lower(u.login_identifier)
+WHEN MATCHED THEN UPDATE SET t.actor_user_principal = u.user_id;
+
+MERGE INTO {fq_schema}.audit_access_event t
+USING {fq_schema}.app_user_directory u
+ON lower(t.actor_user_principal) = lower(u.login_identifier)
+WHEN MATCHED THEN UPDATE SET t.actor_user_principal = u.user_id;
+
+MERGE INTO {fq_schema}.audit_access_event t
+USING {fq_schema}.app_user_directory u
+ON lower(t.target_user_principal) = lower(u.login_identifier)
+WHEN MATCHED THEN UPDATE SET t.target_user_principal = u.user_id;
+
+MERGE INTO {fq_schema}.app_onboarding_request t
+USING {fq_schema}.app_user_directory u
+ON lower(t.requestor_user_principal) = lower(u.login_identifier)
+WHEN MATCHED THEN UPDATE SET t.requestor_user_principal = u.user_id;
+
+MERGE INTO {fq_schema}.app_vendor_change_request t
+USING {fq_schema}.app_user_directory u
+ON lower(t.requestor_user_principal) = lower(u.login_identifier)
+WHEN MATCHED THEN UPDATE SET t.requestor_user_principal = u.user_id;
+
+MERGE INTO {fq_schema}.app_onboarding_approval t
+USING {fq_schema}.app_user_directory u
+ON lower(t.approver_user_principal) = lower(u.login_identifier)
+WHEN MATCHED THEN UPDATE SET t.approver_user_principal = u.user_id;
+
+MERGE INTO {fq_schema}.app_access_request t
+USING {fq_schema}.app_user_directory u
+ON lower(t.requester_user_principal) = lower(u.login_identifier)
+WHEN MATCHED THEN UPDATE SET t.requester_user_principal = u.user_id;
+
+MERGE INTO {fq_schema}.app_user_settings t
+USING {fq_schema}.app_user_directory u
+ON lower(t.user_principal) = lower(u.login_identifier)
+WHEN MATCHED THEN UPDATE SET t.user_principal = u.user_id;
+
+MERGE INTO {fq_schema}.app_usage_log t
+USING {fq_schema}.app_user_directory u
+ON lower(t.user_principal) = lower(u.login_identifier)
+WHEN MATCHED THEN UPDATE SET t.user_principal = u.user_id;
+
+MERGE INTO {fq_schema}.app_project t
+USING {fq_schema}.app_user_directory u
+ON lower(t.owner_principal) = lower(u.login_identifier)
+WHEN MATCHED THEN UPDATE SET t.owner_principal = u.user_id;
+
+MERGE INTO {fq_schema}.app_offering_data_flow t
+USING {fq_schema}.app_user_directory u
+ON lower(t.owner_user_principal) = lower(u.login_identifier)
+WHEN MATCHED THEN UPDATE SET t.owner_user_principal = u.user_id;
+
+MERGE INTO {fq_schema}.sec_user_role_map t
+USING {fq_schema}.app_user_directory u
+ON lower(t.user_principal) = lower(u.login_identifier)
+WHEN MATCHED THEN UPDATE SET t.user_principal = u.user_id;
+
+MERGE INTO {fq_schema}.sec_user_role_map t
+USING {fq_schema}.app_user_directory u
+ON lower(t.granted_by) = lower(u.login_identifier)
+WHEN MATCHED THEN UPDATE SET t.granted_by = u.user_id;
+
+MERGE INTO {fq_schema}.sec_user_org_scope t
+USING {fq_schema}.app_user_directory u
+ON lower(t.user_principal) = lower(u.login_identifier)
+WHEN MATCHED THEN UPDATE SET t.user_principal = u.user_id;
+
 -- Reporting tables used by app analytics/reporting SQL.
 CREATE TABLE IF NOT EXISTS {fq_schema}.rpt_spend_fact (
   spend_fact_id STRING,

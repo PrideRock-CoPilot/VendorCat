@@ -89,6 +89,7 @@ class RepositoryProjectMixin:
             app_project=self._table("app_project"),
             app_project_demo=self._table("app_project_demo"),
             app_project_vendor_map=self._table("app_project_vendor_map"),
+            app_user_directory=self._table("app_user_directory"),
         )
 
     def list_all_projects(
@@ -121,12 +122,14 @@ class RepositoryProjectMixin:
                 " OR lower(coalesce(p.project_name, '')) LIKE lower(%s)"
                 " OR lower(coalesce(p.project_type, '')) LIKE lower(%s)"
                 " OR lower(coalesce(p.owner_principal, '')) LIKE lower(%s)"
+                " OR lower(coalesce(ou.login_identifier, '')) LIKE lower(%s)"
+                " OR lower(coalesce(ou.display_name, '')) LIKE lower(%s)"
                 " OR lower(coalesce(p.description, '')) LIKE lower(%s)"
                 " OR lower(coalesce(v.display_name, '')) LIKE lower(%s)"
                 ")"
             )
             like = f"%{search_text.strip()}%"
-            params.extend([like, like, like, like, like, like])
+            params.extend([like, like, like, like, like, like, like, like])
 
         where_clause = " AND ".join(where_parts)
         return self._query_file(
@@ -152,6 +155,7 @@ class RepositoryProjectMixin:
             app_project=self._table("app_project"),
             core_vendor=self._table("core_vendor"),
             app_project_demo=self._table("app_project_demo"),
+            app_user_directory=self._table("app_user_directory"),
         )
 
     def get_project(self, vendor_id: str, project_id: str) -> dict[str, Any] | None:
@@ -186,6 +190,7 @@ class RepositoryProjectMixin:
             ],
             app_project=self._table("app_project"),
             core_vendor=self._table("core_vendor"),
+            app_user_directory=self._table("app_user_directory"),
         )
         if rows.empty:
             return None
@@ -270,6 +275,10 @@ class RepositoryProjectMixin:
 
         now = self._now()
         project_id = self._new_id("prj")
+        actor_ref = self._actor_ref(actor_user_principal)
+        owner_ref = self.resolve_user_id(owner_principal, allow_create=False) if owner_principal else None
+        if owner_principal and not owner_ref:
+            raise ValueError("Project owner must exist in the app user directory.")
         primary_vendor_id = normalized_vendor_ids[0] if normalized_vendor_ids else None
         row = {
             "project_id": project_id,
@@ -279,13 +288,13 @@ class RepositoryProjectMixin:
             "status": (status or "draft").strip() or "draft",
             "start_date": (start_date or "").strip() or None,
             "target_date": (target_date or "").strip() or None,
-            "owner_principal": (owner_principal or "").strip() or None,
+            "owner_principal": owner_ref,
             "description": (description or "").strip() or None,
             "active_flag": True,
             "created_at": now.isoformat(),
-            "created_by": actor_user_principal,
+            "created_by": actor_ref,
             "updated_at": now.isoformat(),
-            "updated_by": actor_user_principal,
+            "updated_by": actor_ref,
         }
 
         self._execute_file(
@@ -302,9 +311,9 @@ class RepositoryProjectMixin:
                 row["description"],
                 True,
                 now,
-                actor_user_principal,
+                actor_ref,
                 now,
-                actor_user_principal,
+                actor_ref,
             ),
             app_project=self._table("app_project"),
         )
@@ -317,9 +326,9 @@ class RepositoryProjectMixin:
                     mapped_vendor_id,
                     True,
                     now,
-                    actor_user_principal,
+                    actor_ref,
                     now,
-                    actor_user_principal,
+                    actor_ref,
                 ),
                 app_project_vendor_map=self._table("app_project_vendor_map"),
             )
@@ -334,9 +343,9 @@ class RepositoryProjectMixin:
                     offering_id,
                     True,
                     now,
-                    actor_user_principal,
+                    actor_ref,
                     now,
-                    actor_user_principal,
+                    actor_ref,
                 ),
                 app_project_offering_map=self._table("app_project_offering_map"),
             )
@@ -418,6 +427,15 @@ class RepositoryProjectMixin:
 
         if not clean_updates and target_offering_ids is None and target_vendor_ids is None:
             raise ValueError("No updates were provided.")
+        if "owner_principal" in clean_updates:
+            owner_candidate = str(clean_updates.get("owner_principal") or "").strip()
+            if owner_candidate:
+                owner_ref = self.resolve_user_id(owner_candidate, allow_create=False)
+                if not owner_ref:
+                    raise ValueError("Project owner must exist in the app user directory.")
+                clean_updates["owner_principal"] = owner_ref
+            else:
+                clean_updates["owner_principal"] = None
 
         before = dict(current)
         after = dict(current)
@@ -430,12 +448,13 @@ class RepositoryProjectMixin:
 
         request_id = str(uuid.uuid4())
         now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
         if target_vendor_ids is not None:
             clean_updates["vendor_id"] = target_vendor_ids[0] if target_vendor_ids else None
 
         if clean_updates:
             set_clause = ", ".join([f"{key} = %s" for key in clean_updates.keys()])
-            params = list(clean_updates.values()) + [now, actor_user_principal, project_id]
+            params = list(clean_updates.values()) + [now, actor_ref, project_id]
             self._execute_file(
                 "updates/update_project.sql",
                 params=tuple(params),
@@ -445,7 +464,7 @@ class RepositoryProjectMixin:
         if target_vendor_ids is not None:
             self._execute_file(
                 "updates/update_project_vendor_map_soft.sql",
-                params=(now, actor_user_principal, project_id),
+                params=(now, actor_ref, project_id),
                 app_project_vendor_map=self._table("app_project_vendor_map"),
             )
             for mapped_vendor_id in target_vendor_ids:
@@ -457,16 +476,16 @@ class RepositoryProjectMixin:
                         mapped_vendor_id,
                         True,
                         now,
-                        actor_user_principal,
+                        actor_ref,
                         now,
-                        actor_user_principal,
+                        actor_ref,
                     ),
                     app_project_vendor_map=self._table("app_project_vendor_map"),
                 )
         if target_offering_ids is not None:
             self._execute_file(
                 "updates/update_project_offering_map_soft.sql",
-                params=(now, actor_user_principal, project_id),
+                params=(now, actor_ref, project_id),
                 app_project_offering_map=self._table("app_project_offering_map"),
             )
             offerings = self._query_file(
@@ -490,9 +509,9 @@ class RepositoryProjectMixin:
                         offering_id,
                         True,
                         now,
-                        actor_user_principal,
+                        actor_ref,
                         now,
-                        actor_user_principal,
+                        actor_ref,
                     ),
                     app_project_offering_map=self._table("app_project_offering_map"),
                 )
@@ -510,7 +529,7 @@ class RepositoryProjectMixin:
     def list_project_demos(self, vendor_id: str | None, project_id: str) -> pd.DataFrame:
         vendor_clause = "AND vendor_id = %s" if vendor_id else ""
         params: tuple[Any, ...] = (project_id, vendor_id) if vendor_id else (project_id,)
-        return self._query_file(
+        rows = self._query_file(
             "ingestion/select_project_demos.sql",
             params=params,
             columns=[
@@ -537,6 +556,7 @@ class RepositoryProjectMixin:
             vendor_clause=vendor_clause,
             app_project_demo=self._table("app_project_demo"),
         )
+        return self._decorate_user_columns(rows, ["created_by", "updated_by"])
 
     def get_project_demo(self, vendor_id: str | None, project_id: str, project_demo_id: str) -> dict[str, Any] | None:
         demos = self.list_project_demos(vendor_id, project_id)
@@ -581,6 +601,7 @@ class RepositoryProjectMixin:
 
         demo_id = self._new_id("pdm")
         now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
         row = {
             "project_demo_id": demo_id,
             "project_id": project_id,
@@ -599,9 +620,9 @@ class RepositoryProjectMixin:
             "linked_vendor_demo_id": (linked_vendor_demo_id or "").strip() or None,
             "active_flag": True,
             "created_at": now.isoformat(),
-            "created_by": actor_user_principal,
+            "created_by": actor_ref,
             "updated_at": now.isoformat(),
-            "updated_by": actor_user_principal,
+            "updated_by": actor_ref,
         }
         self._execute_file(
             "inserts/create_project_demo.sql",
@@ -623,9 +644,9 @@ class RepositoryProjectMixin:
                 row["linked_vendor_demo_id"],
                 True,
                 now,
-                actor_user_principal,
+                actor_ref,
                 now,
-                actor_user_principal,
+                actor_ref,
             ),
             app_project_demo=self._table("app_project_demo"),
         )
@@ -685,8 +706,9 @@ class RepositoryProjectMixin:
         after = dict(current)
         after.update(clean_updates)
         now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
         set_clause = ", ".join([f"{k} = %s" for k in clean_updates.keys()])
-        params = list(clean_updates.values()) + [now, actor_user_principal, project_demo_id, project_id, vendor_id]
+        params = list(clean_updates.values()) + [now, actor_ref, project_demo_id, project_id, vendor_id]
         self._execute_file(
             "updates/update_project_demo.sql",
             params=tuple(params),
@@ -717,7 +739,7 @@ class RepositoryProjectMixin:
             raise ValueError("Project demo not found.")
         self._execute_file(
             "updates/remove_project_demo_soft.sql",
-            params=(self._now(), actor_user_principal, project_demo_id, project_id, vendor_id),
+            params=(self._now(), self._actor_ref(actor_user_principal), project_demo_id, project_id, vendor_id),
             app_project_demo=self._table("app_project_demo"),
         )
         self._write_audit_entity_change(
@@ -764,7 +786,7 @@ class RepositoryProjectMixin:
     def list_project_notes(self, vendor_id: str | None, project_id: str) -> pd.DataFrame:
         vendor_clause = "AND vendor_id = %s" if vendor_id else ""
         params: tuple[Any, ...] = (project_id, vendor_id) if vendor_id else (project_id,)
-        return self._query_file(
+        rows = self._query_file(
             "ingestion/select_project_notes.sql",
             params=params,
             columns=[
@@ -780,6 +802,7 @@ class RepositoryProjectMixin:
             vendor_clause=vendor_clause,
             app_project_note=self._table("app_project_note"),
         )
+        return self._decorate_user_columns(rows, ["created_by", "updated_by"])
 
     def add_project_note(
         self,
@@ -800,6 +823,7 @@ class RepositoryProjectMixin:
             raise ValueError("Note text is required.")
         note_id = self._new_id("pnt")
         now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
         row = {
             "project_note_id": note_id,
             "project_id": project_id,
@@ -807,9 +831,9 @@ class RepositoryProjectMixin:
             "note_text": clean_note,
             "active_flag": True,
             "created_at": now.isoformat(),
-            "created_by": actor_user_principal,
+            "created_by": actor_ref,
             "updated_at": now.isoformat(),
-            "updated_by": actor_user_principal,
+            "updated_by": actor_ref,
         }
         self._execute_file(
             "inserts/add_project_note.sql",
@@ -820,9 +844,9 @@ class RepositoryProjectMixin:
                 clean_note,
                 True,
                 now,
-                actor_user_principal,
+                actor_ref,
                 now,
-                actor_user_principal,
+                actor_ref,
             ),
             app_project_note=self._table("app_project_note"),
         )

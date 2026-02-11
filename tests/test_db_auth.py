@@ -14,6 +14,47 @@ from vendor_catalog_app.config import AppConfig
 from vendor_catalog_app.db import DatabricksSQLClient
 
 
+class _FakeCursor:
+    def __init__(self, owner):
+        self._owner = owner
+        self.description = [("value",)]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def execute(self, statement, params):
+        self._owner.executions.append((statement, params))
+
+    def fetchall(self):
+        return [(1,)]
+
+    def close(self):
+        return None
+
+
+class _FakeConn:
+    def __init__(self, owner):
+        self._owner = owner
+
+    def cursor(self):
+        return _FakeCursor(self._owner)
+
+    def close(self):
+        return None
+
+
+def _databricks_config() -> AppConfig:
+    return AppConfig(
+        databricks_server_hostname="example.cloud.databricks.com",
+        databricks_http_path="/sql/1.0/warehouses/abc",
+        databricks_token="dapiXXX",
+        use_local_db=False,
+    )
+
+
 def test_databricks_validate_accepts_pat() -> None:
     config = AppConfig(
         databricks_server_hostname="example.cloud.databricks.com",
@@ -157,3 +198,52 @@ def test_prod_sql_policy_allows_insert_update_and_select() -> None:
     client._enforce_prod_sql_policy("INSERT INTO t VALUES (1)", is_query=False)
     client._enforce_prod_sql_policy("UPDATE t SET id = 2 WHERE id = 1", is_query=False)
     client._enforce_prod_sql_policy("SELECT 1", is_query=True)
+
+
+def test_prepare_strips_bom_and_normalizes_percent_s_for_databricks() -> None:
+    client = DatabricksSQLClient(_databricks_config())
+    prepared = client._prepare("\ufeffSELECT * FROM table WHERE id = %s")
+    assert prepared == "SELECT * FROM table WHERE id = ?"
+
+
+def test_databricks_reuses_connection_between_queries(monkeypatch: pytest.MonkeyPatch) -> None:
+    owner = type("Owner", (), {"executions": []})()
+    connects = {"count": 0}
+
+    def _fake_connect_databricks():
+        connects["count"] += 1
+        return _FakeConn(owner)
+
+    monkeypatch.setenv("TVENDOR_QUERY_CACHE_ENABLED", "false")
+    client = DatabricksSQLClient(_databricks_config())
+    monkeypatch.setattr(client, "_connect_databricks", _fake_connect_databricks)
+
+    client.query("SELECT 1")
+    client.query("SELECT 2")
+
+    assert connects["count"] == 1
+    assert len(owner.executions) == 2
+
+
+def test_databricks_query_cache_hit_and_execute_invalidation(monkeypatch: pytest.MonkeyPatch) -> None:
+    owner = type("Owner", (), {"executions": []})()
+    connects = {"count": 0}
+
+    def _fake_connect_databricks():
+        connects["count"] += 1
+        return _FakeConn(owner)
+
+    monkeypatch.setenv("TVENDOR_QUERY_CACHE_ENABLED", "true")
+    monkeypatch.setenv("TVENDOR_QUERY_CACHE_TTL_SEC", "300")
+    client = DatabricksSQLClient(_databricks_config())
+    monkeypatch.setattr(client, "_connect_databricks", _fake_connect_databricks)
+
+    client.query("SELECT 1 WHERE id = %s", params=(123,))
+    client.query("SELECT 1 WHERE id = %s", params=(123,))
+    assert len(owner.executions) == 1
+
+    client.execute("UPDATE t SET id = %s WHERE id = %s", params=(1, 2))
+    client.query("SELECT 1 WHERE id = %s", params=(123,))
+
+    assert connects["count"] == 1
+    assert len(owner.executions) == 3

@@ -827,7 +827,7 @@ class VendorRepository(
             return login_identifier
 
     def _actor_ref(self, user_principal: str) -> str:
-        return self._ensure_user_directory_entry(user_principal)
+        return self.resolve_user_id(user_principal, allow_create=True) or UNKNOWN_USER_PRINCIPAL
 
     def _user_display_lookup(self) -> dict[str, str]:
         lookup: dict[str, str] = {}

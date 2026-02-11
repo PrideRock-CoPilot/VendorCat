@@ -883,6 +883,7 @@ class RepositoryReportingMixin:
             params=(vendor_id,),
             columns=["vendor_owner_id", "vendor_id", "owner_user_principal", "owner_role", "active_flag"],
             core_vendor_business_owner=self._table("core_vendor_business_owner"),
+            app_user_directory=self._table("app_user_directory"),
         )
 
     def get_vendor_org_assignments(self, vendor_id: str) -> pd.DataFrame:
@@ -907,6 +908,7 @@ class RepositoryReportingMixin:
             ],
             core_offering_business_owner=self._table("core_offering_business_owner"),
             core_vendor_offering=self._table("core_vendor_offering"),
+            app_user_directory=self._table("app_user_directory"),
         )
 
     def get_vendor_offering_contacts(self, vendor_id: str) -> pd.DataFrame:

@@ -17,6 +17,20 @@ Rendered files are written to:
 setup/databricks/rendered/
 ```
 
+## Render A Single Full DDL Script
+
+To generate one SQL file that creates the entire current schema layout:
+
+```bash
+python setup/databricks/render_full_ddl.py --fq-schema a1_dlk.twanalytics
+```
+
+Output:
+
+```text
+setup/databricks/rendered/000_full_databricks_ddl.sql
+```
+
 ## Single Source Config (`app/app.yaml`)
 
 `generate_tvendor_env.py` treats `app/app.yaml` as the primary source of deploy settings.
@@ -81,15 +95,9 @@ python setup/databricks/generate_tvendor_env.py --bootstrap-admin
 
 ## Execute Order
 
-Run rendered SQL manually (or via an approved deployment pipeline) in this order:
+Run rendered SQL manually (or via an approved deployment pipeline):
 
 1. `001_create_databricks_schema.sql`
-2. For existing schemas also run:
-   - `002_add_offering_lob_service_type.sql`
-   - `003_add_lookup_scd_columns.sql`
-   - `004_add_offering_profile_ticket.sql`
-   - `005_add_offering_profile_dataflow_columns.sql`
-   - `006_add_offering_data_flow.sql`
 
 The app validates required objects at startup and fails fast if required runtime objects are missing/inaccessible.
 

@@ -29,7 +29,7 @@ LOGGER = logging.getLogger(__name__)
 
 class RepositoryOfferingMixin:
     def _new_id(self, prefix: str) -> str:
-        return f"{prefix}-{uuid.uuid4().hex[:8]}"
+        return f"{str(prefix).strip().lower()}-{uuid.uuid4()}"
 
     @staticmethod
     def _normalize_offering_id(offering_id: str | None) -> str | None:
@@ -140,7 +140,7 @@ class RepositoryOfferingMixin:
         if "outbound_responsible_owner" in clean_updates:
             candidate_owner = str(clean_updates.get("outbound_responsible_owner") or "").strip()
             if candidate_owner:
-                resolved_owner = self.resolve_user_login_identifier(candidate_owner)
+                resolved_owner = self.resolve_user_id(candidate_owner, allow_create=True)
                 if not resolved_owner:
                     raise ValueError("Outbound responsible owner must exist in the app user directory.")
                 clean_updates["outbound_responsible_owner"] = resolved_owner
@@ -352,7 +352,7 @@ class RepositoryOfferingMixin:
         clean_owner = str(owner_user_principal or "").strip()
         resolved_owner: str | None = None
         if clean_owner:
-            resolved_owner = self.resolve_user_login_identifier(clean_owner)
+            resolved_owner = self.resolve_user_id(clean_owner, allow_create=True)
             if not resolved_owner:
                 raise ValueError("Owner must exist in the app user directory.")
 
@@ -513,7 +513,7 @@ class RepositoryOfferingMixin:
         if "owner_user_principal" in clean_updates:
             owner_candidate = str(clean_updates.get("owner_user_principal") or "").strip()
             if owner_candidate:
-                resolved_owner = self.resolve_user_login_identifier(owner_candidate)
+                resolved_owner = self.resolve_user_id(owner_candidate, allow_create=True)
                 if not resolved_owner:
                     raise ValueError("Owner must exist in the app user directory.")
                 clean_updates["owner_user_principal"] = resolved_owner
@@ -881,6 +881,7 @@ class RepositoryOfferingMixin:
             raise ValueError("Owner Org ID is required.")
         vendor_id = self._new_id("vnd")
         now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
         row = {
             "vendor_id": vendor_id,
             "legal_name": legal_name,
@@ -906,7 +907,7 @@ class RepositoryOfferingMixin:
                 row["risk_tier"],
                 row["source_system"],
                 now,
-                actor_user_principal,
+                actor_ref,
             ),
             core_vendor=self._table("core_vendor"),
         )
@@ -942,6 +943,7 @@ class RepositoryOfferingMixin:
 
         offering_id = self._new_id("off")
         now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
         row = {
             "offering_id": offering_id,
             "vendor_id": vendor_id,
@@ -952,7 +954,7 @@ class RepositoryOfferingMixin:
             "lifecycle_state": lifecycle_state,
             "criticality_tier": (criticality_tier or "").strip() or None,
             "updated_at": now.isoformat(),
-            "updated_by": actor_user_principal,
+            "updated_by": actor_ref,
         }
 
         self._ensure_local_offering_columns()
@@ -968,7 +970,7 @@ class RepositoryOfferingMixin:
                 row["lifecycle_state"],
                 row["criticality_tier"],
                 now,
-                actor_user_principal,
+                actor_ref,
             ),
             core_vendor_offering=self._table("core_vendor_offering"),
         )
@@ -1053,7 +1055,7 @@ class RepositoryOfferingMixin:
 
         self._execute_file(
             "updates/map_contract_to_offering.sql",
-            params=(offering_id, self._now(), actor_user_principal, contract_id, vendor_id),
+            params=(offering_id, self._now(), self._actor_ref(actor_user_principal), contract_id, vendor_id),
             core_contract=self._table("core_contract"),
         )
         change_event_id = self._write_audit_entity_change(
@@ -1093,7 +1095,7 @@ class RepositoryOfferingMixin:
 
         self._execute_file(
             "updates/map_demo_to_offering.sql",
-            params=(offering_id, self._now(), actor_user_principal, demo_id, vendor_id),
+            params=(offering_id, self._now(), self._actor_ref(actor_user_principal), demo_id, vendor_id),
             core_vendor_demo=self._table("core_vendor_demo"),
         )
         change_event_id = self._write_audit_entity_change(
@@ -1120,6 +1122,9 @@ class RepositoryOfferingMixin:
         owner_principal = owner_user_principal.strip()
         if not owner_principal:
             raise ValueError("Owner principal is required.")
+        owner_ref = self.resolve_user_id(owner_principal, allow_create=True)
+        if not owner_ref:
+            raise ValueError("Owner must exist in the app user directory.")
         owner_role_options = self.list_owner_role_options() or ["business_owner"]
         owner_role_value = self._normalize_choice(
             owner_role,
@@ -1132,12 +1137,13 @@ class RepositoryOfferingMixin:
         row = {
             "vendor_owner_id": owner_id,
             "vendor_id": vendor_id,
-            "owner_user_principal": owner_principal,
+            "owner_user_principal": owner_ref,
             "owner_role": owner_role_value,
             "active_flag": True,
             "updated_at": now.isoformat(),
-            "updated_by": actor_user_principal,
+            "updated_by": self._actor_ref(actor_user_principal),
         }
+        actor_ref = self._actor_ref(actor_user_principal)
         self._execute_file(
             "inserts/add_vendor_owner.sql",
             params=(
@@ -1147,7 +1153,7 @@ class RepositoryOfferingMixin:
                 row["owner_role"],
                 True,
                 now,
-                actor_user_principal,
+                actor_ref,
             ),
             core_vendor_business_owner=self._table("core_vendor_business_owner"),
         )
@@ -1191,8 +1197,9 @@ class RepositoryOfferingMixin:
             "assignment_type": assignment_type_value,
             "active_flag": True,
             "updated_at": now.isoformat(),
-            "updated_by": actor_user_principal,
+            "updated_by": self._actor_ref(actor_user_principal),
         }
+        actor_ref = self._actor_ref(actor_user_principal)
         self._execute_file(
             "inserts/add_vendor_org_assignment.sql",
             params=(
@@ -1202,7 +1209,7 @@ class RepositoryOfferingMixin:
                 row["assignment_type"],
                 True,
                 now,
-                actor_user_principal,
+                actor_ref,
             ),
             core_vendor_org_assignment=self._table("core_vendor_org_assignment"),
         )
@@ -1250,8 +1257,9 @@ class RepositoryOfferingMixin:
             "phone": (phone or "").strip() or None,
             "active_flag": True,
             "updated_at": now.isoformat(),
-            "updated_by": actor_user_principal,
+            "updated_by": self._actor_ref(actor_user_principal),
         }
+        actor_ref = self._actor_ref(actor_user_principal)
         self._execute_file(
             "inserts/add_vendor_contact.sql",
             params=(
@@ -1263,7 +1271,7 @@ class RepositoryOfferingMixin:
                 row["phone"],
                 True,
                 now,
-                actor_user_principal,
+                actor_ref,
             ),
             core_vendor_contact=self._table("core_vendor_contact"),
         )
@@ -1291,6 +1299,9 @@ class RepositoryOfferingMixin:
             raise ValueError("Offering does not belong to vendor.")
         if not owner_user_principal.strip():
             raise ValueError("Owner principal is required.")
+        owner_ref = self.resolve_user_id(owner_user_principal, allow_create=True)
+        if not owner_ref:
+            raise ValueError("Owner must exist in the app user directory.")
         owner_role_options = self.list_owner_role_options() or ["business_owner"]
         owner_role_value = self._normalize_choice(
             owner_role,
@@ -1302,7 +1313,7 @@ class RepositoryOfferingMixin:
         row = {
             "offering_owner_id": owner_id,
             "offering_id": offering_id,
-            "owner_user_principal": owner_user_principal.strip(),
+            "owner_user_principal": owner_ref,
             "owner_role": owner_role_value,
             "active_flag": True,
         }

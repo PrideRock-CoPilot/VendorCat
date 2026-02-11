@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import time
 from functools import lru_cache
 from typing import Any
 
@@ -15,6 +16,7 @@ from vendor_catalog_app.web.context import UserContext
 from vendor_catalog_app.web.flash import pop_flashes
 
 ADMIN_ROLE_OVERRIDE_SESSION_KEY = "tvendor_admin_role_override"
+IDENTITY_SYNC_SESSION_KEY_PREFIX = "tvendor_identity_synced_at"
 LOGGER = logging.getLogger(__name__)
 
 
@@ -140,17 +142,28 @@ def get_user_context(request: Request) -> UserContext:
 
     user_principal = _resolve_user_principal(repo, config, request, forwarded_identity)
     if user_principal != UNKNOWN_USER_PRINCIPAL:
-        try:
-            repo.sync_user_directory_identity(
-                login_identifier=user_principal,
-                email=forwarded_identity.get("email") or None,
-                network_id=forwarded_identity.get("network_id") or None,
-                first_name=forwarded_identity.get("first_name") or None,
-                last_name=forwarded_identity.get("last_name") or None,
-                display_name=forwarded_identity.get("display_name") or None,
-            )
-        except Exception:
-            LOGGER.warning("Failed to sync user directory identity for '%s'.", user_principal, exc_info=True)
+        session = request.scope.get("session")
+        sync_ttl_sec = max(0, int(str(os.getenv("TVENDOR_IDENTITY_SYNC_TTL_SEC", "300")).strip() or "300"))
+        should_sync = True
+        session_key = f"{IDENTITY_SYNC_SESSION_KEY_PREFIX}:{user_principal}"
+        now_ts = int(time.time())
+        if isinstance(session, dict) and sync_ttl_sec > 0:
+            last_synced = int(str(session.get(session_key, "0")).strip() or "0")
+            should_sync = (now_ts - last_synced) >= sync_ttl_sec
+        if should_sync:
+            try:
+                repo.sync_user_directory_identity(
+                    login_identifier=user_principal,
+                    email=forwarded_identity.get("email") or None,
+                    network_id=forwarded_identity.get("network_id") or None,
+                    first_name=forwarded_identity.get("first_name") or None,
+                    last_name=forwarded_identity.get("last_name") or None,
+                    display_name=forwarded_identity.get("display_name") or None,
+                )
+                if isinstance(session, dict):
+                    session[session_key] = now_ts
+            except Exception:
+                LOGGER.warning("Failed to sync user directory identity for '%s'.", user_principal, exc_info=True)
     if user_principal == UNKNOWN_USER_PRINCIPAL:
         raw_roles = {ROLE_VIEWER}
     else:

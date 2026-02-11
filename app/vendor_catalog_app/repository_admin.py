@@ -100,6 +100,7 @@ class RepositoryAdminMixin:
             "reporting/list_role_grants.sql",
             columns=["role_code"],
             sec_user_role_map=self._table("sec_user_role_map"),
+            app_user_directory=self._table("app_user_directory"),
         )
         if not grants.empty and "role_code" in grants.columns:
             roles.update(grants["role_code"].dropna().astype(str).tolist())
@@ -283,31 +284,34 @@ class RepositoryAdminMixin:
             "reporting/list_role_grants.sql",
             columns=columns,
             sec_user_role_map=self._table("sec_user_role_map"),
+            app_user_directory=self._table("app_user_directory"),
         )
 
     def list_scope_grants(self) -> pd.DataFrame:
         """List org scope grants assigned to users."""
-        return self.client.query(
-            self._sql(
-                "reporting/list_scope_grants.sql",
-                sec_user_org_scope=self._table("sec_user_org_scope"),
-            )
+        return self._query_file(
+            "reporting/list_scope_grants.sql",
+            columns=["user_principal", "org_id", "scope_level", "active_flag", "granted_at"],
+            sec_user_org_scope=self._table("sec_user_org_scope"),
+            app_user_directory=self._table("app_user_directory"),
         )
 
     def grant_role(self, target_user_principal: str, role_code: str, granted_by: str) -> None:
         """Grant a role to a user and write an access audit event."""
-        self._ensure_user_directory_entry(target_user_principal)
-        self._ensure_user_directory_entry(granted_by)
+        target_ref = self.resolve_user_id(target_user_principal, allow_create=True)
+        granted_by_ref = self.resolve_user_id(granted_by, allow_create=True)
+        if not target_ref or not granted_by_ref:
+            raise ValueError("Target user and grant actor must resolve to directory users.")
         now = self._now()
         self._execute_file(
             "inserts/grant_role.sql",
-            params=(target_user_principal, role_code, True, granted_by, now, None),
+            params=(target_ref, role_code, True, granted_by_ref, now, None),
             sec_user_role_map=self._table("sec_user_role_map"),
         )
         self._audit_access(
-            actor_user_principal=granted_by,
+            actor_user_principal=granted_by_ref,
             action_type="grant_role",
-            target_user_principal=target_user_principal,
+            target_user_principal=target_ref,
             target_role=role_code,
             notes="Role granted through admin UI.",
         )
@@ -316,18 +320,20 @@ class RepositoryAdminMixin:
         self, target_user_principal: str, org_id: str, scope_level: str, granted_by: str
     ) -> None:
         """Grant org scope to a user and write an access audit event."""
-        self._ensure_user_directory_entry(target_user_principal)
-        self._ensure_user_directory_entry(granted_by)
+        target_ref = self.resolve_user_id(target_user_principal, allow_create=True)
+        granted_by_ref = self.resolve_user_id(granted_by, allow_create=True)
+        if not target_ref or not granted_by_ref:
+            raise ValueError("Target user and grant actor must resolve to directory users.")
         now = self._now()
         self._execute_file(
             "inserts/grant_org_scope.sql",
-            params=(target_user_principal, org_id, scope_level, True, now),
+            params=(target_ref, org_id, scope_level, True, now),
             sec_user_org_scope=self._table("sec_user_org_scope"),
         )
         self._audit_access(
-            actor_user_principal=granted_by,
+            actor_user_principal=granted_by_ref,
             action_type="grant_scope",
-            target_user_principal=target_user_principal,
+            target_user_principal=target_ref,
             target_role=None,
             notes=f"Org scope granted: {org_id} ({scope_level}).",
         )

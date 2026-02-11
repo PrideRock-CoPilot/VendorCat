@@ -81,13 +81,8 @@ class RepositoryIdentityMixin:
         if missing_or_blocked:
             raise SchemaBootstrapRequiredError(
                 "Databricks schema is not initialized or access is blocked. "
-                "Run the bootstrap SQL and migrations manually before starting the app: "
-                f"{self.config.schema_bootstrap_sql_path}, "
-                "setup/databricks/002_add_offering_lob_service_type.sql, "
-                "setup/databricks/003_add_lookup_scd_columns.sql, "
-                "setup/databricks/004_add_offering_profile_ticket.sql, "
-                "setup/databricks/005_add_offering_profile_dataflow_columns.sql, "
-                "setup/databricks/006_add_offering_data_flow.sql. "
+                "Run the bootstrap SQL manually before starting the app: "
+                f"{self.config.schema_bootstrap_sql_path}. "
                 f"Configured schema: {self.config.fq_schema}. "
                 f"Missing/inaccessible objects: {', '.join(missing_or_blocked)}"
             )
@@ -103,11 +98,13 @@ class RepositoryIdentityMixin:
         return self.get_user_roles(user_principal)
 
     def ensure_user_record(self, user_principal: str) -> None:
-        self._ensure_user_directory_entry(user_principal)
+        user_ref = self.resolve_user_id(user_principal, allow_create=True)
+        if not user_ref:
+            return
 
         current = self._query_file(
             "ingestion/select_user_role_presence.sql",
-            params=(user_principal,),
+            params=(user_ref,),
             columns=["has_role"],
             sec_user_role_map=self._table("sec_user_role_map"),
         )
@@ -118,13 +115,13 @@ class RepositoryIdentityMixin:
         try:
             self._execute_file(
                 "inserts/grant_role.sql",
-                params=(user_principal, "vendor_viewer", True, "system:auto-bootstrap", now, None),
+                params=(user_ref, "vendor_viewer", True, "system:auto-bootstrap", now, None),
                 sec_user_role_map=self._table("sec_user_role_map"),
             )
             self._audit_access(
                 actor_user_principal="system:auto-bootstrap",
                 action_type="auto_provision_viewer",
-                target_user_principal=user_principal,
+                target_user_principal=user_ref,
                 target_role="vendor_viewer",
                 notes="User auto-provisioned with basic view rights.",
             )
@@ -137,10 +134,10 @@ class RepositoryIdentityMixin:
             )
 
     def get_user_setting(self, user_principal: str, setting_key: str) -> dict[str, Any]:
-        self._ensure_user_directory_entry(user_principal)
+        user_ref = self.resolve_user_id(user_principal, allow_create=True) or user_principal
         df = self._query_file(
             "ingestion/select_user_setting_latest.sql",
-            params=(user_principal, setting_key),
+            params=(user_ref, setting_key),
             columns=["setting_value_json"],
             app_user_settings=self._table("app_user_settings"),
         )
@@ -152,13 +149,13 @@ class RepositoryIdentityMixin:
             return {}
 
     def save_user_setting(self, user_principal: str, setting_key: str, setting_value: dict[str, Any]) -> None:
-        self._ensure_user_directory_entry(user_principal)
+        user_ref = self.resolve_user_id(user_principal, allow_create=True) or user_principal
         now = self._now()
         payload = self._serialize_payload(setting_value)
         try:
             self._execute_file(
                 "inserts/save_user_setting.sql",
-                params=(str(uuid.uuid4()), user_principal, setting_key, payload, now, user_principal),
+                params=(str(uuid.uuid4()), user_ref, setting_key, payload, now, user_ref),
                 app_user_settings=self._table("app_user_settings"),
             )
         except (DataExecutionError, DataConnectionError):
@@ -196,19 +193,29 @@ class RepositoryIdentityMixin:
         return str(df.iloc[0]["user_principal"])
 
     def get_user_roles(self, user_principal: str) -> set[str]:
+        user_ref = self.resolve_user_id(user_principal, allow_create=True) or str(user_principal or "").strip()
         df = self._query_file(
             "ingestion/select_user_roles.sql",
-            params=(user_principal,),
+            params=(user_ref,),
             columns=["role_code"],
             sec_user_role_map=self._table("sec_user_role_map"),
         )
+        if df.empty and user_ref and user_ref != str(user_principal or "").strip():
+            df = self._query_file(
+                "ingestion/select_user_roles.sql",
+                params=(str(user_principal or "").strip(),),
+                columns=["role_code"],
+                sec_user_role_map=self._table("sec_user_role_map"),
+            )
         return set(df["role_code"].tolist()) if not df.empty else set()
 
     def get_user_display_name(self, user_principal: str) -> str:
         raw = str(user_principal or "").strip()
         if not raw:
             return "Unknown User"
-        user_ref = self._ensure_user_directory_entry(raw)
+        user_ref = self.resolve_user_id(raw, allow_create=False)
+        if not user_ref and not raw.lower().startswith("usr-"):
+            user_ref = self._ensure_user_directory_entry(raw)
         lookup = self._user_display_lookup()
         return lookup.get(user_ref) or lookup.get(raw) or lookup.get(raw.lower()) or self._principal_to_display_name(raw)
 
@@ -284,5 +291,38 @@ class RepositoryIdentityMixin:
             display_name = str(row.get("display_name") or "").strip()
             if display_name and display_name.lower() == lowered:
                 return str(row.get("login_identifier") or "").strip() or None
+        return None
+
+    def resolve_user_id(self, user_value: str | None, *, allow_create: bool = False) -> str | None:
+        cleaned = str(user_value or "").strip()
+        if not cleaned:
+            return None
+        if cleaned.lower().startswith("usr-"):
+            return cleaned
+
+        exact = self._query_file(
+            "ingestion/select_user_directory_by_login.sql",
+            params=(cleaned,),
+            columns=["user_id"],
+            app_user_directory=self._table("app_user_directory"),
+        )
+        if not exact.empty:
+            return str(exact.iloc[0]["user_id"]).strip()
+
+        resolved_login = self.resolve_user_login_identifier(cleaned)
+        if resolved_login:
+            if allow_create:
+                return self._ensure_user_directory_entry(resolved_login)
+            resolved = self._query_file(
+                "ingestion/select_user_directory_by_login.sql",
+                params=(resolved_login,),
+                columns=["user_id"],
+                app_user_directory=self._table("app_user_directory"),
+            )
+            if not resolved.empty:
+                return str(resolved.iloc[0]["user_id"]).strip()
+
+        if allow_create:
+            return self._ensure_user_directory_entry(cleaned)
         return None
 

@@ -148,7 +148,7 @@ class RepositoryWorkflowMixin:
             )
 
         set_clause = ", ".join([f"{field} = %s" for field in clean_updates.keys()])
-        params = list(clean_updates.values()) + [now, actor_user_principal, vendor_id]
+        params = list(clean_updates.values()) + [now, actor_ref, vendor_id]
         self._execute_file(
             "updates/apply_vendor_profile_update.sql",
             params=tuple(params),

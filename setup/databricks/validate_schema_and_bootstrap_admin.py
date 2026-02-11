@@ -140,7 +140,7 @@ def _validate_select_access(spark, *, catalog: str, schema: str) -> None:
         )
 
 
-def _upsert_user_directory(spark, *, catalog: str, schema: str, identity: dict[str, str | None]) -> None:
+def _upsert_user_directory(spark, *, catalog: str, schema: str, identity: dict[str, str | None]) -> str:
     table = _table_ref(catalog, schema, "app_user_directory")
     source_view = "_tmp_vc_bootstrap_user"
     source_row = {
@@ -197,6 +197,18 @@ WHEN NOT MATCHED THEN
   )
 """
     )
+    row = spark.sql(
+        f"""
+SELECT user_id
+FROM {table}
+WHERE lower(login_identifier) = lower({_string_literal(str(identity['login_identifier'] or ''))})
+LIMIT 1
+"""
+    ).first()
+    user_id = str((row["user_id"] if row else "") or "").strip()
+    if not user_id:
+        raise RuntimeError("Failed to resolve user_id after app_user_directory upsert.")
+    return user_id
 
 
 def _upsert_role_grants(
@@ -331,17 +343,25 @@ def main() -> int:
             print("Dry run mode: no writes performed.")
             return 0
 
-        _upsert_user_directory(spark, catalog=catalog, schema=schema, identity=identity)
+        user_ref = _upsert_user_directory(spark, catalog=catalog, schema=schema, identity=identity)
+        granted_by_ref = user_ref if granted_by == principal else (
+            _upsert_user_directory(
+                spark,
+                catalog=catalog,
+                schema=schema,
+                identity=_derive_identity(granted_by),
+            )
+        )
         _upsert_role_grants(
             spark,
             catalog=catalog,
             schema=schema,
-            user_principal=principal,
-            granted_by=granted_by,
+            user_principal=user_ref,
+            granted_by=granted_by_ref,
             roles=roles,
         )
 
-        print(f"User directory and role grants bootstrapped for {principal}.")
+        print(f"User directory and role grants bootstrapped for {principal} ({user_ref}).")
         return 0
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

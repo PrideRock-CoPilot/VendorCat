@@ -98,15 +98,7 @@ python setup/databricks/render_sql.py --fq-schema a1_dlk.twanalytics
 ```text
 setup/databricks/rendered/001_create_databricks_schema.sql
 ```
-4. If your schema already exists from a prior version, run:
-```text
-setup/databricks/rendered/002_add_offering_lob_service_type.sql
-setup/databricks/rendered/003_add_lookup_scd_columns.sql
-setup/databricks/rendered/004_add_offering_profile_ticket.sql
-setup/databricks/rendered/005_add_offering_profile_dataflow_columns.sql
-setup/databricks/rendered/006_add_offering_data_flow.sql
-```
-5. Start the app after bootstrap is complete.
+4. Start the app after bootstrap is complete.
 
 If required tables are missing or inaccessible, startup fails with a schema/bootstrap error.
 
@@ -119,6 +111,12 @@ If required tables are missing or inaccessible, startup fails with a schema/boot
 - Returns staged diagnostics (`config`, `connectivity_probe`, runtime table/column probes) with recommendation hints.
 - Use this endpoint when the UI shows `Schema Bootstrap Required` to identify whether the issue is auth/binding/UC access or missing schema objects.
 - Diagnostics also include `resolved_connection` (safe previews + env-key presence map) to detect variable name mismatches.
+
+## Performance Tunables
+- `TVENDOR_QUERY_CACHE_ENABLED` (`true`/`false`, default `true`): enable in-process read-query cache.
+- `TVENDOR_QUERY_CACHE_TTL_SEC` (default `30`): cache TTL in seconds.
+- `TVENDOR_QUERY_CACHE_MAX_ENTRIES` (default `256`): max cached query entries before eviction.
+- `TVENDOR_IDENTITY_SYNC_TTL_SEC` (default `300`): throttle user directory identity upsert frequency per session/user.
 
 ## Local Start
 1. Install dependencies:
