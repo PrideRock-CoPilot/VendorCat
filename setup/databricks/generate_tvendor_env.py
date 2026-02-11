@@ -162,11 +162,17 @@ def _build_env_text(
     catalog: str,
     schema: str,
     fq_schema: str,
+    auth_mode: str,
+    databricks_token: str,
     oauth_client_id: str,
     oauth_client_secret: str,
     locked_mode: bool,
     port: int,
 ) -> str:
+    normalized_auth_mode = str(auth_mode or "").strip().lower() or "oauth"
+    token_value = str(databricks_token or "").strip() if normalized_auth_mode == "pat" else ""
+    oauth_client_id_value = str(oauth_client_id or "").strip() if normalized_auth_mode != "pat" else ""
+    oauth_client_secret_value = str(oauth_client_secret or "").strip() if normalized_auth_mode != "pat" else ""
     timestamp = datetime.now(timezone.utc).isoformat()
     return "\n".join(
         [
@@ -189,10 +195,12 @@ def _build_env_text(
             f"DATABRICKS_SERVER_HOSTNAME={host}",
             f"DATABRICKS_HTTP_PATH={http_path}",
             f"DATABRICKS_WAREHOUSE_ID={warehouse_id}",
+            f"# Authentication mode: {normalized_auth_mode}",
+            "# PAT token (dev/local option)",
+            f"DATABRICKS_TOKEN={token_value}",
             "# OAuth service principal (preferred for Databricks Apps)",
-            "DATABRICKS_TOKEN=",
-            f"DATABRICKS_CLIENT_ID={oauth_client_id}",
-            f"DATABRICKS_CLIENT_SECRET={oauth_client_secret}",
+            f"DATABRICKS_CLIENT_ID={oauth_client_id_value}",
+            f"DATABRICKS_CLIENT_SECRET={oauth_client_secret_value}",
             "",
             "# Target Unity Catalog objects used by the app",
             f"TVENDOR_FQ_SCHEMA={fq_schema}",
@@ -318,6 +326,17 @@ def _parse_args() -> argparse.Namespace:
         default=os.getenv("DATABRICKS_CLIENT_SECRET", ""),
         help="OAuth service principal client secret (optional at generation time).",
     )
+    parser.add_argument(
+        "--auth-mode",
+        choices=("oauth", "pat"),
+        default="oauth",
+        help="Auth mode for generated env file (default: oauth).",
+    )
+    parser.add_argument(
+        "--pat-token",
+        default=os.getenv("DATABRICKS_TOKEN", ""),
+        help="PAT token when --auth-mode=pat.",
+    )
     parser.add_argument("--env", default="", help="TVENDOR_ENV value (default: prod).")
     parser.add_argument("--locked-mode", action="store_true", help="Write TVENDOR_LOCKED_MODE=true.")
     parser.add_argument("--port", default=8000, type=int, help="PORT value (default: 8000).")
@@ -418,6 +437,8 @@ def main() -> int:
             catalog=catalog,
             schema=schema,
             fq_schema=fq_schema,
+            auth_mode=str(args.auth_mode or "oauth"),
+            databricks_token=str(args.pat_token or "").strip(),
             oauth_client_id=str(args.oauth_client_id or "").strip(),
             oauth_client_secret=str(args.oauth_client_secret or "").strip(),
             locked_mode=locked_mode,
@@ -453,7 +474,13 @@ def main() -> int:
         print(f"DATABRICKS_HTTP_PATH={http_path}")
     else:
         print("WARNING: DATABRICKS_HTTP_PATH is blank. Ensure runtime provides HTTP path or warehouse id.")
-    print("DATABRICKS_TOKEN is intentionally blank (OAuth-only mode).")
+    if str(args.auth_mode or "").strip().lower() == "pat":
+        if str(args.pat_token or "").strip():
+            print("Using PAT mode for generated env file (DATABRICKS_TOKEN populated).")
+        else:
+            print("WARNING: PAT mode selected but DATABRICKS_TOKEN is blank.")
+    else:
+        print("DATABRICKS_TOKEN is intentionally blank (OAuth mode).")
 
     if args.bootstrap_admin:
         bootstrap_script = Path(__file__).resolve().parent / "validate_schema_and_bootstrap_admin.py"

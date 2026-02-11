@@ -36,6 +36,12 @@ Then generate runtime env:
 python setup/databricks/generate_tvendor_env.py
 ```
 
+For dev PAT mode:
+
+```bash
+python setup/databricks/generate_tvendor_env.py --auth-mode pat --pat-token <your_pat_token> --env dev
+```
+
 This writes:
 
 1. `setup/config/tvendor.env`
@@ -47,6 +53,7 @@ Notes:
 2. `DATABRICKS_SERVER_HOSTNAME` is auto-detected in Databricks when possible; otherwise pass `--workspace-hostname`.
 3. You can still override any value with CLI args (for example `--fq-schema`, `--warehouse-id`, `--http-path`).
 4. If `--warehouse-id` is not set, generator writes `valueFrom: "sql-warehouse"` for app resource binding.
+5. PAT mode is intended for dev/local testing; OAuth mode is recommended for Databricks Apps deployments.
 
 ## Validate Schema + Bootstrap Admin User
 

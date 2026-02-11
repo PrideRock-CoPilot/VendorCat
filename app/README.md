@@ -52,6 +52,18 @@ set DATABRICKS_CLIENT_SECRET=<service-principal-client-secret>
 PAT is still supported via `DATABRICKS_TOKEN`, but Databricks Apps should use OAuth service principal credentials.
 `DATABRICKS_HTTP_PATH` is also supported directly and takes precedence when provided.
 
+- Dev Databricks PAT mode (real Databricks data in dev):
+```bat
+set TVENDOR_ENV_FILE=setup\config\tvendor.dev_pat.env
+launch_app.bat
+```
+or
+```bat
+launch_app_dev_pat.bat
+```
+Then set these values in `setup/config/tvendor.dev_pat.env`:
+`DATABRICKS_SERVER_HOSTNAME`, `DATABRICKS_HTTP_PATH` (or `DATABRICKS_WAREHOUSE_ID`), and `DATABRICKS_TOKEN`.
+
 For Databricks Apps, prefer binding a SQL warehouse resource and use:
 ```yaml
 - name: "DATABRICKS_WAREHOUSE_ID"
