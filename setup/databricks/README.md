@@ -85,3 +85,16 @@ Run rendered SQL manually (or via an approved deployment pipeline) in this order
    - `006_add_offering_data_flow.sql`
 
 The app validates required objects at startup and fails fast if required runtime objects are missing/inaccessible.
+
+## Runtime Troubleshooting
+
+If the app shows `Schema Bootstrap Required`, call:
+
+```text
+GET /api/bootstrap-diagnostics
+```
+
+Interpretation:
+
+1. `connectivity_probe` failed: check warehouse app resource binding (`valueFrom: "sql-warehouse"`), OAuth/runtime auth, network access, and warehouse `Can use` permission for the app service principal.
+2. `connectivity_probe` passed but table/column probe failed: check Unity Catalog privileges and run missing bootstrap/migration SQL for the configured schema.

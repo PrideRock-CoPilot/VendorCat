@@ -31,3 +31,4 @@ def test_dashboard_returns_setup_page_when_schema_bootstrap_is_missing(monkeypat
     assert response.status_code == 503
     assert "Schema Bootstrap Required" in response.text
     assert "setup/databricks/001_create_databricks_schema.sql" in response.text
+    assert "/api/bootstrap-diagnostics" in response.text

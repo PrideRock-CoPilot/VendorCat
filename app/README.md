@@ -96,6 +96,9 @@ If required tables are missing or inaccessible, startup fails with a schema/boot
 ## Runtime Health Check
 - API: `GET /api/health`
 - Returns connection/schema readiness (`200` when healthy, `503` when bootstrap/connection is not ready).
+- API: `GET /api/bootstrap-diagnostics`
+- Returns staged diagnostics (`config`, `connectivity_probe`, runtime table/column probes) with recommendation hints.
+- Use this endpoint when the UI shows `Schema Bootstrap Required` to identify whether the issue is auth/binding/UC access or missing schema objects.
 
 ## Local Start
 1. Install dependencies:
