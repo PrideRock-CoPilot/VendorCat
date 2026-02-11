@@ -36,6 +36,7 @@ def _resolve_http_path() -> str:
 
     warehouse_id_keys = (
         "DATABRICKS_WAREHOUSE_ID",
+        "DATABRICKS_SQL_WAREHOUSE_ID",
         "SQL_WAREHOUSE_ID",
         "DBSQL_WAREHOUSE_ID",
     )
@@ -43,6 +44,21 @@ def _resolve_http_path() -> str:
         warehouse_id = os.getenv(key, "").strip()
         if warehouse_id:
             return f"/sql/1.0/warehouses/{warehouse_id}"
+
+    # Databricks Apps resources may expose custom keys (for example sql-warehouse/sql_warehouse).
+    resource_key_candidates = (
+        "sql-warehouse",
+        "sql_warehouse",
+        "SQL_WAREHOUSE",
+        "SQL-WAREHOUSE",
+    )
+    for key in resource_key_candidates:
+        raw = os.getenv(key, "").strip()
+        if not raw:
+            continue
+        if raw.startswith("/sql/"):
+            return raw
+        return f"/sql/1.0/warehouses/{raw}"
     return ""
 
 

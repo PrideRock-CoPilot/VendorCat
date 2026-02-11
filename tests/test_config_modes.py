@@ -21,11 +21,16 @@ def _clear_mode_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "DBSQL_HTTP_PATH",
         "SQL_HTTP_PATH",
         "DATABRICKS_WAREHOUSE_ID",
+        "DATABRICKS_SQL_WAREHOUSE_ID",
         "DBSQL_WAREHOUSE_ID",
         "SQL_WAREHOUSE_ID",
         "DATABRICKS_HOST",
         "DATABRICKS_SERVER_HOSTNAME",
         "DBSQL_SERVER_HOSTNAME",
+        "sql-warehouse",
+        "sql_warehouse",
+        "SQL_WAREHOUSE",
+        "SQL-WAREHOUSE",
     ):
         monkeypatch.delenv(key, raising=False)
 
@@ -111,6 +116,18 @@ def test_http_path_alias_is_supported(monkeypatch: pytest.MonkeyPatch) -> None:
     config = AppConfig.from_env()
 
     assert config.databricks_http_path == "/sql/1.0/warehouses/alias123"
+
+
+def test_http_path_can_be_resolved_from_sql_warehouse_resource_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_mode_env(monkeypatch)
+    monkeypatch.setenv("TVENDOR_ENV", "prod")
+    monkeypatch.setenv("TVENDOR_CATALOG", "a1_dlk")
+    monkeypatch.setenv("TVENDOR_SCHEMA", "twanalytics")
+    monkeypatch.setenv("sql_warehouse", "wh-resource-123")
+
+    config = AppConfig.from_env()
+
+    assert config.databricks_http_path == "/sql/1.0/warehouses/wh-resource-123"
 
 
 def test_fq_schema_can_drive_catalog_and_schema(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bootstrap Diagnostics</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <main class="container">
+    <section class="card section-divider">
+      <h1>Bootstrap Diagnostics</h1>
+      <p>Root-cause report for Databricks schema bootstrap readiness.</p>
+      {% if error_message %}
+      <pre style="white-space: pre-wrap;">{{ error_message }}</pre>
+      {% endif %}
+      <p>JSON endpoint: <a href="/api/bootstrap-diagnostics">/api/bootstrap-diagnostics</a></p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;">
+        <div class="card">
+          <strong>Status</strong>
+          <div>{{ "PASS" if diagnostics.ok else "FAIL" }}</div>
+        </div>
+        <div class="card">
+          <strong>Mode</strong>
+          <div>{{ diagnostics.mode }}</div>
+        </div>
+        <div class="card">
+          <strong>Schema</strong>
+          <div>{{ diagnostics.schema }}</div>
+        </div>
+        <div class="card">
+          <strong>Principal</strong>
+          <div>{{ diagnostics.principal or "unknown" }}</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card section-divider">
+      <h2>Checks</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Check</th>
+            <th>Status</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for check in diagnostics.checks %}
+          <tr>
+            <td>{{ check.name }}</td>
+            <td>{{ check.status }}</td>
+            <td>
+              {% if check.details %}
+              <pre style="white-space: pre-wrap; margin: 0;">{{ check.details | join('\n') }}</pre>
+              {% else %}
+              <span>n/a</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card section-divider">
+      <h2>Recommendations</h2>
+      {% if diagnostics.recommendations %}
+      <ul>
+        {% for item in diagnostics.recommendations %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p>No recommendations. Diagnostics passed.</p>
+      {% endif %}
+    </section>
+
+    <section class="card section-divider">
+      <h2>Runtime Connection Snapshot</h2>
+      <pre style="white-space: pre-wrap;">{{ diagnostics.resolved_connection | tojson(indent=2) }}</pre>
+    </section>
+  </main>
+</body>
+</html>

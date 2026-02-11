@@ -91,6 +91,12 @@ The app validates required objects at startup and fails fast if required runtime
 If the app shows `Schema Bootstrap Required`, call:
 
 ```text
+GET /bootstrap-diagnostics
+```
+
+or API JSON:
+
+```text
 GET /api/bootstrap-diagnostics
 ```
 
