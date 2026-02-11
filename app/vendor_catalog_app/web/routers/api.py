@@ -43,6 +43,31 @@ def _connection_context(config) -> dict[str, bool]:
     }
 
 
+def _raw_env_key_presence() -> dict[str, bool]:
+    keys = (
+        "DATABRICKS_SERVER_HOSTNAME",
+        "DATABRICKS_HOST",
+        "DBSQL_SERVER_HOSTNAME",
+        "DATABRICKS_HTTP_PATH",
+        "DATABRICKS_SQL_HTTP_PATH",
+        "DBSQL_HTTP_PATH",
+        "SQL_HTTP_PATH",
+        "DATABRICKS_WAREHOUSE_ID",
+        "SQL_WAREHOUSE_ID",
+        "DBSQL_WAREHOUSE_ID",
+    )
+    return {key: key in os.environ for key in keys}
+
+
+def _path_preview(value: str, keep: int = 28) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if len(raw) <= keep:
+        return raw
+    return f"{raw[:keep]}..."
+
+
 def _exception_chain(exc: BaseException, limit: int = 8) -> list[str]:
     chain: list[str] = []
     seen: set[int] = set()
@@ -110,6 +135,11 @@ def api_health(request: Request):
             "forwarded_network_id": bool(identity.get("network_id")),
         },
         "connection_context": _connection_context(config),
+        "resolved_connection": {
+            "server_hostname_preview": _path_preview(config.databricks_server_hostname, keep=40),
+            "http_path_preview": _path_preview(config.databricks_http_path, keep=60),
+            "raw_env_key_presence": _raw_env_key_presence(),
+        },
     }
     try:
         repo.ensure_runtime_tables()
@@ -223,6 +253,11 @@ def api_bootstrap_diagnostics(request: Request):
             "forwarded_network_id": bool(identity.get("network_id")),
         },
         "connection_context": connection_context,
+        "resolved_connection": {
+            "server_hostname_preview": _path_preview(config.databricks_server_hostname, keep=40),
+            "http_path_preview": _path_preview(config.databricks_http_path, keep=60),
+            "raw_env_key_presence": _raw_env_key_presence(),
+        },
         "checks": checks,
         "recommendations": recommendations,
     }

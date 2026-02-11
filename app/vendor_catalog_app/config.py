@@ -23,18 +23,26 @@ def _clean_host(raw_host: str) -> str:
 
 
 def _resolve_http_path() -> str:
-    direct = (
-        os.getenv("DATABRICKS_HTTP_PATH", "").strip()
-        or os.getenv("DATABRICKS_SQL_HTTP_PATH", "").strip()
+    direct_keys = (
+        "DATABRICKS_HTTP_PATH",
+        "DATABRICKS_SQL_HTTP_PATH",
+        "DBSQL_HTTP_PATH",
+        "SQL_HTTP_PATH",
     )
-    if direct:
-        return direct
-    warehouse_id = (
-        os.getenv("DATABRICKS_WAREHOUSE_ID", "").strip()
-        or os.getenv("SQL_WAREHOUSE_ID", "").strip()
+    for key in direct_keys:
+        value = os.getenv(key, "").strip()
+        if value:
+            return value
+
+    warehouse_id_keys = (
+        "DATABRICKS_WAREHOUSE_ID",
+        "SQL_WAREHOUSE_ID",
+        "DBSQL_WAREHOUSE_ID",
     )
-    if warehouse_id:
-        return f"/sql/1.0/warehouses/{warehouse_id}"
+    for key in warehouse_id_keys:
+        warehouse_id = os.getenv(key, "").strip()
+        if warehouse_id:
+            return f"/sql/1.0/warehouses/{warehouse_id}"
     return ""
 
 
@@ -122,6 +130,7 @@ class AppConfig:
         raw_host = (
             os.getenv("DATABRICKS_SERVER_HOSTNAME", "")
             or os.getenv("DATABRICKS_HOST", "")
+            or os.getenv("DBSQL_SERVER_HOSTNAME", "")
         )
         if requested_local_db and env_name not in DEV_ENV_NAMES:
             raise RuntimeError(

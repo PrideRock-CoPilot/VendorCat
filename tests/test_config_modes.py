@@ -18,10 +18,14 @@ def _clear_mode_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "TVENDOR_USE_LOCAL_DB",
         "DATABRICKS_HTTP_PATH",
         "DATABRICKS_SQL_HTTP_PATH",
+        "DBSQL_HTTP_PATH",
+        "SQL_HTTP_PATH",
         "DATABRICKS_WAREHOUSE_ID",
+        "DBSQL_WAREHOUSE_ID",
         "SQL_WAREHOUSE_ID",
         "DATABRICKS_HOST",
         "DATABRICKS_SERVER_HOSTNAME",
+        "DBSQL_SERVER_HOSTNAME",
     ):
         monkeypatch.delenv(key, raising=False)
 
@@ -83,6 +87,30 @@ def test_host_normalization_supports_databricks_host(monkeypatch: pytest.MonkeyP
     config = AppConfig.from_env()
 
     assert config.databricks_server_hostname == "dbc-12345.cloud.databricks.com"
+
+
+def test_host_normalization_supports_dbsql_server_hostname(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_mode_env(monkeypatch)
+    monkeypatch.setenv("TVENDOR_ENV", "prod")
+    monkeypatch.setenv("TVENDOR_CATALOG", "a1_dlk")
+    monkeypatch.setenv("TVENDOR_SCHEMA", "twanalytics")
+    monkeypatch.setenv("DBSQL_SERVER_HOSTNAME", "https://dbc-67890.cloud.databricks.com/")
+
+    config = AppConfig.from_env()
+
+    assert config.databricks_server_hostname == "dbc-67890.cloud.databricks.com"
+
+
+def test_http_path_alias_is_supported(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_mode_env(monkeypatch)
+    monkeypatch.setenv("TVENDOR_ENV", "prod")
+    monkeypatch.setenv("TVENDOR_CATALOG", "a1_dlk")
+    monkeypatch.setenv("TVENDOR_SCHEMA", "twanalytics")
+    monkeypatch.setenv("DBSQL_HTTP_PATH", "/sql/1.0/warehouses/alias123")
+
+    config = AppConfig.from_env()
+
+    assert config.databricks_http_path == "/sql/1.0/warehouses/alias123"
 
 
 def test_fq_schema_can_drive_catalog_and_schema(monkeypatch: pytest.MonkeyPatch) -> None:

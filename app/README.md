@@ -99,6 +99,7 @@ If required tables are missing or inaccessible, startup fails with a schema/boot
 - API: `GET /api/bootstrap-diagnostics`
 - Returns staged diagnostics (`config`, `connectivity_probe`, runtime table/column probes) with recommendation hints.
 - Use this endpoint when the UI shows `Schema Bootstrap Required` to identify whether the issue is auth/binding/UC access or missing schema objects.
+- Diagnostics also include `resolved_connection` (safe previews + env-key presence map) to detect variable name mismatches.
 
 ## Local Start
 1. Install dependencies:
