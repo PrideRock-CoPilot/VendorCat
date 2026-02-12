@@ -3,12 +3,13 @@
 <div class="section-header">
   <div>
     <h1>Reports</h1>
-    <p>Build custom extracts, preview on screen, download CSV, or queue email delivery requests.</p>
+    <p>Build custom extracts with tabular or graphical views, download CSV, export a Power BI bundle, or queue email delivery requests.</p>
   </div>
 </div>
 
 <form method="get" action="/reports" class="card grid grid-3">
   <input type="hidden" name="run" value="1">
+  <input type="hidden" name="dbx_report" value="{{ filters.dbx_report }}">
   <label>
     Report Type
     <select name="report_type">
@@ -78,13 +79,103 @@
       {% endfor %}
     </select>
   </label>
+  <label>
+    Result View
+    <select name="view_mode">
+      {% for option in view_modes %}
+      <option value="{{ option }}" {% if option == filters.view_mode %}selected{% endif %}>{{ option }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Graph Type
+    <select name="chart_kind">
+      {% for option in chart_kinds %}
+      <option value="{{ option }}" {% if option == filters.chart_kind %}selected{% endif %}>{{ option }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Graph Dimension
+    <select name="chart_x">
+      {% for option in chart_dimension_options %}
+      <option value="{{ option.key }}" {% if option.key == filters.chart_x %}selected{% endif %}>{{ option.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Graph Metric
+    <select name="chart_y">
+      {% for option in chart_metric_options %}
+      <option value="{{ option.key }}" {% if option.key == filters.chart_y %}selected{% endif %}>{{ option.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
   <div class="button-group">
     <button type="submit">Run Report</button>
     {% if download_url %}
     <a class="button-link subtle" href="{{ download_url }}">Download CSV</a>
     {% endif %}
+    {% if powerbi_download_url %}
+    <a class="button-link subtle" href="{{ powerbi_download_url }}">Download Power BI Bundle</a>
+    {% endif %}
   </div>
 </form>
+
+{% if databricks_reports %}
+<section class="card section-divider">
+  <div class="section-header">
+    <div>
+      <h2>Databricks Native Reports</h2>
+      <p>Open reports in Databricks or host a trusted report inline.</p>
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Report</th>
+        <th>Description</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for report in databricks_reports %}
+      <tr>
+        <td>{{ report.label }}</td>
+        <td>{{ report.description or "-" }}</td>
+        <td>
+          <div class="button-group">
+            <a class="button-link subtle" href="{{ report.url }}" target="_blank" rel="noopener noreferrer">Open in Databricks</a>
+            {% if report.can_embed %}
+            <a class="button-link subtle" href="{{ report.embed_link }}">{{ "Embedded" if report.is_selected else "Embed Here" }}</a>
+            {% else %}
+            <span class="muted">Embed disabled</span>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if selected_databricks_report %}
+  <div class="section-divider" style="margin-top:12px; padding-top:12px;">
+    <h3>Embedded: {{ selected_databricks_report.label }}</h3>
+    {% if selected_databricks_report.description %}
+    <p>{{ selected_databricks_report.description }}</p>
+    {% endif %}
+    <iframe
+      title="Databricks report {{ selected_databricks_report.label }}"
+      src="{{ selected_databricks_report.embed_url }}"
+      loading="lazy"
+      referrerpolicy="strict-origin-when-cross-origin"
+      style="width:100%; min-height:780px; border:1px solid #e2e8f0; border-radius:10px; background:#ffffff;"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads">
+    </iframe>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
 
 {% if columns %}
 <section class="card section-divider">
@@ -102,6 +193,11 @@
       <input type="hidden" name="org" value="{{ filters.org }}">
       <input type="hidden" name="horizon_days" value="{{ filters.horizon_days }}">
       <input type="hidden" name="limit" value="{{ filters.limit }}">
+      <input type="hidden" name="view_mode" value="{{ filters.view_mode }}">
+      <input type="hidden" name="chart_kind" value="{{ filters.chart_kind }}">
+      <input type="hidden" name="chart_x" value="{{ filters.chart_x }}">
+      <input type="hidden" name="chart_y" value="{{ filters.chart_y }}">
+      <input type="hidden" name="dbx_report" value="{{ filters.dbx_report }}">
       <input type="hidden" name="cols" value="{{ selected_columns|join(',') }}" data-cols-target>
       <div class="grid grid-5">
         {% for column in columns %}
@@ -119,11 +215,67 @@
 </section>
 {% endif %}
 
-{% if filters.run == 1 %}
+{% if filters.run == 1 and show_chart %}
 <section class="card section-divider">
   <div class="section-header">
     <div>
-      <h2>Results</h2>
+      <h2>Graph View</h2>
+      <p>{{ chart_dimension_label }} vs {{ chart_metric_label }}{% if chart_rows %} ({{ chart_rows|length }} points){% endif %}.</p>
+    </div>
+  </div>
+  {% if chart_rows %}
+    {% if filters.chart_kind == "line" %}
+    <svg class="line-chart" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="line chart">
+      <line class="axis-line" x1="5" y1="90" x2="95" y2="90"></line>
+      <line class="axis-line" x1="5" y1="10" x2="5" y2="90"></line>
+      <polyline class="trend-line" points="{{ chart_line_path }}"></polyline>
+      {% for point in chart_line_points %}
+      <circle class="trend-point" cx="{{ point.x }}" cy="{{ point.y }}" r="1.4">
+        <title>{{ point.label }}: {{ point.value_display }}</title>
+      </circle>
+      {% endfor %}
+    </svg>
+    {% else %}
+    <div class="graph-block">
+      {% for row in chart_rows %}
+      <div class="bar-row">
+        <div class="bar-label">{{ row.label }}</div>
+        <div class="bar-track"><div class="bar-fill" style="width: {{ row.width_pct }}%;"></div></div>
+        <div class="bar-value">{{ row.value_display }} <small class="muted">({{ row.share_pct }}%)</small></div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <table class="compact-table">
+      <thead>
+        <tr>
+          <th>{{ chart_dimension_label }}</th>
+          <th>{{ chart_metric_label }}</th>
+          <th>% Share</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in chart_rows %}
+        <tr>
+          <td>{{ row.label }}</td>
+          <td>{{ row.value_display }}</td>
+          <td>{{ row.share_pct }}%</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+  <p class="muted">{{ chart_empty_message }}</p>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if filters.run == 1 and show_table %}
+<section class="card section-divider">
+  <div class="section-header">
+    <div>
+      <h2>Table View</h2>
       <p>{{ row_count }} total rows. Showing {{ preview_count }} row preview.</p>
     </div>
   </div>
@@ -148,7 +300,9 @@
     </tbody>
   </table>
 </section>
+{% endif %}
 
+{% if filters.run == 1 %}
 <section class="card section-divider">
   <h2>Email Extract Request</h2>
   <p>Queue a delivery request. The request metadata is captured for downstream email processing.</p>
@@ -163,6 +317,11 @@
     <input type="hidden" name="org" value="{{ filters.org }}">
     <input type="hidden" name="horizon_days" value="{{ filters.horizon_days }}">
     <input type="hidden" name="limit" value="{{ filters.limit }}">
+    <input type="hidden" name="view_mode" value="{{ filters.view_mode }}">
+    <input type="hidden" name="chart_kind" value="{{ filters.chart_kind }}">
+    <input type="hidden" name="chart_x" value="{{ filters.chart_x }}">
+    <input type="hidden" name="chart_y" value="{{ filters.chart_y }}">
+    <input type="hidden" name="dbx_report" value="{{ filters.dbx_report }}">
     <input type="hidden" name="cols" value="{{ selected_columns|join(',') }}">
     <label>
       To

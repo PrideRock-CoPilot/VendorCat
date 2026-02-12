@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="section-header">
+  <div>
+    <h1>Data Imports</h1>
+    <p>Upload CSV data, review auto-matching against existing records, then create new rows or merge updates.</p>
+  </div>
+</div>
+
+<section class="card section-divider">
+  <form method="post" action="/imports/preview" enctype="multipart/form-data" class="grid grid-3">
+    <label>
+      Layout
+      <select name="layout">
+        {% for option in layout_options %}
+        <option value="{{ option.key }}" {% if option.key == selected_layout %}selected{% endif %}>{{ option.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      CSV File
+      <input type="file" name="file" accept=".csv,text/csv" required>
+    </label>
+    <div style="display:flex; align-items:flex-end;">
+      <button type="submit">Upload And Preview</button>
+    </div>
+  </form>
+  <p class="muted">{{ selected_layout_spec.description }}</p>
+  <p class="muted">Columns: {{ selected_layout_spec.fields|join(", ") }}</p>
+
+  <h3>Sample Templates</h3>
+  <div class="button-group">
+    {% for option in layout_options %}
+    <a class="button-link subtle" href="/imports/templates/{{ option.key }}.csv">{{ option.label }} Template</a>
+    {% endfor %}
+  </div>
+</section>
+
+{% if preview_rows %}
+<section class="card section-divider">
+  <div class="section-header">
+    <div>
+      <h2>Preview And Mapping</h2>
+      <p>{{ preview_rows|length }} row(s) parsed for layout "{{ selected_layout_spec.label }}".</p>
+    </div>
+  </div>
+
+  <form method="post" action="/imports/apply">
+    <input type="hidden" name="preview_token" value="{{ preview_token }}">
+    <label>
+      Merge Reason
+      <input type="text" name="reason" value="{{ import_reason }}" placeholder="Bulk import update reason (required for merge actions)">
+    </label>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Line</th>
+          {% for field in selected_layout_spec.fields %}
+          <th>{{ field }}</th>
+          {% endfor %}
+          <th>Match</th>
+          <th>Action</th>
+          <th>Target ID</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in preview_rows %}
+        <tr>
+          <td>{{ row.line_number or row.row_index }}</td>
+          {% for field in selected_layout_spec.fields %}
+          <td>{{ row.row_data.get(field, "") }}</td>
+          {% endfor %}
+          <td>
+            {% if row.suggested_target_label %}
+            <div>{{ row.suggested_target_label }}</div>
+            {% else %}
+            <div>None</div>
+            {% endif %}
+            {% for note in row.notes %}
+            <small class="muted">{{ note }}</small><br>
+            {% endfor %}
+            {% for err in row.errors %}
+            <small class="muted">{{ err }}</small><br>
+            {% endfor %}
+          </td>
+          <td>
+            <select name="action_{{ row.row_index }}">
+              <option value="new" {% if row.suggested_action == "new" %}selected{% endif %}>new</option>
+              <option value="merge" {% if row.suggested_action == "merge" %}selected{% endif %}>merge</option>
+              <option value="skip">skip</option>
+            </select>
+          </td>
+          <td>
+            <input type="text" name="target_{{ row.row_index }}" value="{{ row.suggested_target_id }}" placeholder="target id for merge">
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="button-group" style="margin-top:10px;">
+      <button type="submit">Apply Import</button>
+      <a class="button-link subtle" href="/imports">Discard Preview</a>
+    </div>
+  </form>
+</section>
+{% endif %}
+
+{% if import_results %}
+<section class="card section-divider">
+  <h2>Import Results</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Row</th>
+        <th>Status</th>
+        <th>Message</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for result in import_results %}
+      <tr>
+        <td>{{ result.row_index }}</td>
+        <td>{{ result.status }}</td>
+        <td>{{ result.message }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

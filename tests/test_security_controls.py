@@ -109,3 +109,24 @@ def test_security_headers_include_csp_by_default(
     csp = response.headers.get("Content-Security-Policy", "")
     assert "default-src 'self'" in csp
 
+
+def test_security_headers_include_frame_src_for_databricks_embed(
+    _clear_app_caches: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TVENDOR_SECURITY_HEADERS_ENABLED", "true")
+    monkeypatch.setenv("TVENDOR_CSP_ENABLED", "true")
+    monkeypatch.setenv("TVENDOR_DATABRICKS_REPORTS_ALLOW_EMBED", "true")
+    monkeypatch.setenv("TVENDOR_DATABRICKS_REPORTS_ALLOWED_HOSTS", "dbc-123.cloud.databricks.com")
+
+    app = create_app()
+
+    @app.get("/api/_test/csp-frame")
+    def _csp_frame() -> dict[str, bool]:
+        return {"ok": True}
+
+    client = TestClient(app)
+    response = client.get("/api/_test/csp-frame")
+    assert response.status_code == 200
+    csp = response.headers.get("Content-Security-Policy", "")
+    assert "frame-src 'self' https://dbc-123.cloud.databricks.com" in csp

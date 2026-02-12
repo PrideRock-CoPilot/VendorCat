@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import io
+import json
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -50,6 +53,67 @@ def test_reports_run_owner_coverage_and_download_csv(client: TestClient) -> None
     assert download.headers.get("content-type", "").startswith("text/csv")
     assert "owner_principal" in download.text
     assert "cloud-platform@example.com" in download.text
+
+
+def test_reports_graph_view_renders(client: TestClient) -> None:
+    response = client.get(
+        "/reports?run=1&report_type=vendor_inventory&view_mode=chart&chart_kind=bar&chart_x=risk_tier&chart_y=__row_count__&limit=250"
+    )
+    assert response.status_code == 200
+    assert "Graph View" in response.text
+    assert "bar-row" in response.text
+
+
+def test_reports_powerbi_bundle_download(client: TestClient) -> None:
+    response = client.get(
+        "/reports/download/powerbi?report_type=owner_coverage&owner_principal=cloud-platform@example.com&chart_x=owner_principal&chart_y=__row_count__&limit=250"
+    )
+    assert response.status_code == 200
+    assert response.headers.get("content-type", "").startswith("application/zip")
+
+    with zipfile.ZipFile(io.BytesIO(response.content), "r") as archive:
+        names = set(archive.namelist())
+    assert "report_data.csv" in names
+    assert "report_manifest.json" in names
+
+
+def test_reports_databricks_native_links_and_embed(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_local_db: Path,
+) -> None:
+    monkeypatch.setenv(
+        "TVENDOR_DATABRICKS_REPORTS_JSON",
+        json.dumps(
+            [
+                {
+                    "id": "ops-dashboard",
+                    "label": "Ops Dashboard",
+                    "description": "Operational KPIs in Databricks SQL.",
+                    "url": "https://dbc-123.cloud.databricks.com/sql/dashboardsv3/ops-dashboard",
+                    "allow_embed": True,
+                }
+            ]
+        ),
+    )
+    monkeypatch.setenv("TVENDOR_DATABRICKS_REPORTS_ALLOWED_HOSTS", "dbc-123.cloud.databricks.com")
+    monkeypatch.setenv("TVENDOR_DATABRICKS_REPORTS_ALLOW_EMBED", "true")
+
+    get_config.cache_clear()
+    get_repo.cache_clear()
+    app = create_app()
+    client = TestClient(app)
+
+    listing = client.get("/reports")
+    assert listing.status_code == 200
+    assert "Databricks Native Reports" in listing.text
+    assert "Ops Dashboard" in listing.text
+    assert "Open in Databricks" in listing.text
+
+    embedded = client.get("/reports?dbx_report=ops-dashboard")
+    assert embedded.status_code == 200
+    assert "Embedded: Ops Dashboard" in embedded.text
+    assert "<iframe" in embedded.text
+    assert "sql/dashboardsv3/ops-dashboard" in embedded.text
 
 
 def test_reports_email_request(client: TestClient) -> None:

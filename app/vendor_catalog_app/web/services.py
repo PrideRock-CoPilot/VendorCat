@@ -66,16 +66,18 @@ def get_repo() -> VendorRepository:
 
 
 def trust_forwarded_identity_headers(config: AppConfig) -> bool:
+    is_dev_env = bool(getattr(config, "is_dev_env", False))
     return get_env_bool(
         TVENDOR_TRUST_FORWARDED_IDENTITY_HEADERS,
-        default=config.is_dev_env,
+        default=is_dev_env,
     )
 
 
 def testing_role_override_enabled(config: AppConfig) -> bool:
+    is_dev_env = bool(getattr(config, "is_dev_env", False))
     return get_env_bool(
         TVENDOR_ALLOW_TEST_ROLE_OVERRIDE,
-        default=config.is_dev_env,
+        default=is_dev_env,
     )
 
 
@@ -211,10 +213,12 @@ def _resolve_user_principal(
     request: Request,
     forwarded_identity: dict[str, str] | None = None,
 ) -> str:
+    use_local_db = bool(getattr(config, "use_local_db", False))
+    is_dev_env = bool(getattr(config, "is_dev_env", False))
     forced_user = request.query_params.get("as_user")
-    if config.use_local_db and config.is_dev_env and forced_user:
+    if use_local_db and is_dev_env and forced_user:
         return forced_user
-    if config.use_local_db and config.is_dev_env:
+    if use_local_db and is_dev_env:
         return os.getenv("TVENDOR_TEST_USER", UNKNOWN_USER_PRINCIPAL)
     identity = forwarded_identity or {}
     principal = str(identity.get("principal") or "").strip()
@@ -443,6 +447,34 @@ def base_template_context(
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     repo = get_repo()
+    config = context.config
+    config_fq_schema = str(getattr(config, "fq_schema", "") or "")
+    config_use_local_db = bool(getattr(config, "use_local_db", False))
+    config_local_db_path = str(getattr(config, "local_db_path", "") or "")
+    config_locked_mode = bool(getattr(config, "locked_mode", False))
+    raw_roles = {
+        str(item).strip()
+        for item in (getattr(context, "raw_roles", set()) or set())
+        if str(item).strip()
+    }
+    roles = {
+        str(item).strip()
+        for item in (getattr(context, "roles", set()) or set())
+        if str(item).strip()
+    }
+    can_edit = bool(getattr(context, "can_edit", False))
+    can_report = bool(getattr(context, "can_report", False))
+    can_submit_requests = bool(getattr(context, "can_submit_requests", False))
+    can_approve_requests = bool(getattr(context, "can_approve_requests", False))
+    can_access_workflows = bool(getattr(context, "can_access_workflows", False))
+    can_direct_apply = bool(getattr(context, "can_direct_apply", False))
+    is_admin = bool(getattr(context, "is_admin", False))
+    has_admin_rights = bool(getattr(context, "has_admin_rights", False))
+    role_override = str(getattr(context, "role_override", "") or "")
+    try:
+        approval_level = int(getattr(context, "approval_level", 0) or 0)
+    except Exception:
+        approval_level = 0
     user_display_name = _display_name_for_principal(context.user_principal)
     try:
         user_display_name = repo.get_user_display_name(context.user_principal)
@@ -542,29 +574,29 @@ def base_template_context(
         "active_nav": active_nav,
         "user_principal": context.user_principal,
         "user_display_name": user_display_name,
-        "raw_roles": sorted(list(context.raw_roles)),
-        "roles": sorted(list(context.roles)),
-        "can_edit": context.can_edit,
-        "can_report": context.can_report,
-        "can_submit_requests": context.can_submit_requests,
-        "can_approve_requests": context.can_approve_requests,
-        "can_access_workflows": context.can_access_workflows,
-        "can_direct_apply": context.can_direct_apply,
-        "is_admin": context.is_admin,
-        "has_admin_rights": context.has_admin_rights,
-        "approval_level": context.approval_level,
+        "raw_roles": sorted(raw_roles),
+        "roles": sorted(roles),
+        "can_edit": can_edit,
+        "can_report": can_report,
+        "can_submit_requests": can_submit_requests,
+        "can_approve_requests": can_approve_requests,
+        "can_access_workflows": can_access_workflows,
+        "can_direct_apply": can_direct_apply,
+        "is_admin": is_admin,
+        "has_admin_rights": has_admin_rights,
+        "approval_level": approval_level,
         "approval_level_min": MIN_APPROVAL_LEVEL,
         "approval_level_max": MAX_APPROVAL_LEVEL,
         "change_approval_level_min": MIN_CHANGE_APPROVAL_LEVEL,
         "role_approval_level_options": list(range(MIN_APPROVAL_LEVEL, MAX_APPROVAL_LEVEL + 1)),
         "change_approval_level_options": list(range(MIN_CHANGE_APPROVAL_LEVEL, MAX_APPROVAL_LEVEL + 1)),
-        "testing_role_override": context.role_override or "",
+        "testing_role_override": role_override,
         "testing_role_override_enabled": bool(testing_override_allowed),
         "testing_role_options": role_options,
-        "fq_schema": context.config.fq_schema,
-        "use_local_db": context.config.use_local_db,
-        "local_db_path": context.config.local_db_path,
-        "locked_mode": context.config.locked_mode,
+        "fq_schema": config_fq_schema,
+        "use_local_db": config_use_local_db,
+        "local_db_path": config_local_db_path,
+        "locked_mode": config_locked_mode,
         "csrf_token": csrf_token,
         "flashes": pop_flashes(request),
         "doc_source_options": doc_source_options,

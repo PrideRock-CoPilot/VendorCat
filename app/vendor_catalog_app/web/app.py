@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import hmac
 import logging
 from pathlib import Path
@@ -23,6 +24,8 @@ from vendor_catalog_app.db import (
 from vendor_catalog_app.env import (
     TVENDOR_CSP_ENABLED,
     TVENDOR_CSP_POLICY,
+    TVENDOR_DATABRICKS_REPORTS_ALLOWED_HOSTS,
+    TVENDOR_DATABRICKS_REPORTS_ALLOW_EMBED,
     TVENDOR_ALLOW_DEFAULT_SESSION_SECRET,
     TVENDOR_CSRF_ENABLED,
     TVENDOR_METRICS_ALLOW_UNAUTHENTICATED,
@@ -76,6 +79,40 @@ DEFAULT_CSP_POLICY = (
     "connect-src 'self'; "
     "form-action 'self'"
 )
+
+
+def _normalize_host_value(raw_host: str) -> str:
+    host = str(raw_host or "").strip().lower()
+    if not host:
+        return ""
+    host = host.replace("https://", "").replace("http://", "").strip("/")
+    if "/" in host:
+        host = host.split("/", 1)[0].strip()
+    if ":" in host:
+        host = host.split(":", 1)[0].strip()
+    return host
+
+
+def _build_csp_policy(base_policy: str, *, databricks_host: str) -> str:
+    policy = str(base_policy or "").strip()
+    if not policy:
+        return policy
+    if "frame-src" in policy.lower():
+        return policy
+
+    host_values: list[str] = []
+    if databricks_host:
+        host_values.append(databricks_host)
+    for token in get_env(TVENDOR_DATABRICKS_REPORTS_ALLOWED_HOSTS, "").split(","):
+        cleaned = _normalize_host_value(token)
+        if cleaned:
+            host_values.append(cleaned)
+    deduped = list(dict.fromkeys(host_values))
+    if not deduped:
+        return policy
+
+    frame_sources = " ".join(f"https://{host}" for host in deduped)
+    return f"{policy}; frame-src 'self' {frame_sources}"
 
 
 def _route_path_label(request: Request) -> str:
@@ -134,26 +171,60 @@ def create_app() -> FastAPI:
         min_value=1,
     )
     csp_enabled = get_env_bool(TVENDOR_CSP_ENABLED, default=True)
-    csp_policy = get_env(TVENDOR_CSP_POLICY, DEFAULT_CSP_POLICY)
+    raw_csp_policy = get_env(TVENDOR_CSP_POLICY, DEFAULT_CSP_POLICY)
+    allow_databricks_embed = get_env_bool(TVENDOR_DATABRICKS_REPORTS_ALLOW_EMBED, default=False)
+    csp_policy = (
+        _build_csp_policy(
+            raw_csp_policy,
+            databricks_host=_normalize_host_value(config.databricks_server_hostname),
+        )
+        if allow_databricks_embed
+        else raw_csp_policy
+    )
     write_rate_limiter = SlidingWindowRateLimiter(
         enabled=write_rate_limit_enabled,
         max_requests=write_rate_limit_max_requests,
         window_seconds=write_rate_limit_window_sec,
     )
 
-    app = FastAPI(title="Vendor Catalog")
-    observability = get_observability_manager()
-    app.add_middleware(
-        SessionMiddleware,
-        secret_key=session_secret,
-        same_site="lax",
-        https_only=session_https_only,
-    )
     perf_enabled = get_env_bool(TVENDOR_PERF_LOG_ENABLED, default=False)
     perf_header_enabled = get_env_bool(TVENDOR_PERF_RESPONSE_HEADER, default=True)
     request_id_header_enabled = get_env_bool(TVENDOR_REQUEST_ID_HEADER_ENABLED, default=True)
     sql_preload_on_startup = get_env_bool(TVENDOR_SQL_PRELOAD_ON_STARTUP, default=False)
     slow_query_ms = max(1.0, get_env_float(TVENDOR_SLOW_QUERY_MS, default=750.0, min_value=1.0))
+
+    @asynccontextmanager
+    async def _app_lifespan(_app: FastAPI):
+        runtime_config = get_config()
+        ensure_local_db_ready(runtime_config)
+        if sql_preload_on_startup:
+            try:
+                loaded = get_repo().preload_sql_templates()
+            except Exception:
+                LOGGER.exception("SQL template preload failed during startup.")
+                raise
+            LOGGER.info(
+                "SQL templates preloaded during startup. files=%s",
+                loaded,
+                extra={
+                    "event": "sql_preload_startup",
+                    "sql_files_loaded": int(loaded),
+                },
+            )
+        try:
+            yield
+        finally:
+            if get_repo.cache_info().currsize == 0:
+                return
+            try:
+                get_repo().close()
+            except Exception:
+                LOGGER.warning("Failed to close repository resources cleanly.", exc_info=True)
+            finally:
+                get_repo.cache_clear()
+
+    app = FastAPI(title="Vendor Catalog", lifespan=_app_lifespan)
+    observability = get_observability_manager()
 
     base_dir = Path(__file__).resolve().parent
     templates = Jinja2Templates(directory=str(base_dir / "templates"))
@@ -257,7 +328,34 @@ def create_app() -> FastAPI:
                     status_code = response.status_code
                     return response
 
-            response = await call_next(request)
+            try:
+                response = await call_next(request)
+            except Exception as exc:
+                spec = normalize_exception(exc)
+                status_code = int(spec.status_code)
+                if is_api_request(request):
+                    response = api_error_response(
+                        request,
+                        status_code=spec.status_code,
+                        code=spec.code,
+                        message=spec.message,
+                        details=spec.details,
+                    )
+                else:
+                    LOGGER.exception(
+                        "Unhandled web request error. path=%s method=%s",
+                        request.url.path,
+                        request.method,
+                        extra={
+                            "event": "unhandled_web_error",
+                            "request_id": str(getattr(request.state, "request_id", "-")),
+                            "method": request.method,
+                            "path": str(request.url.path),
+                        },
+                    )
+                    response = PlainTextResponse("An unexpected error occurred.", status_code=500)
+                status_code = response.status_code
+                return response
             status_code = response.status_code
             route_path = _route_path_label(request)
             return response
@@ -345,6 +443,13 @@ def create_app() -> FastAPI:
                     )
 
             clear_request_perf_context(token)
+
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=session_secret,
+        same_site="lax",
+        https_only=session_https_only,
+    )
 
     if observability.prometheus_enabled:
 
@@ -477,37 +582,6 @@ def create_app() -> FastAPI:
             message=spec.message,
             details=spec.details,
         )
-
-    @app.on_event("startup")
-    async def _startup_local_db_bootstrap() -> None:
-        config = get_config()
-        ensure_local_db_ready(config)
-        if not sql_preload_on_startup:
-            return
-        try:
-            loaded = get_repo().preload_sql_templates()
-        except Exception:
-            LOGGER.exception("SQL template preload failed during startup.")
-            raise
-        LOGGER.info(
-            "SQL templates preloaded during startup. files=%s",
-            loaded,
-            extra={
-                "event": "sql_preload_startup",
-                "sql_files_loaded": int(loaded),
-            },
-        )
-
-    @app.on_event("shutdown")
-    async def _shutdown_repo_resources() -> None:
-        if get_repo.cache_info().currsize == 0:
-            return
-        try:
-            get_repo().close()
-        except Exception:
-            LOGGER.warning("Failed to close repository resources cleanly.", exc_info=True)
-        finally:
-            get_repo.cache_clear()
 
     app.mount("/static", StaticFiles(directory=str(base_dir / "static")), name="static")
     app.include_router(web_router)
