@@ -17,6 +17,7 @@ from vendor_catalog_app.db import (
     start_request_perf_context,
 )
 from vendor_catalog_app.local_db_bootstrap import ensure_local_db_ready
+from vendor_catalog_app.logging import setup_app_logging
 from vendor_catalog_app.repository import SchemaBootstrapRequiredError
 from vendor_catalog_app.web.bootstrap_diagnostics import build_bootstrap_diagnostics_payload
 from vendor_catalog_app.web.routers import router as web_router
@@ -39,21 +40,8 @@ def _as_float(value: str | None, default: float) -> float:
         return float(default)
 
 
-def _configure_logging() -> None:
-    level_name = str(os.getenv("TVENDOR_LOG_LEVEL", "INFO")).strip().upper() or "INFO"
-    level = getattr(logging, level_name, logging.INFO)
-    root_logger = logging.getLogger()
-    if not root_logger.handlers:
-        logging.basicConfig(
-            level=level,
-            format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        )
-    logging.getLogger("vendor_catalog_app").setLevel(level)
-    LOGGER.info("Logging configured at level=%s", level_name)
-
-
 def create_app() -> FastAPI:
-    _configure_logging()
+    setup_app_logging()
     app = FastAPI(title="Vendor Catalog")
     app.add_middleware(
         SessionMiddleware,
