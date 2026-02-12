@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import secrets
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -101,6 +102,18 @@ def _as_bool(value: str | None, default: bool = False) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _resolve_session_secret(*, explicit_secret: str, existing_secret: str, rotate_secret: bool) -> str:
+    explicit = str(explicit_secret or "").strip()
+    if explicit:
+        return explicit
+    if rotate_secret:
+        return secrets.token_urlsafe(32)
+    existing = str(existing_secret or "").strip()
+    if existing:
+        return existing
+    return secrets.token_urlsafe(32)
+
+
 def _load_app_yaml_env(path: Path) -> dict[str, str]:
     if not path.exists():
         return {}
@@ -166,6 +179,7 @@ def _build_env_text(
     databricks_token: str,
     oauth_client_id: str,
     oauth_client_secret: str,
+    session_secret: str,
     locked_mode: bool,
     port: int,
 ) -> str:
@@ -189,6 +203,7 @@ def _build_env_text(
             "TVENDOR_LOCAL_DB_SEED=false",
             "TVENDOR_LOCAL_DB_REBUILD_MODE=keep",
             f"TVENDOR_LOCKED_MODE={'true' if locked_mode else 'false'}",
+            f"TVENDOR_SESSION_SECRET={session_secret}",
             f"PORT={int(port)}",
             "",
             "# Databricks workspace connectivity",
@@ -223,6 +238,7 @@ def _build_app_yaml_text(
     schema: str,
     warehouse_id: str,
     http_path: str,
+    session_secret: str,
     locked_mode: bool,
     warehouse_resource_key: str,
 ) -> str:
@@ -243,6 +259,8 @@ def _build_app_yaml_text(
         '    value: "false"',
         '  - name: "TVENDOR_LOCKED_MODE"',
         f'    value: "{"true" if locked_mode else "false"}"',
+        '  - name: "TVENDOR_SESSION_SECRET"',
+        f'    value: "{session_secret}"',
         '  - name: "TVENDOR_CATALOG"',
         f'    value: "{catalog}"',
         '  - name: "TVENDOR_SCHEMA"',
@@ -339,6 +357,16 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--env", default="", help="TVENDOR_ENV value (default: prod).")
     parser.add_argument("--locked-mode", action="store_true", help="Write TVENDOR_LOCKED_MODE=true.")
+    parser.add_argument(
+        "--session-secret",
+        default="",
+        help="Explicit TVENDOR_SESSION_SECRET value to write.",
+    )
+    parser.add_argument(
+        "--reuse-session-secret",
+        action="store_true",
+        help="Reuse existing TVENDOR_SESSION_SECRET from app YAML/env instead of rotating a new value.",
+    )
     parser.add_argument("--port", default=8000, type=int, help="PORT value (default: 8000).")
     parser.add_argument(
         "--output-file",
@@ -406,6 +434,15 @@ def main() -> int:
             or "prod"
         )
         locked_mode = bool(args.locked_mode) or _as_bool(app_env.get("TVENDOR_LOCKED_MODE"), default=False)
+        existing_session_secret = (
+            str(app_env.get("TVENDOR_SESSION_SECRET", "")).strip()
+            or str(os.getenv("TVENDOR_SESSION_SECRET", "")).strip()
+        )
+        session_secret = _resolve_session_secret(
+            explicit_secret=str(args.session_secret or "").strip(),
+            existing_secret=existing_session_secret,
+            rotate_secret=not bool(args.reuse_session_secret),
+        )
         warehouse_id = (
             str(args.warehouse_id or "").strip()
             or str(app_env.get("DATABRICKS_WAREHOUSE_ID", "")).strip()
@@ -441,6 +478,7 @@ def main() -> int:
             databricks_token=str(args.pat_token or "").strip(),
             oauth_client_id=str(args.oauth_client_id or "").strip(),
             oauth_client_secret=str(args.oauth_client_secret or "").strip(),
+            session_secret=session_secret,
             locked_mode=locked_mode,
             port=int(args.port),
         )
@@ -450,6 +488,7 @@ def main() -> int:
             schema=schema,
             warehouse_id=warehouse_id,
             http_path=http_path,
+            session_secret=session_secret,
             locked_mode=locked_mode,
             warehouse_resource_key=warehouse_resource_key,
         )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 
@@ -12,7 +13,7 @@ if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
 from vendor_catalog_app.web.app import create_app
-from vendor_catalog_app.web.security_controls import CSRF_HEADER, CSRF_SESSION_KEY
+from vendor_catalog_app.web.security_controls import CSRF_HEADER, CSRF_SESSION_KEY, request_matches_csrf_token
 
 
 @pytest.fixture()
@@ -61,6 +62,68 @@ def test_api_write_requires_csrf_when_enabled(
     allowed = client.post("/api/_test/write", headers={CSRF_HEADER: token})
     assert allowed.status_code == 200
     assert allowed.json()["ok"] is True
+
+
+def test_request_matches_csrf_token_short_circuits_same_origin_form_posts() -> None:
+    called = False
+
+    async def _receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "scheme": "https",
+        "server": ("testserver", 443),
+        "path": "/vendors/new",
+        "headers": [
+            (b"origin", b"https://testserver"),
+            (b"content-type", b"application/x-www-form-urlencoded"),
+        ],
+    }
+    request = Request(scope, _receive)
+
+    async def _form():
+        nonlocal called
+        called = True
+        raise AssertionError("request.form() should not be called for same-origin checks.")
+
+    request.form = _form  # type: ignore[method-assign]
+
+    assert asyncio.run(request_matches_csrf_token(request, expected_token="expected-token")) is True
+    assert called is False
+
+
+def test_request_matches_csrf_token_uses_forwarded_origin_for_proxy_hosts() -> None:
+    called = False
+
+    async def _receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "scheme": "http",
+        "server": ("127.0.0.1", 8000),
+        "path": "/vendors/new",
+        "headers": [
+            (b"origin", b"https://dbc-123.cloud.databricks.com"),
+            (b"x-forwarded-proto", b"https"),
+            (b"x-forwarded-host", b"dbc-123.cloud.databricks.com"),
+            (b"content-type", b"application/x-www-form-urlencoded"),
+        ],
+    }
+    request = Request(scope, _receive)
+
+    async def _form():
+        nonlocal called
+        called = True
+        raise AssertionError("request.form() should not be called for same-origin checks.")
+
+    request.form = _form  # type: ignore[method-assign]
+
+    assert asyncio.run(request_matches_csrf_token(request, expected_token="expected-token")) is True
+    assert called is False
 
 
 def test_api_write_rate_limit_returns_429_when_exceeded(

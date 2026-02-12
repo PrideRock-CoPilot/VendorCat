@@ -214,7 +214,9 @@ def admin(request: Request):
             "admin_section": admin_section,
             "grantable_roles": known_roles,
             "role_rows": repo.list_role_grants().to_dict("records"),
+            "group_role_rows": repo.list_group_role_grants().to_dict("records"),
             "scope_rows": repo.list_scope_grants().to_dict("records"),
+            "user_options": repo.search_user_directory(q="", limit=300).to_dict("records"),
             "role_definitions": role_def_rows,
             "role_code_options": known_roles,
             "change_actions": list(change_action_choices()),
@@ -247,11 +249,16 @@ async def grant_role(request: Request):
     if not target_user or not role_code:
         add_flash(request, "User and role are required.", "error")
         return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+    target_user = repo.resolve_user_login_identifier(target_user) or target_user
     if role_code not in set(repo.list_known_roles() or ROLE_CHOICES):
         add_flash(request, f"Role `{role_code}` is not defined. Create it in Role Catalog first.", "error")
         return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
 
-    repo.grant_role(target_user_principal=target_user, role_code=role_code, granted_by=user.user_principal)
+    try:
+        repo.grant_role(target_user_principal=target_user, role_code=role_code, granted_by=user.user_principal)
+    except Exception as exc:
+        add_flash(request, f"Could not grant role: {exc}", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
     repo.log_usage_event(
         user_principal=user.user_principal,
         page_name="admin",
@@ -259,6 +266,98 @@ async def grant_role(request: Request):
         payload={"target_user": target_user, "role_code": role_code},
     )
     add_flash(request, "Role grant recorded.", "success")
+    return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+
+
+@router.post("/change-role")
+async def change_role(request: Request):
+    repo = get_repo()
+    user = get_user_context(request)
+    if user.config.locked_mode:
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+    if not user.has_admin_rights:
+        add_flash(request, "Admin access required.", "error")
+        return RedirectResponse(url="/dashboard", status_code=303)
+
+    form = await request.form()
+    target_user = str(form.get("target_user", "")).strip()
+    current_role_code = str(form.get("current_role_code", "")).strip().lower()
+    new_role_code = str(form.get("new_role_code", "")).strip().lower()
+    if not target_user or not current_role_code or not new_role_code:
+        add_flash(request, "User, current role, and new role are required.", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+    target_user = repo.resolve_user_login_identifier(target_user) or target_user
+    if new_role_code not in set(repo.list_known_roles() or ROLE_CHOICES):
+        add_flash(request, f"Role `{new_role_code}` is not defined. Create it in Role Catalog first.", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+    if current_role_code == new_role_code:
+        add_flash(request, "Role is already set to that value.", "success")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+
+    try:
+        repo.change_role_grant(
+            target_user_principal=target_user,
+            current_role_code=current_role_code,
+            new_role_code=new_role_code,
+            granted_by=user.user_principal,
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not change role: {exc}", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+
+    repo.log_usage_event(
+        user_principal=user.user_principal,
+        page_name="admin",
+        event_type="change_role",
+        payload={
+            "target_user": target_user,
+            "current_role_code": current_role_code,
+            "new_role_code": new_role_code,
+        },
+    )
+    add_flash(request, "Role updated.", "success")
+    return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+
+
+@router.post("/grant-group-role")
+async def grant_group_role(request: Request):
+    repo = get_repo()
+    user = get_user_context(request)
+    if user.config.locked_mode:
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+    if not user.has_admin_rights:
+        add_flash(request, "Admin access required.", "error")
+        return RedirectResponse(url="/dashboard", status_code=303)
+
+    form = await request.form()
+    target_group = str(form.get("target_group", "")).strip()
+    role_code = str(form.get("role_code", "")).strip().lower()
+    if not target_group or not role_code:
+        add_flash(request, "Group and role are required.", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+    if role_code not in set(repo.list_known_roles() or ROLE_CHOICES):
+        add_flash(request, f"Role `{role_code}` is not defined. Create it in Role Catalog first.", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+    normalized_group = repo.normalize_group_principal(target_group)
+    if not normalized_group:
+        add_flash(request, "Group principal is invalid. Use a valid group identifier.", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+
+    try:
+        repo.grant_group_role(group_principal=normalized_group, role_code=role_code, granted_by=user.user_principal)
+    except Exception as exc:
+        add_flash(request, f"Could not grant group role: {exc}", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+
+    repo.log_usage_event(
+        user_principal=user.user_principal,
+        page_name="admin",
+        event_type="grant_group_role",
+        payload={"target_group": normalized_group, "role_code": role_code},
+    )
+    add_flash(request, "Group role grant recorded.", "success")
     return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
 
 

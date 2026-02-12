@@ -9,6 +9,7 @@ from typing import Iterable
 REQUIRED_SCHEMA: dict[str, tuple[str, ...]] = {
     "core_vendor": ("vendor_id", "display_name", "lifecycle_state", "owner_org_id"),
     "sec_user_role_map": ("user_principal", "role_code", "active_flag"),
+    "sec_group_role_map": ("group_principal", "role_code", "active_flag"),
     "app_user_settings": ("user_principal", "setting_key", "setting_value_json"),
     "app_user_directory": (
         "user_id",

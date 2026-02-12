@@ -558,6 +558,15 @@ CREATE TABLE IF NOT EXISTS sec_user_role_map (
   revoked_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS sec_group_role_map (
+  group_principal TEXT NOT NULL,
+  role_code TEXT NOT NULL,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  granted_by TEXT NOT NULL,
+  granted_at TEXT NOT NULL,
+  revoked_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS sec_user_org_scope (
   user_principal TEXT NOT NULL,
   org_id TEXT NOT NULL,

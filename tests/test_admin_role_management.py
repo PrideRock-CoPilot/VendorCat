@@ -79,6 +79,51 @@ def test_admin_can_grant_custom_role_to_user(client: TestClient) -> None:
     assert "vendor_custom_reporter" in admin_page.text
 
 
+def test_admin_can_change_user_role_from_dropdown_flow(client: TestClient) -> None:
+    client.post(
+        "/admin/grant-role",
+        data={"target_user": "dropdown.user@example.com", "role_code": "vendor_editor"},
+        follow_redirects=False,
+    )
+
+    change = client.post(
+        "/admin/change-role",
+        data={
+            "target_user": "dropdown.user@example.com",
+            "current_role_code": "vendor_editor",
+            "new_role_code": "vendor_auditor",
+        },
+        follow_redirects=False,
+    )
+    assert change.status_code == 303
+
+    repo = get_repo()
+    grants = repo.list_role_grants()
+    user_rows = grants[grants["user_principal"].astype(str) == "dropdown.user@example.com"].copy()
+    active_rows = user_rows[user_rows["active_flag"].astype(str).str.lower().isin({"1", "true"})]
+    assert set(active_rows["role_code"].astype(str).tolist()) == {"vendor_auditor"}
+
+
+def test_admin_can_grant_role_to_group_and_group_member_inherits_it(client: TestClient) -> None:
+    grant = client.post(
+        "/admin/grant-group-role",
+        data={"target_group": "AD-Vendor-Admins", "role_code": "vendor_admin"},
+        follow_redirects=False,
+    )
+    assert grant.status_code == 303
+
+    as_group_member = client.get(
+        "/admin",
+        headers={
+            "x-forwarded-preferred-username": "group.member@example.com",
+            "x-forwarded-groups": "AD-Vendor-Admins",
+        },
+    )
+    assert as_group_member.status_code == 200
+    assert "Admin Portal" in as_group_member.text
+    assert "group:ad-vendor-admins" in as_group_member.text
+
+
 def test_admin_can_add_doc_lookup_tag_and_use_in_doc_link(client: TestClient) -> None:
     save_lookup = client.post(
         "/admin/lookup/save",

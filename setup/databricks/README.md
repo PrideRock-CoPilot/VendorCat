@@ -68,6 +68,8 @@ Notes:
 3. You can still override any value with CLI args (for example `--fq-schema`, `--warehouse-id`, `--http-path`).
 4. If `--warehouse-id` is not set, generator writes `valueFrom: "sql-warehouse"` for app resource binding.
 5. PAT mode is intended for dev/local testing; OAuth mode is recommended for Databricks Apps deployments.
+6. Generator writes `TVENDOR_SESSION_SECRET` automatically. By default it rotates a new `secrets.token_urlsafe(32)` value on each run.
+7. Use `--reuse-session-secret` to keep the current secret, or `--session-secret <value>` to set an explicit one.
 
 ## Validate Schema + Bootstrap Admin User
 

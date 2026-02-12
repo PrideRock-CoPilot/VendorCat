@@ -42,8 +42,28 @@ def ensure_csrf_token(request: Request, *, session_key: str = CSRF_SESSION_KEY) 
     return token
 
 
+def _first_forwarded_value(value: str, *, max_len: int = 512) -> str:
+    raw = _sanitize_identity_value(str(value or ""), max_len=max_len)
+    if not raw:
+        return ""
+    return raw.split(",", 1)[0].strip()
+
+
+def _request_origin(request: Request) -> str:
+    forwarded_proto = _first_forwarded_value(str(request.headers.get("x-forwarded-proto", ""))).lower()
+    forwarded_host = _first_forwarded_value(str(request.headers.get("x-forwarded-host", ""))).lower()
+    host_header = _sanitize_identity_value(str(request.headers.get("host", ""))).lower()
+    scheme = forwarded_proto or str(request.url.scheme or "").lower()
+    netloc = forwarded_host or host_header or str(request.url.netloc or "").lower()
+    if not scheme or not netloc:
+        return ""
+    return f"{scheme}://{netloc}"
+
+
 def _is_same_origin(request: Request) -> bool:
-    request_origin = f"{request.url.scheme}://{request.url.netloc}".lower()
+    request_origin = _request_origin(request)
+    if not request_origin:
+        return False
     origin = _sanitize_identity_value(str(request.headers.get("origin", ""))).lower()
     if origin:
         return origin == request_origin
@@ -76,6 +96,12 @@ async def request_matches_csrf_token(
     if header_value and hmac.compare_digest(header_value, expected):
         return True
 
+    # Prefer same-origin validation before parsing form payloads. Some ASGI/runtime
+    # combinations can drain form bodies when middleware calls request.form(),
+    # leaving downstream handlers with empty form values.
+    if _is_same_origin(request):
+        return True
+
     content_type = str(request.headers.get("content-type", ""))
     if _is_form_content_type(content_type):
         try:
@@ -86,8 +112,7 @@ async def request_matches_csrf_token(
         except Exception:
             return False
 
-    # Fallback for no-JS or legacy clients: enforce same-origin checks.
-    return _is_same_origin(request)
+    return False
 
 
 def request_rate_limit_key(request: Request) -> str:

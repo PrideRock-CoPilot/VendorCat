@@ -25,6 +25,7 @@ class _FakeRepo:
         self.resolve_policy_called = 0
         self.synced_users: list[str] = []
         self.synced_identity_payloads: list[dict[str, str | None]] = []
+        self.last_group_principals: set[str] = set()
 
     def ensure_runtime_tables(self) -> None:
         self.ensure_called += 1
@@ -32,8 +33,9 @@ class _FakeRepo:
     def get_current_user(self) -> str:
         return self.current_user
 
-    def bootstrap_user_access(self, user_principal: str) -> set[str]:
+    def bootstrap_user_access(self, user_principal: str, group_principals: set[str] | None = None) -> set[str]:
         self.bootstrap_called += 1
+        self.last_group_principals = set(group_principals or set())
         return self.roles
 
     def sync_user_directory_identity(self, **kwargs):
@@ -168,6 +170,28 @@ def test_resolve_databricks_identity_uses_forwarded_user_for_network_id(monkeypa
     assert identity["principal"] == "user123@example.com"
     assert identity["email"] == "user123@example.com"
     assert identity["network_id"] == "john_smith"
+
+
+def test_forwarded_group_principals_are_normalized_and_passed_to_bootstrap(monkeypatch) -> None:
+    repo = _FakeRepo(current_user="service_principal@databricks", roles={"vendor_editor"})
+    config = AppConfig("", "", "", use_local_db=False, env="prod")
+    monkeypatch.setattr(services, "get_repo", lambda: repo)
+    monkeypatch.setattr(services, "get_config", lambda: config)
+    monkeypatch.setenv("TVENDOR_TRUST_FORWARDED_IDENTITY_HEADERS", "true")
+    monkeypatch.setenv("TVENDOR_FORWARDED_GROUP_HEADERS", "x-forwarded-groups")
+    request = _request(
+        headers=[
+            (b"x-forwarded-preferred-username", b"group.member@example.com"),
+            (b"x-forwarded-groups", b"AD-Vendor-Admins, Security Team"),
+        ]
+    )
+
+    context = services.get_user_context(request)
+
+    assert context.user_principal == "group.member@example.com"
+    assert context.roles == {"vendor_editor"}
+    assert "group:ad-vendor-admins" in repo.last_group_principals
+    assert "group:security_team" in repo.last_group_principals
 
 
 def test_display_name_formats_email_to_first_last() -> None:

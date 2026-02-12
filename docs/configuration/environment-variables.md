@@ -37,6 +37,7 @@ These aliases are still accepted for backward compatibility (resolved in `config
 
 ## Operational / Performance Configuration
 - `TVENDOR_SESSION_SECRET`
+- `TVENDOR_FORWARDED_GROUP_HEADERS`
 - `TVENDOR_PERF_LOG_ENABLED`
 - `TVENDOR_PERF_RESPONSE_HEADER`
 - `TVENDOR_SLOW_QUERY_MS`

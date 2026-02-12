@@ -190,11 +190,17 @@
   </details>
 </section>
 
+<datalist id="admin-user-principals">
+  {% for row in user_options %}
+  <option value="{{ row.login_identifier }}">{{ row.label }}</option>
+  {% endfor %}
+</datalist>
+
 <div class="grid grid-2">
   <section class="card">
     <h2>Role Grants</h2>
     <table>
-      <thead><tr><th>User</th><th>Role</th><th>Active</th><th>Granted By</th><th>Granted At</th></tr></thead>
+      <thead><tr><th>User</th><th>Role</th><th>Active</th><th>Granted By</th><th>Granted At</th><th>Actions</th></tr></thead>
       <tbody>
         {% for row in role_rows %}
         <tr>
@@ -203,16 +209,32 @@
           <td>{{ row.active_flag }}</td>
           <td>{{ row.granted_by }}</td>
           <td>{{ row.granted_at }}</td>
+          <td>
+            {% if row.active_flag %}
+            <form method="post" action="/admin/change-role" class="inline-form">
+              <input type="hidden" name="target_user" value="{{ row.user_principal }}">
+              <input type="hidden" name="current_role_code" value="{{ row.role_code }}">
+              <select name="new_role_code" aria-label="New role for {{ row.user_principal }}">
+                {% for role in grantable_roles %}
+                <option value="{{ role }}" {% if role == row.role_code %}selected{% endif %}>{{ role }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit">Change</button>
+            </form>
+            {% else %}
+            <span class="muted">revoked</span>
+            {% endif %}
+          </td>
         </tr>
         {% else %}
-        <tr><td colspan="5">No role grants.</td></tr>
+        <tr><td colspan="6">No role grants.</td></tr>
         {% endfor %}
       </tbody>
     </table>
     <details style="margin-top:10px;">
       <summary>Grant Role</summary>
       <form method="post" action="/admin/grant-role" class="grid grid-1" style="margin-top:10px;">
-        <label>User Principal<input type="text" name="target_user" required></label>
+        <label>User Principal<input type="text" name="target_user" list="admin-user-principals" required></label>
         <label>Role
           <select name="role_code">
             {% for role in grantable_roles %}
@@ -260,5 +282,40 @@
     </details>
   </section>
 </div>
+
+<section class="card" style="margin-top:12px;">
+  <h2>Group Role Grants</h2>
+  <p>Grant a role to an identity group (for example an AD group) so members inherit that role based on forwarded group headers.</p>
+  <table>
+    <thead><tr><th>Group</th><th>Role</th><th>Active</th><th>Granted By</th><th>Granted At</th></tr></thead>
+    <tbody>
+      {% for row in group_role_rows %}
+      <tr>
+        <td>{{ row.group_principal }}</td>
+        <td>{{ row.role_code }}</td>
+        <td>{{ row.active_flag }}</td>
+        <td>{{ row.granted_by }}</td>
+        <td>{{ row.granted_at }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No group role grants.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <details style="margin-top:10px;">
+    <summary>Grant Group Role</summary>
+    <form method="post" action="/admin/grant-group-role" class="grid grid-1" style="margin-top:10px;">
+      <label>Group Principal<input type="text" name="target_group" placeholder="group:ad-vendor-admins" required></label>
+      <label>Role
+        <select name="role_code">
+          {% for role in grantable_roles %}
+          <option value="{{ role }}">{{ role }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div><button type="submit">Grant Group Role</button></div>
+    </form>
+  </details>
+</section>
 {% endif %}
 {% endblock %}

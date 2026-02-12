@@ -83,6 +83,7 @@ The app service principal must have warehouse `CAN USE` and Unity Catalog access
 
 ### Databricks App Identity
 - The app reads Databricks forwarded identity headers (`X-Forwarded-Preferred-Username`, `X-Forwarded-Email`, `X-Forwarded-User`) per request.
+- The app can resolve group-based role grants from forwarded group headers (`X-Forwarded-Groups` by default; configurable via `TVENDOR_FORWARDED_GROUP_HEADERS`).
 - On first sign-in, users are auto-added to `app_user_directory` and auto-provisioned with lowest access (`vendor_viewer`) if no role grant exists.
 - Audit/change records use the persisted `user_id` from `app_user_directory`.
 

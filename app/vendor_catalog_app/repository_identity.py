@@ -89,13 +89,13 @@ class RepositoryIdentityMixin:
 
         self._runtime_tables_ensured = True
 
-    def bootstrap_user_access(self, user_principal: str) -> set[str]:
+    def bootstrap_user_access(self, user_principal: str, group_principals: set[str] | None = None) -> set[str]:
         self._ensure_user_directory_entry(user_principal)
-        roles = self.get_user_roles(user_principal)
+        roles = self.get_user_roles(user_principal, group_principals=group_principals)
         if roles:
             return roles
         self.ensure_user_record(user_principal)
-        return self.get_user_roles(user_principal)
+        return self.get_user_roles(user_principal, group_principals=group_principals)
 
     def ensure_user_record(self, user_principal: str) -> None:
         user_ref = self.resolve_user_id(user_principal, allow_create=True)
@@ -213,8 +213,44 @@ class RepositoryIdentityMixin:
             return UNKNOWN_USER_PRINCIPAL
         return str(df.iloc[0]["user_principal"])
 
-    def get_user_roles(self, user_principal: str) -> set[str]:
+    def _normalize_group_principals(self, group_principals: set[str] | None) -> set[str]:
+        normalized: set[str] = set()
+        normalize_group = getattr(self, "normalize_group_principal", None)
+        for raw_value in group_principals or set():
+            raw = str(raw_value or "").strip()
+            if not raw:
+                continue
+            candidate = ""
+            if callable(normalize_group):
+                try:
+                    candidate = str(normalize_group(raw) or "").strip()
+                except Exception:
+                    candidate = ""
+            if not candidate:
+                candidate = raw.lower()
+            if candidate:
+                normalized.add(candidate.lower())
+        return normalized
+
+    def _get_group_roles(self, group_principals: set[str]) -> set[str]:
+        normalized_groups = self._normalize_group_principals(group_principals)
+        if not normalized_groups:
+            return set()
+        placeholders = ", ".join(["?"] * len(normalized_groups))
+        statement = self._sql(
+            "ingestion/select_group_roles.sql",
+            sec_group_role_map=self._table("sec_group_role_map"),
+            group_placeholders=placeholders,
+        )
+        params = tuple(sorted(normalized_groups))
+        df = self._query_or_empty(statement, params=params, columns=["role_code"])
+        if df.empty:
+            return set()
+        return {str(role).strip() for role in df["role_code"].dropna().astype(str).tolist() if str(role).strip()}
+
+    def get_user_roles(self, user_principal: str, group_principals: set[str] | None = None) -> set[str]:
         user_ref = self.resolve_user_id(user_principal, allow_create=True) or str(user_principal or "").strip()
+        normalized_groups = self._normalize_group_principals(group_principals)
 
         def _load() -> set[str]:
             df = self._query_file(
@@ -230,10 +266,12 @@ class RepositoryIdentityMixin:
                     columns=["role_code"],
                     sec_user_role_map=self._table("sec_user_role_map"),
                 )
-            return set(df["role_code"].tolist()) if not df.empty else set()
+            roles = set(df["role_code"].tolist()) if not df.empty else set()
+            roles.update(self._get_group_roles(normalized_groups))
+            return roles
 
         return self._cached(
-            ("user_roles", str(user_ref).lower()),
+            ("user_roles", str(user_ref).lower(), tuple(sorted(normalized_groups))),
             _load,
             ttl_seconds=120,
         )

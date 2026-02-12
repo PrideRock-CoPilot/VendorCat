@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -12,7 +13,9 @@ from fastapi import Request
 from vendor_catalog_app.config import AppConfig
 from vendor_catalog_app.env import (
     TVENDOR_ALLOW_TEST_ROLE_OVERRIDE,
+    TVENDOR_FORWARDED_GROUP_HEADERS,
     TVENDOR_TRUST_FORWARDED_IDENTITY_HEADERS,
+    get_env,
     get_env_bool,
 )
 from vendor_catalog_app.repository_constants import (
@@ -53,6 +56,13 @@ ADMIN_ROLE_OVERRIDE_SESSION_KEY = "tvendor_admin_role_override"
 IDENTITY_SYNC_SESSION_KEY_PREFIX = "tvendor_identity_synced_at"
 POLICY_SNAPSHOT_SESSION_KEY_PREFIX = "tvendor_policy_snapshot"
 LOGGER = logging.getLogger(__name__)
+DEFAULT_FORWARDED_GROUP_HEADERS = (
+    "x-forwarded-groups",
+    "x-forwarded-group",
+    "x-databricks-groups",
+)
+GROUP_PRINCIPAL_PREFIX = "group:"
+GROUP_PRINCIPAL_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._:@/-]{1,190}$")
 
 
 @lru_cache(maxsize=1)
@@ -98,6 +108,60 @@ def _first_header(request: Request, names: list[str]) -> str:
         if raw:
             return raw
     return ""
+
+
+def _forwarded_group_headers() -> list[str]:
+    configured = get_env(TVENDOR_FORWARDED_GROUP_HEADERS, ",".join(DEFAULT_FORWARDED_GROUP_HEADERS))
+    names: list[str] = []
+    for raw_name in configured.split(","):
+        name = _sanitize_header_identity_value(raw_name).lower()
+        if not name:
+            continue
+        if name not in names:
+            names.append(name)
+    return names or list(DEFAULT_FORWARDED_GROUP_HEADERS)
+
+
+def _normalize_group_principal(raw_group: str) -> str:
+    text = _sanitize_header_identity_value(raw_group).lower()
+    if not text:
+        return ""
+    if text.startswith(GROUP_PRINCIPAL_PREFIX):
+        text = text[len(GROUP_PRINCIPAL_PREFIX) :]
+    text = re.sub(r"\s+", "_", text)
+    text = re.sub(r"[^a-z0-9._:@/-]", "_", text)
+    text = re.sub(r"_+", "_", text).strip("._:/-")
+    if not text or not GROUP_PRINCIPAL_PATTERN.match(text):
+        return ""
+    return f"{GROUP_PRINCIPAL_PREFIX}{text}"
+
+
+def _group_candidates_from_header(raw_value: str) -> list[str]:
+    value = _sanitize_header_identity_value(raw_value)
+    if not value:
+        return []
+    if value.startswith("[") and value.endswith("]"):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return [str(item) for item in parsed]
+        except Exception:
+            pass
+    return re.split(r"[;,]", value)
+
+
+def resolve_databricks_request_group_principals(request: Request) -> set[str]:
+    config = get_config()
+    if not trust_forwarded_identity_headers(config):
+        return set()
+    groups: set[str] = set()
+    for header_name in _forwarded_group_headers():
+        header_value = str(request.headers.get(header_name, ""))
+        for candidate in _group_candidates_from_header(header_value):
+            group_principal = _normalize_group_principal(candidate)
+            if group_principal:
+                groups.add(group_principal)
+    return groups
 
 
 def _email_from_value(value: str) -> str:
@@ -316,6 +380,7 @@ def get_user_context(request: Request) -> UserContext:
     forwarded_identity = resolve_databricks_request_identity(request)
 
     user_principal = _resolve_user_principal(repo, config, request, forwarded_identity)
+    group_principals = resolve_databricks_request_group_principals(request) if user_principal != UNKNOWN_USER_PRINCIPAL else set()
     if user_principal != UNKNOWN_USER_PRINCIPAL:
         session = request.scope.get("session")
         sync_ttl_sec = max(0, int(str(os.getenv("TVENDOR_IDENTITY_SYNC_TTL_SEC", "300")).strip() or "300"))
@@ -356,8 +421,20 @@ def get_user_context(request: Request) -> UserContext:
                 captured_at = int(raw_snapshot.get("captured_at") or 0)
                 snapshot_version = int(raw_snapshot.get("policy_version") or 0)
                 snapshot_override = str(raw_snapshot.get("role_override") or "").strip()
+                snapshot_groups = sorted(
+                    {
+                        str(item).strip().lower()
+                        for item in (raw_snapshot.get("group_principals") or [])
+                        if str(item).strip()
+                    }
+                )
                 is_fresh = (now_ts - captured_at) < snapshot_ttl_sec
-                if is_fresh and snapshot_version == policy_version and snapshot_override == role_override_session:
+                if (
+                    is_fresh
+                    and snapshot_version == policy_version
+                    and snapshot_override == role_override_session
+                    and snapshot_groups == sorted(group_principals)
+                ):
                     snapshot = raw_snapshot
             except Exception:
                 snapshot = None
@@ -379,7 +456,12 @@ def get_user_context(request: Request) -> UserContext:
         if user_principal == UNKNOWN_USER_PRINCIPAL:
             raw_roles = {ROLE_VIEWER}
         else:
-            raw_roles = effective_roles(repo.bootstrap_user_access(user_principal))
+            raw_roles = effective_roles(
+                repo.bootstrap_user_access(
+                    user_principal,
+                    group_principals=group_principals,
+                )
+            )
         known_roles = set(repo.list_known_roles())
         roles, role_override = _resolve_effective_roles(
             request,
@@ -395,6 +477,7 @@ def get_user_context(request: Request) -> UserContext:
                 "raw_roles": sorted(raw_roles),
                 "roles": sorted(roles),
                 "role_override": role_override or "",
+                "group_principals": sorted(group_principals),
                 "role_policy": dict(role_policy or {}),
             }
 

@@ -37,6 +37,7 @@ DELETE FROM src_spreadsheet_vendor_raw;
 DELETE FROM src_ingest_batch;
 DELETE FROM sec_user_org_scope;
 DELETE FROM sec_user_role_map;
+DELETE FROM sec_group_role_map;
 DELETE FROM sec_role_permission;
 DELETE FROM sec_role_definition;
 

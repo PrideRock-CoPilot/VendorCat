@@ -45,7 +45,8 @@ def _urlparse_flexible(link_value: str):
     if "://" in raw or raw.startswith("//"):
         return urlparse(raw)
     if raw.startswith("\\\\"):
-        return urlparse(f"//{raw.lstrip('\\')}")
+        unc_path = raw.lstrip("\\").replace("\\", "/")
+        return urlparse("//" + unc_path)
     return urlparse(f"//{raw}")
 
 

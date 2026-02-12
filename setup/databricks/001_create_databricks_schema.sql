@@ -534,6 +534,15 @@ CREATE TABLE IF NOT EXISTS {fq_schema}.sec_user_role_map (
   revoked_at TIMESTAMP
 ) USING DELTA;
 
+CREATE TABLE IF NOT EXISTS {fq_schema}.sec_group_role_map (
+  group_principal STRING NOT NULL,
+  role_code STRING NOT NULL,
+  active_flag BOOLEAN NOT NULL,
+  granted_by STRING NOT NULL,
+  granted_at TIMESTAMP NOT NULL,
+  revoked_at TIMESTAMP
+) USING DELTA;
+
 CREATE TABLE IF NOT EXISTS {fq_schema}.sec_user_org_scope (
   user_principal STRING NOT NULL,
   org_id STRING NOT NULL,

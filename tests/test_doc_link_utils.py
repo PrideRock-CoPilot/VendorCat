@@ -37,6 +37,7 @@ def test_suggest_doc_title_uses_host_and_last_path_segment() -> None:
 def test_extract_and_normalize_fqdn() -> None:
     assert extract_doc_fqdn("https://contoso.sharepoint.com/sites/vendors/Contract.pdf") == "contoso.sharepoint.com"
     assert extract_doc_fqdn("contoso.sharepoint.com/sites/vendors/Contract.pdf") == "contoso.sharepoint.com"
+    assert extract_doc_fqdn(r"\\fileserver\teamshare\Contracts\NDA.docx") == "fileserver"
     assert normalize_doc_fqdn("Contoso.SharePoint.com") == "contoso.sharepoint.com"
 
 
