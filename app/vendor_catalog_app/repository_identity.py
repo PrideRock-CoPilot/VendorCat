@@ -222,10 +222,14 @@ class RepositoryIdentityMixin:
     def search_user_directory(self, q: str = "", limit: int = 20) -> pd.DataFrame:
         normalized_limit = max(1, min(int(limit or 20), 250))
         columns = ["user_id", "login_identifier", "display_name", "label"]
+        cleaned_q = (q or "").strip()
+        like_pattern = f"%{cleaned_q.lower()}%" if cleaned_q else ""
         df = self._query_file(
-            "ingestion/select_user_directory_all.sql",
+            "ingestion/select_user_directory_search.sql",
+            params=(cleaned_q.lower(), like_pattern, like_pattern),
             columns=["user_id", "login_identifier", "display_name"],
             app_user_directory=self._table("app_user_directory"),
+            limit=normalized_limit,
         )
 
         if df.empty:
@@ -235,17 +239,6 @@ class RepositoryIdentityMixin:
             if field not in df.columns:
                 df[field] = ""
             df[field] = df[field].fillna("").astype(str).str.strip()
-
-        needle = (q or "").strip().lower()
-        if needle:
-            mask = (
-                df["login_identifier"].str.lower().str.contains(needle, regex=False, na=False)
-                | df["display_name"].str.lower().str.contains(needle, regex=False, na=False)
-            )
-            df = df[mask].copy()
-
-        if df.empty:
-            return pd.DataFrame(columns=columns)
 
         df = df[df["login_identifier"] != ""].copy()
         if df.empty:

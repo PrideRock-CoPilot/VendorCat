@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <style>
+    :root {
+      --bg: #0d1b2a;
+      --bg-accent: #1b263b;
+      --surface: rgba(255, 255, 255, 0.06);
+      --text: #e0e7ff;
+      --muted: #b8c5db;
+      --brand: #58a6ff;
+      --ring: rgba(88, 166, 255, 0.35);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: grid;
+      place-items: center;
+      color: var(--text);
+      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      background:
+        radial-gradient(circle at 20% 20%, rgba(88, 166, 255, 0.15), transparent 45%),
+        radial-gradient(circle at 80% 30%, rgba(66, 153, 225, 0.12), transparent 40%),
+        linear-gradient(150deg, var(--bg), var(--bg-accent));
+    }
+    .card {
+      width: min(92vw, 540px);
+      padding: 28px 26px;
+      border-radius: 14px;
+      background: var(--surface);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+    }
+    .brand {
+      font-size: 13px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 30px;
+      line-height: 1.15;
+    }
+    p {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.5;
+    }
+    .loader {
+      margin-top: 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .spinner {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 3px solid var(--ring);
+      border-top-color: var(--brand);
+      animation: spin 0.9s linear infinite;
+    }
+    .status {
+      font-size: 14px;
+      color: var(--text);
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <section class="card" aria-live="polite">
+    <div class="brand">Vendor Catalog</div>
+    <h1>Loading your workspace</h1>
+    <p>Starting services and preparing your dashboard.</p>
+    <div class="loader">
+      <div class="spinner" aria-hidden="true"></div>
+      <div class="status">Please wait...</div>
+    </div>
+  </section>
+  <script>
+    setTimeout(function () {
+      window.location.replace("{{ redirect_url }}");
+    }, {{ delay_ms }});
+  </script>
+</body>
+</html>

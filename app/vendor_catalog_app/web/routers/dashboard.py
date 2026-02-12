@@ -16,8 +16,20 @@ router = APIRouter()
 
 
 @router.get("/")
-def home() -> RedirectResponse:
-    return RedirectResponse(url="/dashboard", status_code=302)
+def home(request: Request):
+    if request.session.get("startup_splash_seen"):
+        return RedirectResponse(url="/dashboard", status_code=302)
+    request.session["startup_splash_seen"] = True
+    return request.app.state.templates.TemplateResponse(
+        request,
+        "startup_splash.html",
+        {
+            "request": request,
+            "title": "Starting Vendor Catalog",
+            "redirect_url": "/dashboard",
+            "delay_ms": 1200,
+        },
+    )
 
 
 @router.get("/dashboard")
@@ -65,4 +77,3 @@ def dashboard(request: Request, org: str = "all", months: int = 12, horizon_days
         },
     )
     return request.app.state.templates.TemplateResponse(request, "dashboard.html", context)
-
