@@ -47,6 +47,7 @@ from vendor_catalog_app.security import (
 )
 from vendor_catalog_app.web.context import UserContext
 from vendor_catalog_app.web.flash import pop_flashes
+from vendor_catalog_app.web.security_controls import CSRF_SESSION_KEY
 
 ADMIN_ROLE_OVERRIDE_SESSION_KEY = "tvendor_admin_role_override"
 IDENTITY_SYNC_SESSION_KEY_PREFIX = "tvendor_identity_synced_at"
@@ -463,6 +464,12 @@ def base_template_context(
     except Exception:
         pass
 
+    csrf_token = str(getattr(request.state, "csrf_token", "") or "").strip()
+    if not csrf_token:
+        session = request.scope.get("session")
+        if isinstance(session, dict):
+            csrf_token = str(session.get(CSRF_SESSION_KEY, "")).strip()
+
     payload: dict[str, Any] = {
         "request": request,
         "title": title,
@@ -492,6 +499,7 @@ def base_template_context(
         "use_local_db": context.config.use_local_db,
         "local_db_path": context.config.local_db_path,
         "locked_mode": context.config.locked_mode,
+        "csrf_token": csrf_token,
         "flashes": pop_flashes(request),
         "doc_source_options": doc_source_options,
         "doc_tag_options": doc_tag_options,

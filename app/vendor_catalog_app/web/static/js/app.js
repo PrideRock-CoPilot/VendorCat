@@ -78,6 +78,29 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
+  const csrfToken = (() => {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? String(meta.getAttribute("content") || "").trim() : "";
+  })();
+
+  const initCsrfForms = (scope = document) => {
+    if (!csrfToken) return;
+    scope.querySelectorAll("form").forEach((form) => {
+      if (!(form instanceof HTMLFormElement)) return;
+      const method = String(form.getAttribute("method") || "get").toLowerCase();
+      if (!["post", "put", "patch", "delete"].includes(method)) return;
+
+      let field = form.querySelector('input[name="csrf_token"]');
+      if (!(field instanceof HTMLInputElement)) {
+        field = document.createElement("input");
+        field.type = "hidden";
+        field.name = "csrf_token";
+        form.appendChild(field);
+      }
+      field.value = csrfToken;
+    });
+  };
+
   const initDocLinkForms = (scope = document) => {
     scope.querySelectorAll("[data-doc-link-form]").forEach((form) => {
       if (!(form instanceof HTMLFormElement)) return;
@@ -166,6 +189,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   applyTooltips(document);
+  initCsrfForms(document);
   initDocLinkForms(document);
 
   const observer = new MutationObserver((mutations) => {
@@ -173,6 +197,7 @@ document.addEventListener("DOMContentLoaded", () => {
       mutation.addedNodes.forEach((node) => {
         if (node instanceof HTMLElement) {
           applyTooltips(node);
+          initCsrfForms(node);
           initDocLinkForms(node);
         }
       });

@@ -21,7 +21,10 @@ from vendor_catalog_app.db import (
     start_request_perf_context,
 )
 from vendor_catalog_app.env import (
+    TVENDOR_CSP_ENABLED,
+    TVENDOR_CSP_POLICY,
     TVENDOR_ALLOW_DEFAULT_SESSION_SECRET,
+    TVENDOR_CSRF_ENABLED,
     TVENDOR_METRICS_ALLOW_UNAUTHENTICATED,
     TVENDOR_METRICS_AUTH_TOKEN,
     TVENDOR_PERF_LOG_ENABLED,
@@ -32,9 +35,13 @@ from vendor_catalog_app.env import (
     TVENDOR_SESSION_SECRET,
     TVENDOR_SLOW_QUERY_MS,
     TVENDOR_SQL_PRELOAD_ON_STARTUP,
+    TVENDOR_WRITE_RATE_LIMIT_ENABLED,
+    TVENDOR_WRITE_RATE_LIMIT_MAX_REQUESTS,
+    TVENDOR_WRITE_RATE_LIMIT_WINDOW_SEC,
     get_env,
     get_env_bool,
     get_env_float,
+    get_env_int,
 )
 from vendor_catalog_app.local_db_bootstrap import ensure_local_db_ready
 from vendor_catalog_app.logging import setup_app_logging
@@ -46,10 +53,29 @@ from vendor_catalog_app.web.bootstrap_diagnostics import (
 )
 from vendor_catalog_app.web.errors import ApiError, api_error_response, is_api_request, normalize_exception
 from vendor_catalog_app.web.routers import router as web_router
+from vendor_catalog_app.web.security_controls import (
+    CSRF_HEADER,
+    ensure_csrf_token,
+    request_matches_csrf_token,
+    request_rate_limit_key,
+    request_requires_write_protection,
+    SlidingWindowRateLimiter,
+)
 from vendor_catalog_app.web.services import get_config, get_repo, resolve_databricks_request_identity
 
 LOGGER = logging.getLogger(__name__)
 PERF_LOGGER = logging.getLogger("vendor_catalog_app.perf")
+DEFAULT_CSP_POLICY = (
+    "default-src 'self'; "
+    "base-uri 'self'; "
+    "frame-ancestors 'none'; "
+    "object-src 'none'; "
+    "img-src 'self' data:; "
+    "style-src 'self' 'unsafe-inline'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "connect-src 'self'; "
+    "form-action 'self'"
+)
 
 
 def _route_path_label(request: Request) -> str:
@@ -95,6 +121,25 @@ def create_app() -> FastAPI:
         default=config.is_dev_env,
     )
     metrics_auth_token = get_env(TVENDOR_METRICS_AUTH_TOKEN, "")
+    csrf_enabled = get_env_bool(TVENDOR_CSRF_ENABLED, default=not config.is_dev_env)
+    write_rate_limit_enabled = get_env_bool(TVENDOR_WRITE_RATE_LIMIT_ENABLED, default=not config.is_dev_env)
+    write_rate_limit_window_sec = get_env_int(
+        TVENDOR_WRITE_RATE_LIMIT_WINDOW_SEC,
+        default=60,
+        min_value=1,
+    )
+    write_rate_limit_max_requests = get_env_int(
+        TVENDOR_WRITE_RATE_LIMIT_MAX_REQUESTS,
+        default=120,
+        min_value=1,
+    )
+    csp_enabled = get_env_bool(TVENDOR_CSP_ENABLED, default=True)
+    csp_policy = get_env(TVENDOR_CSP_POLICY, DEFAULT_CSP_POLICY)
+    write_rate_limiter = SlidingWindowRateLimiter(
+        enabled=write_rate_limit_enabled,
+        max_requests=write_rate_limit_max_requests,
+        window_seconds=write_rate_limit_window_sec,
+    )
 
     app = FastAPI(title="Vendor Catalog")
     observability = get_observability_manager()
@@ -123,6 +168,8 @@ def create_app() -> FastAPI:
             response.headers.setdefault("X-Frame-Options", "DENY")
             response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
             response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+            if csp_enabled and csp_policy:
+                response.headers.setdefault("Content-Security-Policy", csp_policy)
             if session_https_only:
                 response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
             return response
@@ -142,6 +189,74 @@ def create_app() -> FastAPI:
         status_code = 500
         route_path = str(request.url.path)
         try:
+            csrf_token = ensure_csrf_token(request)
+            request.state.csrf_token = csrf_token
+            if csrf_enabled and request_requires_write_protection(request.method):
+                if not await request_matches_csrf_token(
+                    request,
+                    expected_token=csrf_token,
+                    header_name=CSRF_HEADER,
+                ):
+                    LOGGER.warning(
+                        "Blocked write request due to invalid CSRF token. method=%s path=%s",
+                        request.method,
+                        request.url.path,
+                        extra={
+                            "event": "csrf_validation_failed",
+                            "method": request.method,
+                            "path": str(request.url.path),
+                        },
+                    )
+                    message = "Invalid CSRF token. Refresh and try again."
+                    if is_api_request(request):
+                        response = api_error_response(
+                            request,
+                            status_code=403,
+                            code="FORBIDDEN",
+                            message=message,
+                        )
+                    else:
+                        response = PlainTextResponse(message, status_code=403)
+                    status_code = response.status_code
+                    return response
+
+            if request_requires_write_protection(request.method):
+                limiter_key = f"{request_rate_limit_key(request)}:{request.method.upper()}"
+                allowed, retry_after = write_rate_limiter.allow(limiter_key)
+                if not allowed:
+                    LOGGER.warning(
+                        (
+                            "Blocked write request due to rate limit. method=%s path=%s "
+                            "window_sec=%s max_requests=%s retry_after=%s"
+                        ),
+                        request.method,
+                        request.url.path,
+                        write_rate_limit_window_sec,
+                        write_rate_limit_max_requests,
+                        retry_after,
+                        extra={
+                            "event": "write_rate_limit_blocked",
+                            "method": request.method,
+                            "path": str(request.url.path),
+                            "window_sec": int(write_rate_limit_window_sec),
+                            "max_requests": int(write_rate_limit_max_requests),
+                            "retry_after_sec": int(retry_after),
+                        },
+                    )
+                    message = "Too many write requests. Please retry shortly."
+                    if is_api_request(request):
+                        response = api_error_response(
+                            request,
+                            status_code=429,
+                            code="TOO_MANY_REQUESTS",
+                            message=message,
+                        )
+                    else:
+                        response = PlainTextResponse(message, status_code=429)
+                    response.headers["Retry-After"] = str(max(1, int(retry_after)))
+                    status_code = response.status_code
+                    return response
+
             response = await call_next(request)
             status_code = response.status_code
             route_path = _route_path_label(request)

@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
   <title>{{ title }} | Vendor Catalog</title>
   <link rel="stylesheet" href="/static/css/app.css">
 </head>
@@ -16,6 +17,7 @@
       {% endfor %}
       {% if has_admin_rights and testing_role_override_enabled %}
       <form method="post" action="/admin/testing-role" class="inline-form role-switch-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="return_to" value="{{ request.url.path }}">
         <span class="role-switch-label">role</span>
         <select name="role_override" aria-label="Testing role override">
