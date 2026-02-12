@@ -46,39 +46,44 @@ class RepositoryLookupMixin:
         ]
 
     def _lookup_versions_frame(self, lookup_type: str | None = None) -> pd.DataFrame:
-        columns = self._lookup_columns()
         normalized_lookup_type = self._normalize_lookup_type(lookup_type) if lookup_type else None
-        default_rows = [
-            row
-            for row in self._default_lookup_option_rows()
-            if not normalized_lookup_type or str(row.get("lookup_type") or "") == normalized_lookup_type
-        ]
+        cache_key = ("lookup_versions_frame", normalized_lookup_type or "__all__")
 
-        self._ensure_local_lookup_option_table()
-        rows = self._query_file(
-            "reporting/list_lookup_options.sql",
-            params=(normalized_lookup_type, normalized_lookup_type),
-            columns=columns,
-            app_lookup_option=self._table("app_lookup_option"),
-        )
-        records = rows.to_dict("records")
-        if not records:
-            records = [dict(row) for row in default_rows]
-        out = pd.DataFrame(records, columns=columns)
+        def _load() -> pd.DataFrame:
+            columns = self._lookup_columns()
+            default_rows = [
+                row
+                for row in self._default_lookup_option_rows()
+                if not normalized_lookup_type or str(row.get("lookup_type") or "") == normalized_lookup_type
+            ]
 
-        if out.empty:
-            return out
-        out["sort_order"] = pd.to_numeric(out["sort_order"], errors="coerce").fillna(999).astype(int)
-        if "active_flag" not in out.columns:
-            out["active_flag"] = True
-        if "is_current" not in out.columns:
-            out["is_current"] = True
-        if "deleted_flag" not in out.columns:
-            out["deleted_flag"] = False
-        out["active_flag"] = out["active_flag"].map(self._as_bool)
-        out["is_current"] = out["is_current"].map(self._as_bool)
-        out["deleted_flag"] = out["deleted_flag"].map(self._as_bool)
-        return out.reset_index(drop=True)
+            self._ensure_local_lookup_option_table()
+            rows = self._query_file(
+                "reporting/list_lookup_options.sql",
+                params=(normalized_lookup_type, normalized_lookup_type),
+                columns=columns,
+                app_lookup_option=self._table("app_lookup_option"),
+            )
+            records = rows.to_dict("records")
+            if not records:
+                records = [dict(row) for row in default_rows]
+            out = pd.DataFrame(records, columns=columns)
+
+            if out.empty:
+                return out
+            out["sort_order"] = pd.to_numeric(out["sort_order"], errors="coerce").fillna(999).astype(int)
+            if "active_flag" not in out.columns:
+                out["active_flag"] = True
+            if "is_current" not in out.columns:
+                out["is_current"] = True
+            if "deleted_flag" not in out.columns:
+                out["deleted_flag"] = False
+            out["active_flag"] = out["active_flag"].map(self._as_bool)
+            out["is_current"] = out["is_current"].map(self._as_bool)
+            out["deleted_flag"] = out["deleted_flag"].map(self._as_bool)
+            return out.reset_index(drop=True)
+
+        return self._cached(cache_key, _load, ttl_seconds=300)
 
     def _lookup_rows_with_status(self, rows: pd.DataFrame, *, as_of_ts: Any) -> pd.DataFrame:
         if rows.empty:

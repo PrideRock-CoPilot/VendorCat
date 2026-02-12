@@ -219,11 +219,15 @@ class RepositoryWorkflowMixin:
         return {"request_id": request_id, "change_event_id": change_event_id}
 
     def demo_outcomes(self) -> pd.DataFrame:
-        return self.client.query(
-            self._sql(
-                "reporting/demo_outcomes.sql",
-                core_vendor_demo=self._table("core_vendor_demo"),
-            )
+        return self._cached(
+            ("demo_outcomes",),
+            lambda: self.client.query(
+                self._sql(
+                    "reporting/demo_outcomes.sql",
+                    core_vendor_demo=self._table("core_vendor_demo"),
+                )
+            ),
+            ttl_seconds=60,
         )
 
     def create_demo_outcome(
@@ -277,10 +281,14 @@ class RepositoryWorkflowMixin:
         return demo_id
 
     def contract_cancellations(self) -> pd.DataFrame:
-        return self.client.query(
-            self._sql(
-                "reporting/contract_cancellations.sql",
-                rpt_contract_cancellations=self._table("rpt_contract_cancellations"),
-            )
+        return self._cached(
+            ("contract_cancellations",),
+            lambda: self.client.query(
+                self._sql(
+                    "reporting/contract_cancellations.sql",
+                    rpt_contract_cancellations=self._table("rpt_contract_cancellations"),
+                )
+            ),
+            ttl_seconds=120,
         )
 

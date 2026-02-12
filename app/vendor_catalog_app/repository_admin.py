@@ -24,87 +24,102 @@ class RepositoryAdminMixin:
 
     def list_role_definitions(self) -> pd.DataFrame:
         """Return role definitions merged with built-in defaults."""
-        columns = [
-            "role_code",
-            "role_name",
-            "description",
-            "approval_level",
-            "can_edit",
-            "can_report",
-            "can_direct_apply",
-            "active_flag",
-            "updated_at",
-            "updated_by",
-        ]
-        defaults = self._default_role_definition_rows()
-        rows = self._query_file(
-            "reporting/list_role_definitions.sql",
-            columns=columns,
-            sec_role_definition=self._table("sec_role_definition"),
-        )
-        records = dict(defaults)
-        if not rows.empty:
-            for row in rows.to_dict("records"):
-                role_code = str(row.get("role_code") or "").strip()
-                if not role_code:
-                    continue
-                records[role_code] = {
-                    "role_code": role_code,
-                    "role_name": str(row.get("role_name") or role_code),
-                    "description": str(row.get("description") or "").strip() or None,
-                    "approval_level": int(row.get("approval_level") or 0),
-                    "can_edit": self._as_bool(row.get("can_edit")),
-                    "can_report": self._as_bool(row.get("can_report")),
-                    "can_direct_apply": self._as_bool(row.get("can_direct_apply")),
-                    "active_flag": self._as_bool(row.get("active_flag")),
-                    "updated_at": row.get("updated_at"),
-                    "updated_by": row.get("updated_by"),
-                }
-        out = pd.DataFrame(list(records.values()))
-        if out.empty:
-            return pd.DataFrame(columns=columns)
-        return out.sort_values("role_code")
+        cache_key = ("role_definitions",)
+
+        def _load() -> pd.DataFrame:
+            columns = [
+                "role_code",
+                "role_name",
+                "description",
+                "approval_level",
+                "can_edit",
+                "can_report",
+                "can_direct_apply",
+                "active_flag",
+                "updated_at",
+                "updated_by",
+            ]
+            defaults = self._default_role_definition_rows()
+            rows = self._query_file(
+                "reporting/list_role_definitions.sql",
+                columns=columns,
+                sec_role_definition=self._table("sec_role_definition"),
+            )
+            records = dict(defaults)
+            if not rows.empty:
+                for row in rows.to_dict("records"):
+                    role_code = str(row.get("role_code") or "").strip()
+                    if not role_code:
+                        continue
+                    records[role_code] = {
+                        "role_code": role_code,
+                        "role_name": str(row.get("role_name") or role_code),
+                        "description": str(row.get("description") or "").strip() or None,
+                        "approval_level": int(row.get("approval_level") or 0),
+                        "can_edit": self._as_bool(row.get("can_edit")),
+                        "can_report": self._as_bool(row.get("can_report")),
+                        "can_direct_apply": self._as_bool(row.get("can_direct_apply")),
+                        "active_flag": self._as_bool(row.get("active_flag")),
+                        "updated_at": row.get("updated_at"),
+                        "updated_by": row.get("updated_by"),
+                    }
+            out = pd.DataFrame(list(records.values()))
+            if out.empty:
+                return pd.DataFrame(columns=columns)
+            return out.sort_values("role_code")
+
+        return self._cached(cache_key, _load, ttl_seconds=300)
 
     def list_role_permissions(self) -> pd.DataFrame:
         """Return active role permissions, with defaults when table is empty."""
-        columns = ["role_code", "object_name", "action_code", "active_flag", "updated_at"]
-        out = self._query_file(
-            "reporting/list_role_permissions.sql",
-            columns=columns,
-            sec_role_permission=self._table("sec_role_permission"),
-        )
-        if out.empty:
-            rows: list[dict[str, Any]] = []
-            for role_code, actions in self._default_role_permissions_by_role().items():
-                for action_code in sorted(actions):
-                    rows.append(
-                        {
-                            "role_code": role_code,
-                            "object_name": "change_action",
-                            "action_code": action_code,
-                            "active_flag": True,
-                            "updated_at": None,
-                        }
-                    )
-            return pd.DataFrame(rows, columns=columns)
-        return out
+        cache_key = ("role_permissions",)
+
+        def _load() -> pd.DataFrame:
+            columns = ["role_code", "object_name", "action_code", "active_flag", "updated_at"]
+            out = self._query_file(
+                "reporting/list_role_permissions.sql",
+                columns=columns,
+                sec_role_permission=self._table("sec_role_permission"),
+            )
+            if out.empty:
+                rows: list[dict[str, Any]] = []
+                for role_code, actions in self._default_role_permissions_by_role().items():
+                    for action_code in sorted(actions):
+                        rows.append(
+                            {
+                                "role_code": role_code,
+                                "object_name": "change_action",
+                                "action_code": action_code,
+                                "active_flag": True,
+                                "updated_at": None,
+                            }
+                        )
+                return pd.DataFrame(rows, columns=columns)
+            return out
+
+        return self._cached(cache_key, _load, ttl_seconds=300)
 
     def list_known_roles(self) -> list[str]:
         """Return the set of roles visible to the app."""
-        roles = set(self._default_role_definition_rows().keys())
-        role_defs = self.list_role_definitions()
-        if not role_defs.empty and "role_code" in role_defs.columns:
-            roles.update(role_defs["role_code"].dropna().astype(str).tolist())
+        cache_key = ("known_roles",)
 
-        grants = self._query_file(
-            "reporting/list_role_grants.sql",
-            columns=["role_code"],
-            sec_user_role_map=self._table("sec_user_role_map"),
-            app_user_directory=self._table("app_user_directory"),
-        )
-        if not grants.empty and "role_code" in grants.columns:
-            roles.update(grants["role_code"].dropna().astype(str).tolist())
-        return sorted(role for role in roles if role)
+        def _load() -> list[str]:
+            roles = set(self._default_role_definition_rows().keys())
+            role_defs = self.list_role_definitions()
+            if not role_defs.empty and "role_code" in role_defs.columns:
+                roles.update(role_defs["role_code"].dropna().astype(str).tolist())
+
+            grants = self._query_file(
+                "reporting/list_role_grants.sql",
+                columns=["role_code"],
+                sec_user_role_map=self._table("sec_user_role_map"),
+                app_user_directory=self._table("app_user_directory"),
+            )
+            if not grants.empty and "role_code" in grants.columns:
+                roles.update(grants["role_code"].dropna().astype(str).tolist())
+            return sorted(role for role in roles if role)
+
+        return self._cached(cache_key, _load, ttl_seconds=300)
 
     def resolve_role_policy(self, user_roles: set[str]) -> dict[str, Any]:
         """Resolve effective capabilities for the supplied role set."""

@@ -10,6 +10,26 @@ from typing import Any
 from fastapi import Request
 
 from vendor_catalog_app.config import AppConfig
+from vendor_catalog_app.repository_constants import (
+    DEFAULT_ASSIGNMENT_TYPE_OPTIONS,
+    DEFAULT_CONTACT_TYPE_OPTIONS,
+    DEFAULT_DOC_SOURCE_OPTIONS,
+    DEFAULT_DOC_TAG_OPTIONS,
+    DEFAULT_OFFERING_LOB_CHOICES,
+    DEFAULT_OFFERING_SERVICE_TYPE_CHOICES,
+    DEFAULT_OFFERING_TYPE_CHOICES,
+    DEFAULT_OWNER_ROLE_OPTIONS,
+    DEFAULT_PROJECT_TYPE_OPTIONS,
+    LOOKUP_TYPE_ASSIGNMENT_TYPE,
+    LOOKUP_TYPE_CONTACT_TYPE,
+    LOOKUP_TYPE_DOC_SOURCE,
+    LOOKUP_TYPE_DOC_TAG,
+    LOOKUP_TYPE_OFFERING_LOB,
+    LOOKUP_TYPE_OFFERING_SERVICE_TYPE,
+    LOOKUP_TYPE_OFFERING_TYPE,
+    LOOKUP_TYPE_OWNER_ROLE,
+    LOOKUP_TYPE_PROJECT_TYPE,
+)
 from vendor_catalog_app.repository import UNKNOWN_USER_PRINCIPAL, VendorRepository
 from vendor_catalog_app.security import ADMIN_PORTAL_ROLES, ROLE_CHOICES, ROLE_VIEWER, effective_roles
 from vendor_catalog_app.web.context import UserContext
@@ -130,6 +150,33 @@ def _display_name_for_principal(user_principal: str) -> str:
     return " ".join(parts)
 
 
+def _lookup_values(
+    lookup_rows: list[dict[str, Any]],
+    *,
+    lookup_type: str,
+    prefer_label: bool,
+    fallback: list[str],
+) -> list[str]:
+    options: list[str] = []
+    seen: set[str] = set()
+    for row in lookup_rows:
+        if str(row.get("lookup_type") or "").strip().lower() != lookup_type:
+            continue
+        code = str(row.get("option_code") or "").strip()
+        label = str(row.get("option_label") or "").strip()
+        value = label if prefer_label else code.lower()
+        if not value:
+            value = (code or label).strip()
+        if not value:
+            continue
+        normalized = value.lower() if not prefer_label else value
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        options.append(value)
+    return options or list(fallback)
+
+
 def get_user_context(request: Request) -> UserContext:
     cached = getattr(request.state, "user_context", None)
     if cached is not None:
@@ -235,42 +282,74 @@ def base_template_context(
         doc_owner_options = repo.search_user_directory(q="", limit=200).to_dict("records")
     except Exception:
         doc_owner_options = []
+    doc_source_options = list(DEFAULT_DOC_SOURCE_OPTIONS)
+    doc_tag_options = list(DEFAULT_DOC_TAG_OPTIONS)
+    owner_role_options = list(DEFAULT_OWNER_ROLE_OPTIONS)
+    assignment_type_options = list(DEFAULT_ASSIGNMENT_TYPE_OPTIONS)
+    contact_type_options = list(DEFAULT_CONTACT_TYPE_OPTIONS)
+    project_type_options = list(DEFAULT_PROJECT_TYPE_OPTIONS)
+    offering_type_options = [label for _, label in DEFAULT_OFFERING_TYPE_CHOICES]
+    offering_lob_options = [label for _, label in DEFAULT_OFFERING_LOB_CHOICES]
+    offering_service_type_options = [label for _, label in DEFAULT_OFFERING_SERVICE_TYPE_CHOICES]
     try:
-        doc_source_options = repo.list_doc_source_options()
+        lookup_df = repo.list_lookup_options(active_only=True)
+        lookup_rows = lookup_df.to_dict("records") if not lookup_df.empty else []
+        doc_source_options = _lookup_values(
+            lookup_rows,
+            lookup_type=LOOKUP_TYPE_DOC_SOURCE,
+            prefer_label=False,
+            fallback=doc_source_options,
+        )
+        doc_tag_options = _lookup_values(
+            lookup_rows,
+            lookup_type=LOOKUP_TYPE_DOC_TAG,
+            prefer_label=False,
+            fallback=doc_tag_options,
+        )
+        owner_role_options = _lookup_values(
+            lookup_rows,
+            lookup_type=LOOKUP_TYPE_OWNER_ROLE,
+            prefer_label=False,
+            fallback=owner_role_options,
+        )
+        assignment_type_options = _lookup_values(
+            lookup_rows,
+            lookup_type=LOOKUP_TYPE_ASSIGNMENT_TYPE,
+            prefer_label=False,
+            fallback=assignment_type_options,
+        )
+        contact_type_options = _lookup_values(
+            lookup_rows,
+            lookup_type=LOOKUP_TYPE_CONTACT_TYPE,
+            prefer_label=False,
+            fallback=contact_type_options,
+        )
+        project_type_options = _lookup_values(
+            lookup_rows,
+            lookup_type=LOOKUP_TYPE_PROJECT_TYPE,
+            prefer_label=False,
+            fallback=project_type_options,
+        )
+        offering_type_options = _lookup_values(
+            lookup_rows,
+            lookup_type=LOOKUP_TYPE_OFFERING_TYPE,
+            prefer_label=True,
+            fallback=offering_type_options,
+        )
+        offering_lob_options = _lookup_values(
+            lookup_rows,
+            lookup_type=LOOKUP_TYPE_OFFERING_LOB,
+            prefer_label=True,
+            fallback=offering_lob_options,
+        )
+        offering_service_type_options = _lookup_values(
+            lookup_rows,
+            lookup_type=LOOKUP_TYPE_OFFERING_SERVICE_TYPE,
+            prefer_label=True,
+            fallback=offering_service_type_options,
+        )
     except Exception:
-        doc_source_options = []
-    try:
-        doc_tag_options = repo.list_doc_tag_options()
-    except Exception:
-        doc_tag_options = []
-    try:
-        owner_role_options = repo.list_owner_role_options()
-    except Exception:
-        owner_role_options = []
-    try:
-        assignment_type_options = repo.list_assignment_type_options()
-    except Exception:
-        assignment_type_options = []
-    try:
-        contact_type_options = repo.list_contact_type_options()
-    except Exception:
-        contact_type_options = []
-    try:
-        project_type_options = repo.list_project_type_options()
-    except Exception:
-        project_type_options = []
-    try:
-        offering_type_options = repo.list_offering_type_options()
-    except Exception:
-        offering_type_options = []
-    try:
-        offering_lob_options = repo.list_offering_lob_options()
-    except Exception:
-        offering_lob_options = []
-    try:
-        offering_service_type_options = repo.list_offering_service_type_options()
-    except Exception:
-        offering_service_type_options = []
+        pass
 
     payload: dict[str, Any] = {
         "request": request,

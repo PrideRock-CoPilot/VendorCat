@@ -4,11 +4,14 @@ import json
 import logging
 import os
 import re
+import threading
+import time
 import uuid
+from copy import deepcopy
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 
@@ -59,6 +62,23 @@ class VendorRepository(
         self._local_lookup_table_ensured = False
         self._local_offering_columns_ensured = False
         self._local_offering_extension_tables_ensured = False
+        self._repo_cache_lock = threading.Lock()
+        self._repo_cache: dict[tuple[Any, ...], tuple[float, Any]] = {}
+        self._repo_cache_enabled = str(os.getenv("TVENDOR_REPO_CACHE_ENABLED", "true")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "y",
+            "on",
+        }
+        self._repo_cache_ttl_seconds = max(
+            0,
+            int(str(os.getenv("TVENDOR_REPO_CACHE_TTL_SEC", "120")).strip() or "120"),
+        )
+        self._repo_cache_max_entries = max(
+            32,
+            int(str(os.getenv("TVENDOR_REPO_CACHE_MAX_ENTRIES", "512")).strip() or "512"),
+        )
 
     def _table(self, name: str) -> str:
         if self.config.use_local_db:
@@ -99,6 +119,7 @@ class VendorRepository(
     ) -> None:
         statement = self._sql(relative_path, **format_args)
         self.client.execute(statement, params)
+        self._cache_clear()
 
     def _probe_file(
         self,
@@ -109,6 +130,49 @@ class VendorRepository(
     ) -> pd.DataFrame:
         statement = self._sql(relative_path, **format_args)
         return self.client.query(statement, params)
+
+    @staticmethod
+    def _clone_cache_value(value: Any) -> Any:
+        if isinstance(value, pd.DataFrame):
+            return value.copy(deep=True)
+        if isinstance(value, (list, dict, set, tuple)):
+            return deepcopy(value)
+        return value
+
+    def _cache_clear(self) -> None:
+        with self._repo_cache_lock:
+            self._repo_cache.clear()
+
+    def _cached(
+        self,
+        key: tuple[Any, ...],
+        loader: Callable[[], Any],
+        *,
+        ttl_seconds: int | None = None,
+    ) -> Any:
+        if not self._repo_cache_enabled:
+            return loader()
+
+        ttl = self._repo_cache_ttl_seconds if ttl_seconds is None else max(0, int(ttl_seconds))
+        if ttl <= 0:
+            return loader()
+
+        now = time.monotonic()
+        with self._repo_cache_lock:
+            entry = self._repo_cache.get(key)
+            if entry is not None:
+                expires_at, cached_value = entry
+                if expires_at > now:
+                    return self._clone_cache_value(cached_value)
+                self._repo_cache.pop(key, None)
+
+        loaded_value = loader()
+        stored_value = self._clone_cache_value(loaded_value)
+        with self._repo_cache_lock:
+            if len(self._repo_cache) >= self._repo_cache_max_entries:
+                self._repo_cache.pop(next(iter(self._repo_cache)))
+            self._repo_cache[key] = (now + float(ttl), stored_value)
+        return loaded_value
 
     def _now(self) -> datetime:
         return datetime.now(timezone.utc)
@@ -830,26 +894,29 @@ class VendorRepository(
         return self.resolve_user_id(user_principal, allow_create=True) or UNKNOWN_USER_PRINCIPAL
 
     def _user_display_lookup(self) -> dict[str, str]:
-        lookup: dict[str, str] = {}
-        df = self._query_file(
-            "ingestion/select_user_directory_all.sql",
-            columns=["user_id", "login_identifier", "display_name"],
-            app_user_directory=self._table("app_user_directory"),
-        )
-        if df.empty:
+        def _load() -> dict[str, str]:
+            lookup: dict[str, str] = {}
+            df = self._query_file(
+                "ingestion/select_user_directory_all.sql",
+                columns=["user_id", "login_identifier", "display_name"],
+                app_user_directory=self._table("app_user_directory"),
+            )
+            if df.empty:
+                return lookup
+            for row in df.to_dict("records"):
+                user_id = str(row.get("user_id") or "").strip()
+                login_identifier = str(row.get("login_identifier") or "").strip()
+                display_name = str(row.get("display_name") or "").strip()
+                if not display_name:
+                    continue
+                if user_id:
+                    lookup[user_id] = display_name
+                if login_identifier:
+                    lookup[login_identifier] = display_name
+                    lookup[login_identifier.lower()] = display_name
             return lookup
-        for row in df.to_dict("records"):
-            user_id = str(row.get("user_id") or "").strip()
-            login_identifier = str(row.get("login_identifier") or "").strip()
-            display_name = str(row.get("display_name") or "").strip()
-            if not display_name:
-                continue
-            if user_id:
-                lookup[user_id] = display_name
-            if login_identifier:
-                lookup[login_identifier] = display_name
-                lookup[login_identifier.lower()] = display_name
-        return lookup
+
+        return self._cached(("user_display_lookup",), _load, ttl_seconds=120)
 
     def _decorate_user_columns(self, df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
         if df.empty:

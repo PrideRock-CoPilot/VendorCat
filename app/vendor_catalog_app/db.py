@@ -41,7 +41,7 @@ class DatabricksSQLClient:
         self._cache_lock = threading.Lock()
         self._query_cache: dict[tuple[str, tuple[Any, ...]], tuple[float, pd.DataFrame]] = {}
         self._cache_enabled = self._as_bool(os.getenv("TVENDOR_QUERY_CACHE_ENABLED"), default=True)
-        self._cache_ttl_seconds = self._as_int(os.getenv("TVENDOR_QUERY_CACHE_TTL_SEC"), default=30, min_value=0)
+        self._cache_ttl_seconds = self._as_int(os.getenv("TVENDOR_QUERY_CACHE_TTL_SEC"), default=120, min_value=0)
         self._cache_max_entries = self._as_int(
             os.getenv("TVENDOR_QUERY_CACHE_MAX_ENTRIES"),
             default=256,

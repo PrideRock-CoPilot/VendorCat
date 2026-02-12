@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import urlencode
+
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
@@ -15,10 +17,7 @@ from vendor_catalog_app.web.services import (
 router = APIRouter()
 
 
-@router.get("/")
-def home(request: Request):
-    if request.session.get("startup_splash_seen"):
-        return RedirectResponse(url="/dashboard", status_code=302)
+def _render_startup_splash(request: Request, redirect_url: str):
     request.session["startup_splash_seen"] = True
     return request.app.state.templates.TemplateResponse(
         request,
@@ -26,14 +25,30 @@ def home(request: Request):
         {
             "request": request,
             "title": "Starting Vendor Catalog",
-            "redirect_url": "/dashboard",
+            "redirect_url": redirect_url,
             "delay_ms": 1200,
         },
     )
 
 
+@router.get("/")
+def home(request: Request):
+    if request.session.get("startup_splash_seen"):
+        return RedirectResponse(url="/dashboard", status_code=302)
+    return _render_startup_splash(request, "/dashboard?splash=1")
+
+
 @router.get("/dashboard")
 def dashboard(request: Request, org: str = "all", months: int = 12, horizon_days: int = 180):
+    if not request.session.get("startup_splash_seen"):
+        # Preserve bootstrap/error behavior before rendering splash.
+        get_user_context(request)
+        passthrough_params = dict(request.query_params)
+        passthrough_params["splash"] = "1"
+        redirect_query = urlencode(passthrough_params, doseq=True)
+        redirect_url = f"/dashboard?{redirect_query}" if redirect_query else "/dashboard"
+        return _render_startup_splash(request, redirect_url)
+
     repo = get_repo()
     user = get_user_context(request)
     ensure_session_started(request, user)
