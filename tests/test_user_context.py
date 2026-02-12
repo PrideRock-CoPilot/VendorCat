@@ -24,6 +24,7 @@ class _FakeRepo:
         self.ensure_called = 0
         self.resolve_policy_called = 0
         self.synced_users: list[str] = []
+        self.synced_identity_payloads: list[dict[str, str | None]] = []
 
     def ensure_runtime_tables(self) -> None:
         self.ensure_called += 1
@@ -39,6 +40,7 @@ class _FakeRepo:
         login_identifier = str(kwargs.get("login_identifier") or "").strip()
         if login_identifier:
             self.synced_users.append(login_identifier)
+        self.synced_identity_payloads.append(dict(kwargs))
 
     def list_known_roles(self) -> list[str]:
         return sorted(self.roles or {"vendor_viewer"})
@@ -121,6 +123,51 @@ def test_forwarded_identity_header_takes_precedence(monkeypatch) -> None:
     assert context.roles == {"vendor_editor"}
     assert repo.bootstrap_called == 1
     assert "jane.doe@example.com" in repo.synced_users
+    assert repo.synced_identity_payloads
+    assert repo.synced_identity_payloads[-1].get("first_name") == "Jane"
+    assert repo.synced_identity_payloads[-1].get("last_name") == "Doe"
+    assert repo.synced_identity_payloads[-1].get("network_id") == "jane.doe"
+
+
+def test_resolve_databricks_identity_uses_explicit_name_and_network_headers(monkeypatch) -> None:
+    monkeypatch.setattr(services, "get_config", lambda: AppConfig("", "", "", use_local_db=False, env="prod"))
+    monkeypatch.setenv("TVENDOR_TRUST_FORWARDED_IDENTITY_HEADERS", "true")
+    request = _request(
+        headers=[
+            (b"x-forwarded-preferred-username", b"jane.doe@example.com"),
+            (b"x-forwarded-email", b"jane.doe@example.com"),
+            (b"x-forwarded-user-id", b"1234567890123456"),
+            (b"x-forwarded-given-name", b"Jane"),
+            (b"x-forwarded-family-name", b"Doe"),
+            (b"x-forwarded-name", b"Jane Doe"),
+        ]
+    )
+
+    identity = services.resolve_databricks_request_identity(request)
+
+    assert identity["principal"] == "jane.doe@example.com"
+    assert identity["email"] == "jane.doe@example.com"
+    assert identity["network_id"] == "1234567890123456"
+    assert identity["first_name"] == "Jane"
+    assert identity["last_name"] == "Doe"
+    assert identity["display_name"] == "Jane Doe"
+
+
+def test_resolve_databricks_identity_uses_forwarded_user_for_network_id(monkeypatch) -> None:
+    monkeypatch.setattr(services, "get_config", lambda: AppConfig("", "", "", use_local_db=False, env="prod"))
+    monkeypatch.setenv("TVENDOR_TRUST_FORWARDED_IDENTITY_HEADERS", "true")
+    request = _request(
+        headers=[
+            (b"x-forwarded-preferred-username", b"user123@example.com"),
+            (b"x-forwarded-user", b"CORP\\john_smith"),
+        ]
+    )
+
+    identity = services.resolve_databricks_request_identity(request)
+
+    assert identity["principal"] == "user123@example.com"
+    assert identity["email"] == "user123@example.com"
+    assert identity["network_id"] == "john_smith"
 
 
 def test_display_name_formats_email_to_first_last() -> None:

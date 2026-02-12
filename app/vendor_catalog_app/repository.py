@@ -784,8 +784,13 @@ class VendorRepository(
         network_id: str | None = None
         if "@" in login_identifier:
             email = login_identifier
-        elif "\\" in login_identifier or "/" in login_identifier:
-            network_id = login_identifier.split("\\")[-1].split("/")[-1]
+            network_id = login_identifier.split("@", 1)[0].strip() or None
+        if "\\" in login_identifier or "/" in login_identifier:
+            parsed_network = login_identifier.split("\\")[-1].split("/")[-1].strip()
+            if parsed_network:
+                network_id = parsed_network
+        elif network_id is None and login_identifier and not login_identifier.lower().startswith("usr-"):
+            network_id = login_identifier
 
         display_name = VendorRepository._principal_to_display_name(login_identifier)
         parts = [part for part in display_name.split(" ") if part and part.lower() != "user"]

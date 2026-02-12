@@ -57,14 +57,15 @@ def test_actor_ref_persists_user_directory_entry_for_local_db(tmp_path: Path) ->
 
     with sqlite3.connect(db_path) as conn:
         row = conn.execute(
-            "SELECT login_identifier, display_name, first_name, last_name FROM app_user_directory WHERE user_id = ?",
+            "SELECT login_identifier, network_id, display_name, first_name, last_name FROM app_user_directory WHERE user_id = ?",
             (first,),
         ).fetchone()
     assert row is not None
     assert row[0] == "jane.doe@example.com"
-    assert row[1] == "Jane Doe"
-    assert row[2] == "Jane"
-    assert row[3] == "Doe"
+    assert row[1] == "jane.doe"
+    assert row[2] == "Jane Doe"
+    assert row[3] == "Jane"
+    assert row[4] == "Doe"
 
 
 def test_decorate_user_columns_resolves_user_id_to_display_name(tmp_path: Path) -> None:

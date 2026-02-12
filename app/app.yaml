@@ -46,5 +46,7 @@ env:
     value: "900"
   - name: "TVENDOR_IDENTITY_SYNC_TTL_SEC"
     value: "1800"
+  - name: "TVENDOR_TRUST_FORWARDED_IDENTITY_HEADERS"
+    value: "true"
   - name: "DATABRICKS_WAREHOUSE_ID"
     valueFrom: "sql-warehouse"
