@@ -79,6 +79,8 @@ class VendorRepository(
             32,
             int(str(os.getenv("TVENDOR_REPO_CACHE_MAX_ENTRIES", "512")).strip() or "512"),
         )
+        self._usage_event_lock = threading.Lock()
+        self._usage_event_last_seen: dict[tuple[str, str, str], float] = {}
 
     def _table(self, name: str) -> str:
         if self.config.use_local_db:
@@ -173,6 +175,39 @@ class VendorRepository(
                 self._repo_cache.pop(next(iter(self._repo_cache)))
             self._repo_cache[key] = (now + float(ttl), stored_value)
         return loaded_value
+
+    def _allow_usage_event(
+        self,
+        *,
+        user_principal: str,
+        page_name: str,
+        event_type: str,
+    ) -> bool:
+        raw_value = os.getenv("TVENDOR_USAGE_LOG_MIN_INTERVAL_SEC", "120")
+        try:
+            min_interval = max(0, int(str(raw_value).strip() or "120"))
+        except Exception:
+            min_interval = 120
+        if min_interval <= 0:
+            return True
+
+        key = (
+            str(user_principal or "").strip().lower(),
+            str(page_name or "").strip().lower(),
+            str(event_type or "").strip().lower(),
+        )
+        if not all(key):
+            return True
+
+        now = time.monotonic()
+        with self._usage_event_lock:
+            last_seen = float(self._usage_event_last_seen.get(key, 0.0))
+            if (now - last_seen) < float(min_interval):
+                return False
+            self._usage_event_last_seen[key] = now
+            if len(self._usage_event_last_seen) > 5000:
+                self._usage_event_last_seen.pop(next(iter(self._usage_event_last_seen)))
+        return True
 
     def _now(self) -> datetime:
         return datetime.now(timezone.utc)
@@ -824,6 +859,7 @@ class VendorRepository(
                 "first_name",
                 "last_name",
                 "display_name",
+                "last_seen_at",
             ],
             app_user_directory=self._table("app_user_directory"),
         )
@@ -847,6 +883,22 @@ class VendorRepository(
                 or str(existing_row.get("display_name") or "").strip()
                 or self._principal_to_display_name(login_identifier),
             }
+            field_changed = any(
+                str(merged_identity.get(field) or "").strip() != str(existing_row.get(field) or "").strip()
+                for field in ("email", "network_id", "first_name", "last_name", "display_name")
+            )
+            raw_touch_ttl = os.getenv("TVENDOR_USER_DIRECTORY_TOUCH_TTL_SEC", "300")
+            try:
+                touch_ttl_sec = max(0, int(str(raw_touch_ttl).strip() or "300"))
+            except Exception:
+                touch_ttl_sec = 300
+            should_touch_last_seen = True
+            if touch_ttl_sec > 0:
+                last_seen_at = self._parse_lookup_ts(existing_row.get("last_seen_at"), fallback=now)
+                should_touch_last_seen = (now - last_seen_at).total_seconds() >= float(touch_ttl_sec)
+
+            if not field_changed and not should_touch_last_seen:
+                return user_id
             try:
                 self._execute_file(
                     "updates/update_user_directory_profile.sql",

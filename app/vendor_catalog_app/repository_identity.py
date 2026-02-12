@@ -135,18 +135,26 @@ class RepositoryIdentityMixin:
 
     def get_user_setting(self, user_principal: str, setting_key: str) -> dict[str, Any]:
         user_ref = self.resolve_user_id(user_principal, allow_create=True) or user_principal
-        df = self._query_file(
-            "ingestion/select_user_setting_latest.sql",
-            params=(user_ref, setting_key),
-            columns=["setting_value_json"],
-            app_user_settings=self._table("app_user_settings"),
+
+        def _load() -> dict[str, Any]:
+            df = self._query_file(
+                "ingestion/select_user_setting_latest.sql",
+                params=(user_ref, setting_key),
+                columns=["setting_value_json"],
+                app_user_settings=self._table("app_user_settings"),
+            )
+            if df.empty:
+                return {}
+            try:
+                return json.loads(str(df.iloc[0]["setting_value_json"]))
+            except (json.JSONDecodeError, TypeError, ValueError):
+                return {}
+
+        return self._cached(
+            ("user_setting", str(user_ref), str(setting_key)),
+            _load,
+            ttl_seconds=300,
         )
-        if df.empty:
-            return {}
-        try:
-            return json.loads(str(df.iloc[0]["setting_value_json"]))
-        except (json.JSONDecodeError, TypeError, ValueError):
-            return {}
 
     def save_user_setting(self, user_principal: str, setting_key: str, setting_value: dict[str, Any]) -> None:
         user_ref = self.resolve_user_id(user_principal, allow_create=True) or user_principal
@@ -164,6 +172,19 @@ class RepositoryIdentityMixin:
     def log_usage_event(
         self, user_principal: str, page_name: str, event_type: str, payload: dict[str, Any] | None = None
     ) -> None:
+        raw_enabled = os.getenv("TVENDOR_USAGE_LOG_ENABLED")
+        if raw_enabled is None or not str(raw_enabled).strip():
+            enabled = self.config.is_dev_env
+        else:
+            enabled = str(raw_enabled).strip().lower() in {"1", "true", "yes", "y", "on"}
+        if not enabled:
+            return
+        if not self._allow_usage_event(
+            user_principal=user_principal,
+            page_name=page_name,
+            event_type=event_type,
+        ):
+            return
         actor_ref = self._actor_ref(user_principal)
         try:
             self._execute_file(
@@ -194,20 +215,28 @@ class RepositoryIdentityMixin:
 
     def get_user_roles(self, user_principal: str) -> set[str]:
         user_ref = self.resolve_user_id(user_principal, allow_create=True) or str(user_principal or "").strip()
-        df = self._query_file(
-            "ingestion/select_user_roles.sql",
-            params=(user_ref,),
-            columns=["role_code"],
-            sec_user_role_map=self._table("sec_user_role_map"),
-        )
-        if df.empty and user_ref and user_ref != str(user_principal or "").strip():
+
+        def _load() -> set[str]:
             df = self._query_file(
                 "ingestion/select_user_roles.sql",
-                params=(str(user_principal or "").strip(),),
+                params=(user_ref,),
                 columns=["role_code"],
                 sec_user_role_map=self._table("sec_user_role_map"),
             )
-        return set(df["role_code"].tolist()) if not df.empty else set()
+            if df.empty and user_ref and user_ref != str(user_principal or "").strip():
+                df = self._query_file(
+                    "ingestion/select_user_roles.sql",
+                    params=(str(user_principal or "").strip(),),
+                    columns=["role_code"],
+                    sec_user_role_map=self._table("sec_user_role_map"),
+                )
+            return set(df["role_code"].tolist()) if not df.empty else set()
+
+        return self._cached(
+            ("user_roles", str(user_ref).lower()),
+            _load,
+            ttl_seconds=120,
+        )
 
     def get_user_display_name(self, user_principal: str) -> str:
         raw = str(user_principal or "").strip()
