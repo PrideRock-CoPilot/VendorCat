@@ -14,3 +14,22 @@ venv/
 .streamlit/secrets.toml
 setup/local_db/*.db
 setup/databricks/rendered/
+
+# Auto-created build/runtime artifacts
+*.log
+logs/
+tmp/
+temp/
+.tmp/
+.cache/
+
+# Python packaging/build outputs
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Databricks local build/deploy metadata
+.databricks/
+.bundle/
