@@ -259,6 +259,27 @@ def test_typeahead_vendor_offering_and_project_api(client: TestClient) -> None:
     user_payload = user_response.json()
     assert any(str(row.get("login_identifier")) == "admin@example.com" for row in user_payload.get("items", []))
 
+    contract_response = client.get("/api/contracts/search?q=MS-2024&limit=10")
+    assert contract_response.status_code == 200
+    contract_payload = contract_response.json()
+    contract_items = contract_payload.get("items", [])
+    assert any(str(row.get("contract_id")) == "ctr-101" for row in contract_items)
+    assert any("MS-2024-001" in str(row.get("label", "")) for row in contract_items)
+
+
+def test_contract_and_demo_forms_expose_search_typeahead_inputs(client: TestClient) -> None:
+    contracts_page = client.get("/contracts")
+    assert contracts_page.status_code == 200
+    assert "data-contract-search" in contracts_page.text
+    assert "/api/contracts/search" in contracts_page.text
+
+    demos_page = client.get("/demos")
+    assert demos_page.status_code == 200
+    assert "data-demo-vendor-search" in demos_page.text
+    assert "data-demo-offering-search" in demos_page.text
+    assert "/api/vendors/search" in demos_page.text
+    assert "/api/offerings/search" in demos_page.text
+
 
 def test_vendor_change_trail_shows_field_level_diff(client: TestClient) -> None:
     update_response = client.post(
@@ -288,6 +309,46 @@ def test_vendor_summary_includes_active_lob_and_service_type_values(client: Test
     assert "active_service_types" in response.text
     assert "Enterprise, IT" in response.text
     assert "Application, Infrastructure" in response.text
+
+
+def test_vendor_summary_falls_back_to_draft_offering_lob_and_service_type_values(client: TestClient) -> None:
+    vendor_response = client.post(
+        "/vendors/new",
+        data={
+            "return_to": "/vendors",
+            "legal_name": "Fallback Metrics Vendor LLC",
+            "display_name": "Fallback Metrics Vendor",
+            "lifecycle_state": "draft",
+            "owner_org_id": "IT-ENT",
+            "risk_tier": "low",
+            "source_system": "manual",
+        },
+        follow_redirects=False,
+    )
+    assert vendor_response.status_code == 303
+    vendor_match = re.search(r"/vendors/(vnd-[^/]+)/summary", vendor_response.headers["location"])
+    assert vendor_match is not None
+    vendor_id = vendor_match.group(1)
+
+    offering_response = client.post(
+        f"/vendors/{vendor_id}/offerings/new",
+        data={
+            "return_to": "/vendors",
+            "offering_name": "Draft Metrics Offering",
+            "offering_type": "SaaS",
+            "lob": "Finance",
+            "service_type": "Platform",
+            "lifecycle_state": "draft",
+            "criticality_tier": "tier_2",
+        },
+        follow_redirects=False,
+    )
+    assert offering_response.status_code == 303
+
+    summary = client.get(f"/vendors/{vendor_id}/summary?return_to=%2Fvendors")
+    assert summary.status_code == 200
+    assert "Finance" in summary.text
+    assert "Platform" in summary.text
 
 
 def test_vendor_ownership_allows_adding_owner_assignment_and_contact(client: TestClient) -> None:

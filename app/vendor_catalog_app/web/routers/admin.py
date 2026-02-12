@@ -320,6 +320,48 @@ async def change_role(request: Request):
     return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
 
 
+@router.post("/revoke-role")
+async def revoke_role(request: Request):
+    repo = get_repo()
+    user = get_user_context(request)
+    if user.config.locked_mode:
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+    if not user.has_admin_rights:
+        add_flash(request, "Admin access required.", "error")
+        return RedirectResponse(url="/dashboard", status_code=303)
+
+    form = await request.form()
+    target_user = str(form.get("target_user", "")).strip()
+    role_code = str(form.get("role_code", "")).strip().lower()
+    if not target_user or not role_code:
+        add_flash(request, "User and role are required.", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+    target_user = repo.resolve_user_login_identifier(target_user) or target_user
+    if role_code not in set(repo.list_known_roles() or ROLE_CHOICES):
+        add_flash(request, f"Role `{role_code}` is not defined. Create it in Role Catalog first.", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+
+    try:
+        repo.revoke_role_grant(
+            target_user_principal=target_user,
+            role_code=role_code,
+            revoked_by=user.user_principal,
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not revoke role: {exc}", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+
+    repo.log_usage_event(
+        user_principal=user.user_principal,
+        page_name="admin",
+        event_type="revoke_role",
+        payload={"target_user": target_user, "role_code": role_code},
+    )
+    add_flash(request, "Role revoked.", "success")
+    return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+
+
 @router.post("/grant-group-role")
 async def grant_group_role(request: Request):
     repo = get_repo()
@@ -492,6 +534,47 @@ async def grant_scope(request: Request):
         payload={"target_user": target_user, "org_id": org_id, "scope_level": scope_level},
     )
     add_flash(request, "Org scope grant recorded.", "success")
+    return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+
+
+@router.post("/revoke-scope")
+async def revoke_scope(request: Request):
+    repo = get_repo()
+    user = get_user_context(request)
+    if user.config.locked_mode:
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+    if not user.has_admin_rights:
+        add_flash(request, "Admin access required.", "error")
+        return RedirectResponse(url="/dashboard", status_code=303)
+
+    form = await request.form()
+    target_user = str(form.get("target_user", "")).strip()
+    org_id = str(form.get("org_id", "")).strip()
+    scope_level = str(form.get("scope_level", "")).strip().lower()
+    if not target_user or not org_id or not scope_level:
+        add_flash(request, "User, org, and scope level are required.", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+    target_user = repo.resolve_user_login_identifier(target_user) or target_user
+
+    try:
+        repo.revoke_org_scope(
+            target_user_principal=target_user,
+            org_id=org_id,
+            scope_level=scope_level,
+            revoked_by=user.user_principal,
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not revoke org scope: {exc}", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+
+    repo.log_usage_event(
+        user_principal=user.user_principal,
+        page_name="admin",
+        event_type="revoke_scope",
+        payload={"target_user": target_user, "org_id": org_id, "scope_level": scope_level},
+    )
+    add_flash(request, "Org scope revoked.", "success")
     return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
 
 

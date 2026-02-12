@@ -75,6 +75,10 @@ Current schema scope:
 For schema details and table-by-table reference:
 - `docs/database/README.md`
 - `docs/database/schema-reference.md`
+- `docs/user-guide.md`
+- `docs/ux/click-budget.md`
+- `docs/ux/screen-audit.md`
+- `docs/ux/prioritized-backlog.md`
 
 ## Repository Structure
 - `app/main.py`: app entrypoint

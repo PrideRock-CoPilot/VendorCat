@@ -870,6 +870,45 @@ class RepositoryReportingMixin:
             core_vendor=self._table("core_vendor"),
         )
 
+    def search_contracts_typeahead(self, *, q: str = "", limit: int = 20) -> pd.DataFrame:
+        limit = max(1, min(int(limit or 20), 100))
+        columns = [
+            "contract_id",
+            "vendor_id",
+            "offering_id",
+            "contract_number",
+            "contract_status",
+            "vendor_display_name",
+            "offering_name",
+            "label",
+        ]
+        params: list[Any] = []
+        where = "1 = 1"
+        if q.strip():
+            like = f"%{q.strip()}%"
+            where = (
+                "("
+                "lower(c.contract_id) LIKE lower(%s)"
+                " OR lower(coalesce(c.contract_number, '')) LIKE lower(%s)"
+                " OR lower(coalesce(c.vendor_id, '')) LIKE lower(%s)"
+                " OR lower(coalesce(c.offering_id, '')) LIKE lower(%s)"
+                " OR lower(coalesce(c.contract_status, '')) LIKE lower(%s)"
+                " OR lower(coalesce(v.display_name, v.legal_name, c.vendor_id, '')) LIKE lower(%s)"
+                " OR lower(coalesce(o.offering_name, c.offering_id, '')) LIKE lower(%s)"
+                ")"
+            )
+            params.extend([like, like, like, like, like, like, like])
+        return self._query_file(
+            "reporting/search_contracts_typeahead.sql",
+            params=tuple(params) if params else None,
+            columns=columns,
+            where_clause=where,
+            limit=limit,
+            core_contract=self._table("core_contract"),
+            core_vendor=self._table("core_vendor"),
+            core_vendor_offering=self._table("core_vendor_offering"),
+        )
+
     def list_vendors_page(
         self,
         *,
@@ -1380,6 +1419,10 @@ class RepositoryReportingMixin:
             active_offerings = active_offerings[
                 active_offerings["lifecycle_state"].astype(str).str.lower() == "active"
             ].copy()
+            # Fresh environments often start with draft offerings only.
+            # Fall back to all offerings so summary cards still show useful LOB/service values.
+            if active_offerings.empty:
+                active_offerings = offerings.copy()
         active_lob_values: list[str] = []
         active_service_type_values: list[str] = []
         if not active_offerings.empty:

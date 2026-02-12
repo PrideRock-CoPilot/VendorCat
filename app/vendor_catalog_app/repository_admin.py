@@ -490,6 +490,36 @@ class RepositoryAdminMixin:
             notes=f"Role changed from {current_role} to {new_role} through admin UI.",
         )
 
+    def revoke_role_grant(
+        self,
+        *,
+        target_user_principal: str,
+        role_code: str,
+        revoked_by: str,
+    ) -> None:
+        target_ref = self.resolve_user_id(target_user_principal, allow_create=True)
+        revoked_by_ref = self.resolve_user_id(revoked_by, allow_create=True)
+        role_key = str(role_code or "").strip().lower()
+        if not target_ref or not revoked_by_ref:
+            raise ValueError("Target user and revoke actor must resolve to directory users.")
+        if not role_key:
+            raise ValueError("Role code is required.")
+
+        now = self._now()
+        self._execute_file(
+            "updates/revoke_role_grant.sql",
+            params=(False, now, target_ref, role_key),
+            sec_user_role_map=self._table("sec_user_role_map"),
+        )
+        self.bump_security_policy_version(updated_by=revoked_by)
+        self._audit_access(
+            actor_user_principal=revoked_by_ref,
+            action_type="revoke_role",
+            target_user_principal=target_ref,
+            target_role=role_key,
+            notes=f"Role {role_key} revoked through admin UI.",
+        )
+
     def grant_group_role(self, group_principal: str, role_code: str, granted_by: str) -> None:
         group_key = self.normalize_group_principal(group_principal)
         role_key = str(role_code or "").strip().lower()
@@ -612,6 +642,37 @@ class RepositoryAdminMixin:
             target_user_principal=target_ref,
             target_role=None,
             notes=f"Org scope granted: {org_id} ({scope_level}).",
+        )
+
+    def revoke_org_scope(
+        self,
+        *,
+        target_user_principal: str,
+        org_id: str,
+        scope_level: str,
+        revoked_by: str,
+    ) -> None:
+        target_ref = self.resolve_user_id(target_user_principal, allow_create=True)
+        revoked_by_ref = self.resolve_user_id(revoked_by, allow_create=True)
+        org_key = str(org_id or "").strip()
+        scope_key = str(scope_level or "").strip().lower()
+        if not target_ref or not revoked_by_ref:
+            raise ValueError("Target user and revoke actor must resolve to directory users.")
+        if not org_key or not scope_key:
+            raise ValueError("Org and scope level are required.")
+
+        self._execute_file(
+            "updates/revoke_org_scope_grant.sql",
+            params=(False, target_ref, org_key, scope_key),
+            sec_user_org_scope=self._table("sec_user_org_scope"),
+        )
+        self.bump_security_policy_version(updated_by=revoked_by)
+        self._audit_access(
+            actor_user_principal=revoked_by_ref,
+            action_type="revoke_scope",
+            target_user_principal=target_ref,
+            target_role=None,
+            notes=f"Org scope revoked: {org_key} ({scope_key}).",
         )
 
     def _audit_access(

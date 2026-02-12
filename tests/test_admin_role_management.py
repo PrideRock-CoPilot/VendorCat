@@ -104,6 +104,30 @@ def test_admin_can_change_user_role_from_dropdown_flow(client: TestClient) -> No
     assert set(active_rows["role_code"].astype(str).tolist()) == {"vendor_auditor"}
 
 
+def test_admin_can_revoke_user_role_from_table_flow(client: TestClient) -> None:
+    client.post(
+        "/admin/grant-role",
+        data={"target_user": "revoke.user@example.com", "role_code": "vendor_editor"},
+        follow_redirects=False,
+    )
+
+    revoke = client.post(
+        "/admin/revoke-role",
+        data={"target_user": "revoke.user@example.com", "role_code": "vendor_editor"},
+        follow_redirects=False,
+    )
+    assert revoke.status_code == 303
+
+    repo = get_repo()
+    grants = repo.list_role_grants()
+    user_rows = grants[
+        (grants["user_principal"].astype(str) == "revoke.user@example.com")
+        & (grants["role_code"].astype(str) == "vendor_editor")
+    ].copy()
+    active_rows = user_rows[user_rows["active_flag"].astype(str).str.lower().isin({"1", "true"})]
+    assert active_rows.empty
+
+
 def test_admin_can_grant_role_to_group_and_group_member_inherits_it(client: TestClient) -> None:
     grant = client.post(
         "/admin/grant-group-role",
@@ -170,6 +194,31 @@ def test_admin_can_revoke_group_role_from_table_flow(client: TestClient) -> None
         & (grants["role_code"].astype(str) == "vendor_editor")
     ].copy()
     active_rows = group_rows[group_rows["active_flag"].astype(str).str.lower().isin({"1", "true"})]
+    assert active_rows.empty
+
+
+def test_admin_can_revoke_org_scope_from_table_flow(client: TestClient) -> None:
+    client.post(
+        "/admin/grant-scope",
+        data={"target_user": "scope.user@example.com", "org_id": "IT-ENT", "scope_level": "edit"},
+        follow_redirects=False,
+    )
+
+    revoke = client.post(
+        "/admin/revoke-scope",
+        data={"target_user": "scope.user@example.com", "org_id": "IT-ENT", "scope_level": "edit"},
+        follow_redirects=False,
+    )
+    assert revoke.status_code == 303
+
+    repo = get_repo()
+    scopes = repo.list_scope_grants()
+    user_rows = scopes[
+        (scopes["user_principal"].astype(str) == "scope.user@example.com")
+        & (scopes["org_id"].astype(str) == "IT-ENT")
+        & (scopes["scope_level"].astype(str) == "edit")
+    ].copy()
+    active_rows = user_rows[user_rows["active_flag"].astype(str).str.lower().isin({"1", "true"})]
     assert active_rows.empty
 
 
