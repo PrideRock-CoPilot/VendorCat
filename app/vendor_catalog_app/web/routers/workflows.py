@@ -10,7 +10,12 @@ from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
 from vendor_catalog_app.repository import GLOBAL_CHANGE_VENDOR_ID
-from vendor_catalog_app.security import approval_level_label, required_approval_level
+from vendor_catalog_app.security import (
+    MAX_APPROVAL_LEVEL,
+    MIN_CHANGE_APPROVAL_LEVEL,
+    approval_level_label,
+    required_approval_level,
+)
 from vendor_catalog_app.web.flash import add_flash
 from vendor_catalog_app.web.services import (
     base_template_context,
@@ -181,7 +186,7 @@ def _required_level(row: dict) -> int:
         level = int(meta.get("approval_level_required", required_approval_level(str(row.get("change_type") or ""))))
     except Exception:
         level = required_approval_level(str(row.get("change_type") or ""))
-    return max(1, min(level, 3))
+    return max(MIN_CHANGE_APPROVAL_LEVEL, min(level, MAX_APPROVAL_LEVEL))
 
 
 def _as_bool(value: Any) -> bool:

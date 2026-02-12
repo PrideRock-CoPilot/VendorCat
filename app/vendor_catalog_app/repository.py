@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import threading
 import time
@@ -15,10 +14,23 @@ from typing import Any, Callable
 
 import pandas as pd
 
+from vendor_catalog_app.cache import LruTtlCache
 from vendor_catalog_app.config import AppConfig
 from vendor_catalog_app.db import DataConnectionError, DataExecutionError, DataQueryError, DatabricksSQLClient
+from vendor_catalog_app.env import (
+    TVENDOR_REPO_CACHE_ENABLED,
+    TVENDOR_REPO_CACHE_MAX_ENTRIES,
+    TVENDOR_REPO_CACHE_TTL_SEC,
+    TVENDOR_USAGE_LOG_MIN_INTERVAL_SEC,
+    TVENDOR_USER_DIRECTORY_TOUCH_TTL_SEC,
+    get_env,
+    get_env_bool,
+    get_env_int,
+)
 from vendor_catalog_app.security import (
     CHANGE_APPROVAL_LEVELS,
+    MAX_APPROVAL_LEVEL,
+    MIN_CHANGE_APPROVAL_LEVEL,
     ROLE_ADMIN,
     ROLE_APPROVER,
     ROLE_CHOICES,
@@ -62,22 +74,20 @@ class VendorRepository(
         self._local_lookup_table_ensured = False
         self._local_offering_columns_ensured = False
         self._local_offering_extension_tables_ensured = False
-        self._repo_cache_lock = threading.Lock()
-        self._repo_cache: dict[tuple[Any, ...], tuple[float, Any]] = {}
-        self._repo_cache_enabled = str(os.getenv("TVENDOR_REPO_CACHE_ENABLED", "true")).strip().lower() in {
-            "1",
-            "true",
-            "yes",
-            "y",
-            "on",
-        }
+        self._repo_cache_enabled = get_env_bool(TVENDOR_REPO_CACHE_ENABLED, default=True)
         self._repo_cache_ttl_seconds = max(
             0,
-            int(str(os.getenv("TVENDOR_REPO_CACHE_TTL_SEC", "120")).strip() or "120"),
+            get_env_int(TVENDOR_REPO_CACHE_TTL_SEC, default=120, min_value=0),
         )
         self._repo_cache_max_entries = max(
             32,
-            int(str(os.getenv("TVENDOR_REPO_CACHE_MAX_ENTRIES", "512")).strip() or "512"),
+            get_env_int(TVENDOR_REPO_CACHE_MAX_ENTRIES, default=512, min_value=1),
+        )
+        self._repo_cache = LruTtlCache[tuple[Any, ...], Any](
+            enabled=self._repo_cache_enabled,
+            ttl_seconds=self._repo_cache_ttl_seconds,
+            max_entries=self._repo_cache_max_entries,
+            clone_value=self._clone_cache_value,
         )
         self._usage_event_lock = threading.Lock()
         self._usage_event_last_seen: dict[tuple[str, str, str], float] = {}
@@ -88,6 +98,10 @@ class VendorRepository(
         return f"{self.config.fq_schema}.{name}"
 
     @staticmethod
+    def _sql_root() -> Path:
+        return Path(__file__).resolve().parent / "sql"
+
+    @staticmethod
     @lru_cache(maxsize=512)
     def _read_sql_file(path_str: str) -> str:
         path = Path(path_str)
@@ -95,8 +109,18 @@ class VendorRepository(
             raise FileNotFoundError(f"SQL file not found: {path}")
         return path.read_text(encoding="utf-8")
 
+    def preload_sql_templates(self) -> int:
+        sql_root = self._sql_root()
+        loaded = 0
+        for sql_path in sorted(sql_root.rglob("*.sql")):
+            if not sql_path.is_file():
+                continue
+            self._read_sql_file(str(sql_path.resolve()))
+            loaded += 1
+        return loaded
+
     def _sql(self, relative_path: str, **format_args: Any) -> str:
-        sql_root = Path(__file__).resolve().parent / "sql"
+        sql_root = self._sql_root()
         sql_path = (sql_root / relative_path).resolve()
         template = self._read_sql_file(str(sql_path))
         return template.format(**format_args) if format_args else template
@@ -142,8 +166,10 @@ class VendorRepository(
         return value
 
     def _cache_clear(self) -> None:
-        with self._repo_cache_lock:
-            self._repo_cache.clear()
+        self._repo_cache.clear()
+
+    def close(self) -> None:
+        self.client.close()
 
     def _cached(
         self,
@@ -152,29 +178,8 @@ class VendorRepository(
         *,
         ttl_seconds: int | None = None,
     ) -> Any:
-        if not self._repo_cache_enabled:
-            return loader()
-
         ttl = self._repo_cache_ttl_seconds if ttl_seconds is None else max(0, int(ttl_seconds))
-        if ttl <= 0:
-            return loader()
-
-        now = time.monotonic()
-        with self._repo_cache_lock:
-            entry = self._repo_cache.get(key)
-            if entry is not None:
-                expires_at, cached_value = entry
-                if expires_at > now:
-                    return self._clone_cache_value(cached_value)
-                self._repo_cache.pop(key, None)
-
-        loaded_value = loader()
-        stored_value = self._clone_cache_value(loaded_value)
-        with self._repo_cache_lock:
-            if len(self._repo_cache) >= self._repo_cache_max_entries:
-                self._repo_cache.pop(next(iter(self._repo_cache)))
-            self._repo_cache[key] = (now + float(ttl), stored_value)
-        return loaded_value
+        return self._repo_cache.get_or_load(key, loader, ttl_seconds=ttl)
 
     def _allow_usage_event(
         self,
@@ -183,7 +188,7 @@ class VendorRepository(
         page_name: str,
         event_type: str,
     ) -> bool:
-        raw_value = os.getenv("TVENDOR_USAGE_LOG_MIN_INTERVAL_SEC", "120")
+        raw_value = get_env(TVENDOR_USAGE_LOG_MIN_INTERVAL_SEC, "120")
         try:
             min_interval = max(0, int(str(raw_value).strip() or "120"))
         except Exception:
@@ -442,7 +447,7 @@ class VendorRepository(
             required_level = int(meta.get("approval_level_required", required_level))
         except Exception:
             required_level = required_approval_level(change_type)
-        required_level = max(1, min(required_level, 3))
+        required_level = max(MIN_CHANGE_APPROVAL_LEVEL, min(required_level, MAX_APPROVAL_LEVEL))
         meta["approval_level_required"] = required_level
         meta["workflow_action"] = (change_type or "").strip().lower()
         out["_meta"] = meta
@@ -887,7 +892,7 @@ class VendorRepository(
                 str(merged_identity.get(field) or "").strip() != str(existing_row.get(field) or "").strip()
                 for field in ("email", "network_id", "first_name", "last_name", "display_name")
             )
-            raw_touch_ttl = os.getenv("TVENDOR_USER_DIRECTORY_TOUCH_TTL_SEC", "300")
+            raw_touch_ttl = get_env(TVENDOR_USER_DIRECTORY_TOUCH_TTL_SEC, "300")
             try:
                 touch_ttl_sec = max(0, int(str(raw_touch_ttl).strip() or "300"))
             except Exception:

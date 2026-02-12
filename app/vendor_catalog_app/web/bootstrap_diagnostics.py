@@ -1,7 +1,17 @@
 from __future__ import annotations
 
+import hmac
 import os
 from typing import Any
+
+from fastapi import Request
+
+from vendor_catalog_app.env import (
+    TVENDOR_BOOTSTRAP_DIAGNOSTICS_ENABLED,
+    TVENDOR_BOOTSTRAP_DIAGNOSTICS_TOKEN,
+    get_env,
+    get_env_bool,
+)
 
 
 RUNTIME_REQUIRED_TABLES = (
@@ -11,6 +21,41 @@ RUNTIME_REQUIRED_TABLES = (
     "app_user_directory",
     "app_lookup_option",
 )
+
+
+def bootstrap_diagnostics_enabled(config) -> bool:
+    return get_env_bool(
+        TVENDOR_BOOTSTRAP_DIAGNOSTICS_ENABLED,
+        default=bool(getattr(config, "is_dev_env", False)),
+    )
+
+
+def _request_matches_token(request: Request, *, token: str, header_name: str) -> bool:
+    expected = str(token or "").strip()
+    if not expected:
+        return False
+    header_value = str(request.headers.get(header_name, "")).strip()
+    if header_value and hmac.compare_digest(header_value, expected):
+        return True
+    auth_header = str(request.headers.get("authorization", "")).strip()
+    if auth_header.lower().startswith("bearer "):
+        bearer = auth_header[7:].strip()
+        if bearer and hmac.compare_digest(bearer, expected):
+            return True
+    return False
+
+
+def bootstrap_diagnostics_authorized(request: Request, config) -> bool:
+    if bootstrap_diagnostics_enabled(config):
+        return True
+    token = get_env(TVENDOR_BOOTSTRAP_DIAGNOSTICS_TOKEN, "")
+    if not token:
+        return False
+    return _request_matches_token(
+        request,
+        token=token,
+        header_name="x-tvendor-diagnostics-token",
+    )
 
 
 def connection_context(config) -> dict[str, bool]:

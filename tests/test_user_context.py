@@ -19,8 +19,10 @@ class _FakeRepo:
     def __init__(self, current_user: str, roles: set[str]) -> None:
         self.current_user = current_user
         self.roles = roles
+        self.policy_version = 1
         self.bootstrap_called = 0
         self.ensure_called = 0
+        self.resolve_policy_called = 0
         self.synced_users: list[str] = []
 
     def ensure_runtime_tables(self) -> None:
@@ -42,17 +44,25 @@ class _FakeRepo:
         return sorted(self.roles or {"vendor_viewer"})
 
     def resolve_role_policy(self, user_roles: set[str]) -> dict[str, object]:
+        self.resolve_policy_called += 1
         return {
             "roles": sorted(user_roles),
             "can_edit": "vendor_editor" in user_roles or "vendor_admin" in user_roles,
             "can_report": True,
             "can_direct_apply": "vendor_admin" in user_roles,
-            "approval_level": 3 if "vendor_admin" in user_roles else (1 if "vendor_editor" in user_roles else 0),
+            "approval_level": 10 if "vendor_admin" in user_roles else (4 if "vendor_editor" in user_roles else 0),
             "allowed_change_actions": [],
         }
 
+    def get_security_policy_version(self) -> int:
+        return self.policy_version
 
-def _request(path: str = "/dashboard", headers: list[tuple[bytes, bytes]] | None = None) -> Request:
+
+def _request(
+    path: str = "/dashboard",
+    headers: list[tuple[bytes, bytes]] | None = None,
+    session: dict | None = None,
+) -> Request:
     return Request(
         {
             "type": "http",
@@ -60,6 +70,7 @@ def _request(path: str = "/dashboard", headers: list[tuple[bytes, bytes]] | None
             "path": path,
             "query_string": b"",
             "headers": headers or [],
+            "session": session if session is not None else {},
         }
     )
 
@@ -122,3 +133,28 @@ def test_display_name_formats_network_principal_to_first_last() -> None:
 
 def test_display_name_single_token_gets_user_suffix() -> None:
     assert services._display_name_for_principal("admin@example.com") == "Admin User"
+
+
+def test_session_policy_snapshot_refreshes_on_policy_version_change(monkeypatch) -> None:
+    repo = _FakeRepo(current_user="editor@example.com", roles={"vendor_editor"})
+    config = AppConfig("", "", "", use_local_db=False)
+    monkeypatch.setattr(services, "get_repo", lambda: repo)
+    monkeypatch.setattr(services, "get_config", lambda: config)
+    session: dict = {}
+
+    context_first = services.get_user_context(_request(session=session))
+    assert context_first.roles == {"vendor_editor"}
+    assert repo.bootstrap_called == 1
+    assert repo.resolve_policy_called == 1
+
+    repo.roles = {"vendor_admin"}
+    context_cached = services.get_user_context(_request(session=session))
+    assert context_cached.roles == {"vendor_editor"}
+    assert repo.bootstrap_called == 1
+    assert repo.resolve_policy_called == 1
+
+    repo.policy_version = 2
+    context_refreshed = services.get_user_context(_request(session=session))
+    assert context_refreshed.roles == {"vendor_admin"}
+    assert repo.bootstrap_called == 2
+    assert repo.resolve_policy_called == 2

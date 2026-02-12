@@ -451,9 +451,9 @@
     <label>Approval Level
       <select name="approval_level_required">
         <option value="">default by change type</option>
-        <option value="1">level_1</option>
-        <option value="2">level_2</option>
-        <option value="3">level_3</option>
+        {% for level in change_approval_level_options %}
+        <option value="{{ level }}">level_{{ level }}</option>
+        {% endfor %}
       </select>
     </label>
     <label>Assigned Approver (optional)

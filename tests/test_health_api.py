@@ -44,7 +44,28 @@ class _DiagnosticsRepoConnectivityBroken:
         return None
 
 
+class _ObservabilityStub:
+    def health_snapshot(self) -> dict[str, object]:
+        return {
+            "metrics_enabled": True,
+            "prometheus_enabled": True,
+            "prometheus_path": "/api/metrics",
+            "statsd_enabled": False,
+            "alerts_enabled": True,
+            "active_alert_count": 0,
+            "active_alerts": [],
+            "alert_breaches_total": {
+                "request_p95_ms": 0,
+                "error_rate_pct": 0,
+                "db_avg_ms": 0,
+            },
+            "window_sample_size": 0,
+            "uptime_seconds": 1,
+        }
+
+
 def test_health_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TVENDOR_BOOTSTRAP_DIAGNOSTICS_ENABLED", "true")
     app = create_app()
     monkeypatch.setattr(api_router, "get_repo", lambda: _HealthyRepo())
     monkeypatch.setattr(
@@ -65,7 +86,78 @@ def test_health_ok(monkeypatch: pytest.MonkeyPatch) -> None:
     assert payload["principal"] == "admin@example.com"
 
 
+def test_health_live_ok() -> None:
+    app = create_app()
+    client = TestClient(app)
+
+    response = client.get("/api/health/live")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["status"] == "live"
+    assert payload["service"] == "vendor_catalog_app"
+    assert payload.get("timestamp")
+
+
+def test_health_ready_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TVENDOR_BOOTSTRAP_DIAGNOSTICS_ENABLED", "true")
+    app = create_app()
+    monkeypatch.setattr(api_router, "get_repo", lambda: _HealthyRepo())
+    monkeypatch.setattr(
+        api_router,
+        "get_config",
+        lambda: AppConfig("", "", "", use_local_db=False),
+    )
+    client = TestClient(app)
+
+    response = client.get("/api/health/ready")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["status"] == "ready"
+    assert payload["checks"]["runtime_tables"]["ok"] is True
+    assert payload["checks"]["runtime_tables"]["error"] is None
+
+
+def test_health_ready_reports_bootstrap_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TVENDOR_BOOTSTRAP_DIAGNOSTICS_ENABLED", "true")
+    app = create_app()
+    monkeypatch.setattr(api_router, "get_repo", lambda: _BrokenRepo())
+    monkeypatch.setattr(
+        api_router,
+        "get_config",
+        lambda: AppConfig("", "", "", use_local_db=False),
+    )
+    client = TestClient(app)
+
+    response = client.get("/api/health/ready")
+
+    assert response.status_code == 503
+    payload = response.json()
+    assert payload["ok"] is False
+    assert payload["status"] == "not_ready"
+    assert "schema missing" in str(payload["checks"]["runtime_tables"]["error"])
+
+
+def test_health_observability_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TVENDOR_BOOTSTRAP_DIAGNOSTICS_ENABLED", "true")
+    app = create_app()
+    monkeypatch.setattr(api_router, "get_observability_manager", lambda: _ObservabilityStub())
+    client = TestClient(app)
+
+    response = client.get("/api/health/observability")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["status"] == "observability"
+    assert payload["observability"]["prometheus_path"] == "/api/metrics"
+
+
 def test_health_reports_bootstrap_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TVENDOR_BOOTSTRAP_DIAGNOSTICS_ENABLED", "true")
     app = create_app()
     monkeypatch.setattr(api_router, "get_repo", lambda: _BrokenRepo())
     monkeypatch.setattr(
@@ -84,6 +176,7 @@ def test_health_reports_bootstrap_error(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_bootstrap_diagnostics_reports_connectivity_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TVENDOR_BOOTSTRAP_DIAGNOSTICS_ENABLED", "true")
     app = create_app()
     monkeypatch.setattr(api_router, "get_repo", lambda: _DiagnosticsRepoConnectivityBroken())
     monkeypatch.setattr(
@@ -113,6 +206,7 @@ def test_bootstrap_diagnostics_reports_connectivity_failure(monkeypatch: pytest.
 
 
 def test_bootstrap_diagnostics_reports_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TVENDOR_BOOTSTRAP_DIAGNOSTICS_ENABLED", "true")
     app = create_app()
     monkeypatch.setattr(api_router, "get_repo", lambda: _DiagnosticsRepoHealthy())
     monkeypatch.setattr(

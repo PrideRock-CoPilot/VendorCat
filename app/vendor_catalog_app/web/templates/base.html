@@ -14,7 +14,7 @@
       {% for role in roles %}
       <span class="pill role">{{ role }}</span>
       {% endfor %}
-      {% if has_admin_rights %}
+      {% if has_admin_rights and testing_role_override_enabled %}
       <form method="post" action="/admin/testing-role" class="inline-form role-switch-form">
         <input type="hidden" name="return_to" value="{{ request.url.path }}">
         <span class="role-switch-label">role</span>

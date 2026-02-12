@@ -7,7 +7,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
 from vendor_catalog_app.repository import GLOBAL_CHANGE_VENDOR_ID
-from vendor_catalog_app.security import required_approval_level
+from vendor_catalog_app.security import MAX_APPROVAL_LEVEL, MIN_CHANGE_APPROVAL_LEVEL, required_approval_level
 from vendor_catalog_app.web.utils.doc_links import (
     extract_doc_fqdn,
     normalize_doc_tags,
@@ -3589,7 +3589,8 @@ async def vendor_direct_update(request: Request, vendor_id: str):
         add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
         return RedirectResponse(url=f"/vendors/{vendor_id}/changes?return_to={quote(return_to, safe='')}", status_code=303)
     if not user.can_apply_change("update_vendor_profile"):
-        add_flash(request, "Direct updates require approval level 2 or higher.", "error")
+        required_level = required_approval_level("update_vendor_profile")
+        add_flash(request, f"Direct updates require approval level {required_level} or higher.", "error")
         return RedirectResponse(url=f"/vendors/{vendor_id}/changes?return_to={quote(return_to, safe='')}", status_code=303)
 
     profile = repo.get_vendor_profile(vendor_id)
@@ -3661,7 +3662,7 @@ async def vendor_change_request(request: Request, vendor_id: str):
         minimum_level = required_approval_level(change_type)
         requested_level = minimum_level
         if requested_level_raw:
-            requested_level = max(1, min(int(requested_level_raw), 3))
+            requested_level = max(MIN_CHANGE_APPROVAL_LEVEL, min(int(requested_level_raw), MAX_APPROVAL_LEVEL))
             requested_level = max(requested_level, minimum_level)
         payload = {"notes": change_notes}
         payload_meta: dict[str, object] = {}

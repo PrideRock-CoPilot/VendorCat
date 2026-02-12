@@ -28,6 +28,11 @@ Setup assets (manual Databricks schema bootstrap, env templates, local DB bootst
 - Direct-apply vs change-request write behavior by role
 - In `TVENDOR_ENV=prod`, runtime SQL policy can be enforced to allow only `INSERT`/`UPDATE` writes and block schema DDL.
 
+## Configuration Management
+- Canonical env key definitions and helpers are centralized in `app/vendor_catalog_app/env.py`.
+- Shared parsing helpers live in `app/vendor_catalog_app/util.py`.
+- Full env variable inventory and alias policy: `docs/configuration/environment-variables.md`.
+
 ## Run Modes
 - Local DB mode:
 ```bat
@@ -105,6 +110,12 @@ If required tables are missing or inaccessible, startup fails with a schema/boot
 ## Runtime Health Check
 - API: `GET /api/health`
 - Returns connection/schema readiness (`200` when healthy, `503` when bootstrap/connection is not ready).
+- API: `GET /api/health/live`
+- Lightweight liveness probe (process up, no DB dependency checks).
+- API: `GET /api/health/ready`
+- Readiness probe with runtime table check summary (`200` ready, `503` not ready).
+- API: `GET /api/health/observability`
+- Reports observability subsystem status (metrics/prometheus/statsd/alert state).
 - UI: `GET /bootstrap-diagnostics`
 - HTML diagnostics page with staged checks and remediation guidance (shown automatically on schema/bootstrap failures).
 - API: `GET /api/bootstrap-diagnostics`
@@ -112,11 +123,49 @@ If required tables are missing or inaccessible, startup fails with a schema/boot
 - Use this endpoint when the UI shows `Schema Bootstrap Required` to identify whether the issue is auth/binding/UC access or missing schema objects.
 - Diagnostics also include `resolved_connection` (safe previews + env-key presence map) to detect variable name mismatches.
 
+## Observability And Errors
+- Prometheus metrics endpoint is enabled at `TVENDOR_METRICS_PROMETHEUS_PATH` (default `/api/metrics`) when metrics are enabled.
+- Optional StatsD export emits request/DB counters and timing metrics.
+- API errors are standardized as:
+```json
+{
+  "ok": false,
+  "error": { "code": "BAD_REQUEST", "message": "..." },
+  "request_id": "...",
+  "timestamp": "..."
+}
+```
+- `X-Request-ID` is returned on API responses when enabled.
+
 ## Performance Tunables
 - `TVENDOR_QUERY_CACHE_ENABLED` (`true`/`false`, default `true`): enable in-process read-query cache.
-- `TVENDOR_QUERY_CACHE_TTL_SEC` (default `30`): cache TTL in seconds.
+- `TVENDOR_QUERY_CACHE_TTL_SEC` (default `120`): query cache TTL in seconds.
 - `TVENDOR_QUERY_CACHE_MAX_ENTRIES` (default `256`): max cached query entries before eviction.
+- `TVENDOR_REPO_CACHE_ENABLED` (`true`/`false`, default `true`): enable repository-level object cache.
+- `TVENDOR_REPO_CACHE_TTL_SEC` (default `120`): repository cache TTL in seconds.
+- `TVENDOR_REPO_CACHE_MAX_ENTRIES` (default `512`): max repository cached entries before LRU eviction.
+- `TVENDOR_DB_POOL_ENABLED` (`true`/`false`, default `true`): enable Databricks SQL connection pooling.
+- `TVENDOR_DB_POOL_MAX_SIZE` (default `8`): max simultaneous pooled Databricks connections.
+- `TVENDOR_DB_POOL_ACQUIRE_TIMEOUT_SEC` (default `15`): wait timeout for a pooled connection.
+- `TVENDOR_DB_POOL_IDLE_TTL_SEC` (default `600`): idle lifetime before pooled connections are closed.
+- `TVENDOR_METRICS_ENABLED` (`true`/`false`, default `true`): enable in-process metrics aggregation.
+- `TVENDOR_METRICS_PROMETHEUS_ENABLED` (`true`/`false`, default `true`): enable Prometheus scrape endpoint.
+- `TVENDOR_METRICS_PROMETHEUS_PATH` (default `/api/metrics`): Prometheus scrape path.
+- `TVENDOR_STATSD_ENABLED` (`true`/`false`, default `false`): emit StatsD counters/timers over UDP.
+- `TVENDOR_STATSD_HOST` (default `127.0.0.1`): StatsD host.
+- `TVENDOR_STATSD_PORT` (default `8125`): StatsD port.
+- `TVENDOR_STATSD_PREFIX` (default `tvendor`): StatsD metric prefix.
+- `TVENDOR_ALERTS_ENABLED` (`true`/`false`, default `true`): enable threshold-based performance alerts.
+- `TVENDOR_ALERT_WINDOW_SEC` (default `300`): rolling alert evaluation window.
+- `TVENDOR_ALERT_MIN_REQUESTS` (default `20`): minimum request count before evaluating alerts.
+- `TVENDOR_ALERT_COOLDOWN_SEC` (default `300`): minimum seconds between repeated alert logs per alert type.
+- `TVENDOR_ALERT_REQUEST_P95_MS` (default `0` disabled): alert when p95 request latency exceeds threshold.
+- `TVENDOR_ALERT_ERROR_RATE_PCT` (default `0` disabled): alert when 5xx error rate exceeds threshold.
+- `TVENDOR_ALERT_DB_AVG_MS` (default `0` disabled): alert when average DB time per request exceeds threshold.
+- `TVENDOR_REQUEST_ID_HEADER_ENABLED` (`true`/`false`, default `true`): include `X-Request-ID` response header.
+- `TVENDOR_ERROR_INCLUDE_DETAILS` (`true`/`false`, default `false`): include internal exception details in API error payloads.
 - `TVENDOR_IDENTITY_SYNC_TTL_SEC` (default `300`): throttle user directory identity upsert frequency per session/user.
+- `TVENDOR_SQL_PRELOAD_ON_STARTUP` (`true`/`false`, default `false`): preload all `app/vendor_catalog_app/sql/**/*.sql` templates at startup (fail-fast for missing/unreadable files).
 
 ## Local Start
 1. Install dependencies:

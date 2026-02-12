@@ -1,29 +1,28 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 import subprocess
 import sys
 
 from vendor_catalog_app.config import AppConfig
-
-
-def _as_bool(value: str | None, default: bool = False) -> bool:
-    if value is None:
-        return default
-    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+from vendor_catalog_app.env import (
+    TVENDOR_LOCAL_DB_AUTO_INIT,
+    TVENDOR_LOCAL_DB_RESET_ON_START,
+    TVENDOR_LOCAL_DB_SEED,
+    get_env_bool,
+)
 
 
 def ensure_local_db_ready(config: AppConfig) -> None:
     if not config.use_local_db:
         return
 
-    auto_init = _as_bool(os.getenv("TVENDOR_LOCAL_DB_AUTO_INIT"), default=True)
+    auto_init = get_env_bool(TVENDOR_LOCAL_DB_AUTO_INIT, default=True)
     if not auto_init:
         return
 
     db_path = Path(config.local_db_path).resolve()
-    reset_on_start = _as_bool(os.getenv("TVENDOR_LOCAL_DB_RESET_ON_START"), default=False)
+    reset_on_start = get_env_bool(TVENDOR_LOCAL_DB_RESET_ON_START, default=False)
     if db_path.exists() and not reset_on_start:
         return
 
@@ -32,7 +31,7 @@ def ensure_local_db_ready(config: AppConfig) -> None:
     if not init_script.exists():
         raise RuntimeError(f"Local DB init script not found: {init_script}")
 
-    seed_on_init = _as_bool(os.getenv("TVENDOR_LOCAL_DB_SEED"), default=False)
+    seed_on_init = get_env_bool(TVENDOR_LOCAL_DB_SEED, default=False)
     cmd = [
         sys.executable,
         str(init_script),

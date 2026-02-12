@@ -164,10 +164,9 @@
       </label>
       <label>Approval Level
         <select name="approval_level">
-          <option value="0">0</option>
-          <option value="1">1</option>
-          <option value="2">2</option>
-          <option value="3">3</option>
+          {% for level in role_approval_level_options %}
+          <option value="{{ level }}">{{ level }}</option>
+          {% endfor %}
         </select>
       </label>
       <div class="full inline-form">

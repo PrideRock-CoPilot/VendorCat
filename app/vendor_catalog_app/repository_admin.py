@@ -9,6 +9,9 @@ import pandas as pd
 
 from .security import (
     CHANGE_APPROVAL_LEVELS,
+    MAX_APPROVAL_LEVEL,
+    MIN_APPROVAL_LEVEL,
+    MIN_CHANGE_APPROVAL_LEVEL,
     ROLE_ADMIN,
     ROLE_APPROVER,
     ROLE_STEWARD,
@@ -21,6 +24,37 @@ from .security import (
 
 class RepositoryAdminMixin:
     """Role, scope, and admin audit data access methods."""
+    SECURITY_POLICY_VERSION_SETTING_KEY = "security_policy_version"
+    SECURITY_POLICY_VERSION_ACTOR = "system:security-policy"
+
+    def get_security_policy_version(self) -> int:
+        """Return the current security policy version used for session invalidation."""
+        cache_key = ("security_policy_version",)
+
+        def _load() -> int:
+            payload = self.get_user_setting(
+                self.SECURITY_POLICY_VERSION_ACTOR,
+                self.SECURITY_POLICY_VERSION_SETTING_KEY,
+            )
+            try:
+                version = int(payload.get("version", 1)) if isinstance(payload, dict) else 1
+            except Exception:
+                version = 1
+            return max(1, version)
+
+        return int(self._cached(cache_key, _load, ttl_seconds=30))
+
+    def bump_security_policy_version(self, *, updated_by: str | None = None) -> int:
+        """Bump security policy version so session-cached policies can refresh quickly."""
+        next_version = max(1, self.get_security_policy_version() + 1)
+        actor = str(updated_by or self.SECURITY_POLICY_VERSION_ACTOR).strip() or self.SECURITY_POLICY_VERSION_ACTOR
+        self.save_user_setting(
+            user_principal=self.SECURITY_POLICY_VERSION_ACTOR,
+            setting_key=self.SECURITY_POLICY_VERSION_SETTING_KEY,
+            setting_value={"version": next_version, "updated_by": actor, "updated_at": self._now().isoformat()},
+        )
+        self._cache_clear()
+        return next_version
 
     def list_role_definitions(self) -> pd.DataFrame:
         """Return role definitions merged with built-in defaults."""
@@ -180,7 +214,7 @@ class RepositoryAdminMixin:
             can_direct_apply = True
             can_submit_requests = True
             can_approve_requests = True
-            approval_level = max(approval_level, 3)
+            approval_level = max(approval_level, MAX_APPROVAL_LEVEL)
             allowed_actions = set(CHANGE_APPROVAL_LEVELS.keys())
 
         if ROLE_SYSTEM_ADMIN in active_roles and ROLE_ADMIN not in active_roles:
@@ -194,7 +228,7 @@ class RepositoryAdminMixin:
             allowed_actions = {
                 action
                 for action, required in CHANGE_APPROVAL_LEVELS.items()
-                if int(required) <= int(approval_level)
+                if int(required) <= int(max(MIN_CHANGE_APPROVAL_LEVEL, approval_level))
             }
 
         return {
@@ -234,7 +268,7 @@ class RepositoryAdminMixin:
         payload = (
             str(role_name or role_key).strip() or role_key,
             str(description or "").strip() or None,
-            max(0, min(int(approval_level or 0), 3)),
+            max(MIN_APPROVAL_LEVEL, min(int(approval_level or 0), MAX_APPROVAL_LEVEL)),
             bool(can_edit),
             bool(can_report),
             bool(can_direct_apply),
@@ -248,12 +282,14 @@ class RepositoryAdminMixin:
                 params=(role_key, *payload),
                 sec_role_definition=self._table("sec_role_definition"),
             )
+            self.bump_security_policy_version(updated_by=updated_by)
             return
         self._execute_file(
             "updates/update_role_definition.sql",
             params=(*payload, role_key),
             sec_role_definition=self._table("sec_role_definition"),
         )
+        self.bump_security_policy_version(updated_by=updated_by)
 
     def replace_role_permissions(
         self,
@@ -284,6 +320,7 @@ class RepositoryAdminMixin:
                 params=(role_key, "change_action", action_code, True, now),
                 sec_role_permission=self._table("sec_role_permission"),
             )
+        self.bump_security_policy_version(updated_by=updated_by)
 
     def list_role_grants(self) -> pd.DataFrame:
         """List role grants assigned to users."""
@@ -323,6 +360,7 @@ class RepositoryAdminMixin:
             params=(target_ref, role_code, True, granted_by_ref, now, None),
             sec_user_role_map=self._table("sec_user_role_map"),
         )
+        self.bump_security_policy_version(updated_by=granted_by)
         self._audit_access(
             actor_user_principal=granted_by_ref,
             action_type="grant_role",
@@ -345,6 +383,7 @@ class RepositoryAdminMixin:
             params=(target_ref, org_id, scope_level, True, now),
             sec_user_org_scope=self._table("sec_user_org_scope"),
         )
+        self.bump_security_policy_version(updated_by=granted_by)
         self._audit_access(
             actor_user_principal=granted_by_ref,
             action_type="grant_scope",

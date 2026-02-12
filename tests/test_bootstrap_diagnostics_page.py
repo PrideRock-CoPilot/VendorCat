@@ -24,6 +24,7 @@ class _DiagnosticsRepoHealthy:
 
 
 def test_bootstrap_diagnostics_page_renders(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TVENDOR_BOOTSTRAP_DIAGNOSTICS_ENABLED", "true")
     app = create_app()
     monkeypatch.setattr(diagnostics_router, "get_repo", lambda: _DiagnosticsRepoHealthy())
     monkeypatch.setattr(

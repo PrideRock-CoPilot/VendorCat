@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request
+from fastapi.responses import PlainTextResponse
 
-from vendor_catalog_app.web.bootstrap_diagnostics import build_bootstrap_diagnostics_payload
+from vendor_catalog_app.web.bootstrap_diagnostics import (
+    bootstrap_diagnostics_authorized,
+    build_bootstrap_diagnostics_payload,
+)
 from vendor_catalog_app.web.services import get_config, get_repo, resolve_databricks_request_identity
 
 
@@ -11,8 +15,10 @@ router = APIRouter()
 
 @router.get("/bootstrap-diagnostics")
 def bootstrap_diagnostics_page(request: Request):
-    repo = get_repo()
     config = get_config()
+    if not bootstrap_diagnostics_authorized(request, config):
+        return PlainTextResponse("Not found.", status_code=404)
+    repo = get_repo()
     identity = resolve_databricks_request_identity(request)
     diagnostics, status_code = build_bootstrap_diagnostics_payload(repo, config, identity)
     context = {

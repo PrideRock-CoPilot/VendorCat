@@ -21,6 +21,8 @@ from vendor_catalog_app.repository import (
 )
 from vendor_catalog_app.security import (
     CHANGE_APPROVAL_LEVELS,
+    MAX_APPROVAL_LEVEL,
+    MIN_APPROVAL_LEVEL,
     ROLE_CHOICES,
     change_action_choices,
 )
@@ -32,6 +34,7 @@ from vendor_catalog_app.web.services import (
     get_repo,
     get_user_context,
     log_page_view,
+    testing_role_override_enabled,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -323,9 +326,13 @@ async def save_role(request: Request):
         return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
 
     try:
-        approval_level = max(0, min(int(approval_level_raw), 3))
+        approval_level = max(MIN_APPROVAL_LEVEL, min(int(approval_level_raw), MAX_APPROVAL_LEVEL))
     except Exception:
-        add_flash(request, "Approval level must be a number between 0 and 3.", "error")
+        add_flash(
+            request,
+            f"Approval level must be a number between {MIN_APPROVAL_LEVEL} and {MAX_APPROVAL_LEVEL}.",
+            "error",
+        )
         return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
 
     can_edit = str(form.get("can_edit", "")).strip().lower() == "on"
@@ -373,6 +380,9 @@ async def save_role(request: Request):
 async def set_testing_role(request: Request):
     repo = get_repo()
     user = get_user_context(request)
+    if not testing_role_override_enabled(user.config):
+        add_flash(request, "Testing role override is disabled in this environment.", "error")
+        return RedirectResponse(url="/dashboard", status_code=303)
     if not user.has_admin_rights:
         add_flash(request, "Admin access required.", "error")
         return RedirectResponse(url="/dashboard", status_code=303)

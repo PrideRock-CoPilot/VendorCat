@@ -7,6 +7,8 @@ from vendor_catalog_app.security import (
     ADMIN_PORTAL_ROLES,
     ROLE_ADMIN,
     CHANGE_APPROVAL_LEVELS,
+    MAX_APPROVAL_LEVEL,
+    MIN_CHANGE_APPROVAL_LEVEL,
     can_approve_requests,
     required_approval_level,
     can_apply_change,
@@ -94,5 +96,9 @@ class UserContext:
         if not self.can_approve_requests:
             return False
         if self.role_policy is not None:
-            return self.approval_level >= int(required_level or 0)
+            level = max(
+                MIN_CHANGE_APPROVAL_LEVEL,
+                min(int(required_level or MIN_CHANGE_APPROVAL_LEVEL), MAX_APPROVAL_LEVEL),
+            )
+            return self.approval_level >= level
         return can_review_change(self.roles, required_level)

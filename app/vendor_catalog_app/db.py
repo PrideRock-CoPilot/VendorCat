@@ -6,7 +6,6 @@ from datetime import date, datetime
 import hashlib
 import logging
 from pathlib import Path
-import os
 import re
 import sqlite3
 import threading
@@ -22,7 +21,23 @@ except Exception:  # pragma: no cover - optional until OAuth client credentials 
     DatabricksSDKConfig = None
     oauth_service_principal = None
 
+from vendor_catalog_app.cache import LruTtlCache
 from vendor_catalog_app.config import AppConfig
+from vendor_catalog_app.env import (
+    TVENDOR_DB_POOL_ACQUIRE_TIMEOUT_SEC,
+    TVENDOR_DB_POOL_ENABLED,
+    TVENDOR_DB_POOL_IDLE_TTL_SEC,
+    TVENDOR_DB_POOL_MAX_SIZE,
+    TVENDOR_QUERY_CACHE_ENABLED,
+    TVENDOR_QUERY_CACHE_MAX_ENTRIES,
+    TVENDOR_QUERY_CACHE_TTL_SEC,
+    TVENDOR_SLOW_QUERY_MS,
+    TVENDOR_SQL_TRACE_ENABLED,
+    TVENDOR_SQL_TRACE_MAX_LEN,
+    get_env_bool,
+    get_env_float,
+    get_env_int,
+)
 
 PERF_LOGGER = logging.getLogger("vendor_catalog_app.perf")
 _REQUEST_PERF_CONTEXT: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
@@ -48,6 +63,7 @@ def start_request_perf_context(
             "db_total_ms": 0.0,
             "db_max_ms": 0.0,
             "db_cache_hits": 0,
+            "db_errors": 0,
             "slow_queries": [],
         }
     )
@@ -76,41 +92,40 @@ class DataExecutionError(RuntimeError):
 class DatabricksSQLClient:
     def __init__(self, config: AppConfig) -> None:
         self.config = config
-        self._thread_state = threading.local()
-        self._cache_lock = threading.Lock()
-        self._query_cache: dict[tuple[str, tuple[Any, ...]], tuple[float, pd.DataFrame]] = {}
-        self._cache_enabled = self._as_bool(os.getenv("TVENDOR_QUERY_CACHE_ENABLED"), default=True)
-        self._cache_ttl_seconds = self._as_int(os.getenv("TVENDOR_QUERY_CACHE_TTL_SEC"), default=120, min_value=0)
-        self._cache_max_entries = self._as_int(
-            os.getenv("TVENDOR_QUERY_CACHE_MAX_ENTRIES"),
+        self._query_cache_enabled = get_env_bool(TVENDOR_QUERY_CACHE_ENABLED, default=True)
+        self._query_cache_ttl_seconds = get_env_int(TVENDOR_QUERY_CACHE_TTL_SEC, default=120, min_value=0)
+        self._query_cache_max_entries = get_env_int(
+            TVENDOR_QUERY_CACHE_MAX_ENTRIES,
             default=256,
             min_value=1,
         )
-        self._sql_trace_enabled = self._as_bool(os.getenv("TVENDOR_SQL_TRACE_ENABLED"), default=False)
-        self._sql_trace_max_len = self._as_int(os.getenv("TVENDOR_SQL_TRACE_MAX_LEN"), default=180, min_value=80)
-        self._slow_query_ms = self._as_float(os.getenv("TVENDOR_SLOW_QUERY_MS"), default=750.0, min_value=1.0)
+        self._query_cache = LruTtlCache[tuple[str, tuple[Any, ...]], pd.DataFrame](
+            enabled=self._query_cache_enabled,
+            ttl_seconds=self._query_cache_ttl_seconds,
+            max_entries=self._query_cache_max_entries,
+            clone_value=lambda frame: frame.copy(deep=True),
+        )
 
-    @staticmethod
-    def _as_bool(value: str | None, default: bool = False) -> bool:
-        if value is None:
-            return default
-        return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+        self._pool_enabled = (not self.config.use_local_db) and get_env_bool(TVENDOR_DB_POOL_ENABLED, default=True)
+        self._pool_max_size = get_env_int(TVENDOR_DB_POOL_MAX_SIZE, default=8, min_value=1)
+        self._pool_acquire_timeout_sec = get_env_float(
+            TVENDOR_DB_POOL_ACQUIRE_TIMEOUT_SEC,
+            default=15.0,
+            min_value=0.1,
+        )
+        self._pool_idle_ttl_sec = get_env_float(
+            TVENDOR_DB_POOL_IDLE_TTL_SEC,
+            default=600.0,
+            min_value=0.0,
+        )
+        self._pool_condition = threading.Condition()
+        self._pool_available: list[tuple[float, Any]] = []
+        self._pool_total_connections = 0
+        self._pool_closed = False
 
-    @staticmethod
-    def _as_int(value: str | None, default: int, min_value: int) -> int:
-        try:
-            parsed = int(str(value or "").strip())
-        except Exception:
-            parsed = default
-        return max(min_value, parsed)
-
-    @staticmethod
-    def _as_float(value: str | None, default: float, min_value: float) -> float:
-        try:
-            parsed = float(str(value or "").strip())
-        except Exception:
-            parsed = float(default)
-        return max(float(min_value), parsed)
+        self._sql_trace_enabled = get_env_bool(TVENDOR_SQL_TRACE_ENABLED, default=False)
+        self._sql_trace_max_len = get_env_int(TVENDOR_SQL_TRACE_MAX_LEN, default=180, min_value=80)
+        self._slow_query_ms = get_env_float(TVENDOR_SLOW_QUERY_MS, default=750.0, min_value=1.0)
 
     def _validate(self) -> None:
         if self.config.use_local_db:
@@ -182,20 +197,12 @@ class DatabricksSQLClient:
 
         return dbsql.connect(credentials_provider=_runtime_credentials_provider, **common)
 
-    def _thread_connection(self):
-        return getattr(self._thread_state, "conn", None)
-
-    def _set_thread_connection(self, conn: Any | None) -> None:
-        self._thread_state.conn = conn
-
-    def _drop_thread_connection(self) -> None:
-        conn = self._thread_connection()
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception:
-                pass
-        self._set_thread_connection(None)
+    @staticmethod
+    def _close_connection(conn: Any) -> None:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
     @staticmethod
     def _is_connection_error(exc: BaseException) -> bool:
@@ -214,8 +221,103 @@ class DatabricksSQLClient:
         )
         return any(token in message for token in signals)
 
+    def _collect_expired_pool_connections_locked(self, now: float) -> list[Any]:
+        if self._pool_idle_ttl_sec <= 0:
+            return []
+        stale: list[Any] = []
+        active: list[tuple[float, Any]] = []
+        for released_at, conn in self._pool_available:
+            if (now - float(released_at)) >= float(self._pool_idle_ttl_sec):
+                stale.append(conn)
+            else:
+                active.append((released_at, conn))
+        if stale:
+            self._pool_available = active
+            self._pool_total_connections = max(0, self._pool_total_connections - len(stale))
+        return stale
+
+    def _acquire_pooled_connection(self) -> Any:
+        deadline = time.monotonic() + float(self._pool_acquire_timeout_sec)
+        while True:
+            stale_to_close: list[Any] = []
+            candidate_conn = None
+            should_create = False
+            with self._pool_condition:
+                if self._pool_closed:
+                    raise DataConnectionError("Databricks SQL client pool is closed.")
+                now = time.monotonic()
+                stale_to_close = self._collect_expired_pool_connections_locked(now)
+                if self._pool_available:
+                    _, candidate_conn = self._pool_available.pop()
+                if candidate_conn is None and self._pool_total_connections < self._pool_max_size:
+                    self._pool_total_connections += 1
+                    should_create = True
+                elif candidate_conn is None:
+                    remaining = deadline - now
+                    if remaining <= 0:
+                        raise DataConnectionError(
+                            (
+                                "Timed out waiting for Databricks SQL connection from pool. "
+                                f"max_size={self._pool_max_size}, timeout_sec={self._pool_acquire_timeout_sec:.1f}"
+                            )
+                        )
+                    self._pool_condition.wait(timeout=remaining)
+
+            for conn in stale_to_close:
+                self._close_connection(conn)
+
+            if candidate_conn is not None:
+                return candidate_conn
+
+            if not should_create:
+                continue
+
+            self._validate()
+            try:
+                return self._connect_databricks()
+            except Exception as exc:
+                with self._pool_condition:
+                    self._pool_total_connections = max(0, self._pool_total_connections - 1)
+                    self._pool_condition.notify()
+                details = str(exc).strip()
+                message = "Failed to connect to Databricks SQL warehouse."
+                if details:
+                    message = f"{message} Details: {details}"
+                raise DataConnectionError(message) from exc
+
+    def _release_pooled_connection(self, conn: Any, *, broken: bool) -> None:
+        close_connection = False
+        with self._pool_condition:
+            if broken or self._pool_closed:
+                self._pool_total_connections = max(0, self._pool_total_connections - 1)
+                self._pool_condition.notify()
+                close_connection = True
+            else:
+                self._pool_available.append((time.monotonic(), conn))
+                self._pool_condition.notify()
+        if close_connection:
+            self._close_connection(conn)
+
+    def close(self) -> None:
+        if not self._pool_enabled:
+            return
+        to_close: list[Any] = []
+        with self._pool_condition:
+            self._pool_closed = True
+            if self._pool_available:
+                to_close = [conn for _, conn in self._pool_available]
+                self._pool_available.clear()
+                self._pool_total_connections = max(0, self._pool_total_connections - len(to_close))
+            self._pool_condition.notify_all()
+        for conn in to_close:
+            self._close_connection(conn)
+
     @contextmanager
     def _connection(self):
+        conn = None
+        close_after_use = False
+        release_to_pool = False
+        pooled_connection_broken = False
         if self.config.use_local_db:
             db_path = Path(self.config.local_db_path).resolve()
             if not db_path.exists():
@@ -228,8 +330,10 @@ class DatabricksSQLClient:
                 raise DataConnectionError(f"Failed to connect to local SQLite DB at {db_path}.") from exc
             close_after_use = True
         else:
-            conn = self._thread_connection()
-            if conn is None:
+            if self._pool_enabled:
+                conn = self._acquire_pooled_connection()
+                release_to_pool = True
+            else:
                 self._validate()
                 try:
                     conn = self._connect_databricks()
@@ -239,17 +343,18 @@ class DatabricksSQLClient:
                     if details:
                         message = f"{message} Details: {details}"
                     raise DataConnectionError(message) from exc
-                self._set_thread_connection(conn)
-            close_after_use = False
+                close_after_use = True
         try:
             yield conn
         except Exception as exc:
-            if not self.config.use_local_db and self._is_connection_error(exc):
-                self._drop_thread_connection()
+            if release_to_pool and self._is_connection_error(exc):
+                pooled_connection_broken = True
             raise
         finally:
-            if close_after_use:
-                conn.close()
+            if release_to_pool and conn is not None:
+                self._release_pooled_connection(conn, broken=pooled_connection_broken)
+            elif close_after_use and conn is not None:
+                self._close_connection(conn)
 
     def _prepare(self, statement: str) -> str:
         normalized = str(statement or "")
@@ -281,31 +386,13 @@ class DatabricksSQLClient:
         return statement, params
 
     def _cache_get(self, key: tuple[str, tuple[Any, ...]]) -> pd.DataFrame | None:
-        if not self._cache_enabled or self._cache_ttl_seconds <= 0:
-            return None
-        now = time.monotonic()
-        with self._cache_lock:
-            entry = self._query_cache.get(key)
-            if entry is None:
-                return None
-            expires_at, frame = entry
-            if expires_at <= now:
-                self._query_cache.pop(key, None)
-                return None
-            return frame.copy(deep=True)
+        return self._query_cache.get(key)
 
     def _cache_put(self, key: tuple[str, tuple[Any, ...]], frame: pd.DataFrame) -> None:
-        if not self._cache_enabled or self._cache_ttl_seconds <= 0:
-            return
-        expires_at = time.monotonic() + float(self._cache_ttl_seconds)
-        with self._cache_lock:
-            if len(self._query_cache) >= self._cache_max_entries:
-                self._query_cache.pop(next(iter(self._query_cache)))
-            self._query_cache[key] = (expires_at, frame.copy(deep=True))
+        self._query_cache.set(key, frame)
 
     def _cache_clear(self) -> None:
-        with self._cache_lock:
-            self._query_cache.clear()
+        self._query_cache.clear()
 
     @staticmethod
     def _sql_preview(statement: str, max_len: int = 180) -> str:
@@ -335,6 +422,8 @@ class DatabricksSQLClient:
             request_ctx["db_max_ms"] = max(float(request_ctx.get("db_max_ms", 0.0)), float(elapsed_ms))
             if cached:
                 request_ctx["db_cache_hits"] = int(request_ctx.get("db_cache_hits", 0)) + 1
+            if error:
+                request_ctx["db_errors"] = int(request_ctx.get("db_errors", 0)) + 1
 
             slow_threshold = float(request_ctx.get("slow_query_ms", self._slow_query_ms))
             if elapsed_ms >= slow_threshold:
@@ -366,6 +455,16 @@ class DatabricksSQLClient:
             str(bool(error)).lower(),
             sql_hash,
             preview,
+            extra={
+                "event": "sql_perf",
+                "operation": operation,
+                "elapsed_ms": round(float(elapsed_ms), 2),
+                "cached": bool(cached),
+                "rows": None if row_count is None else int(row_count),
+                "error": bool(error),
+                "sql_hash": sql_hash,
+                "sql_preview": preview,
+            },
         )
 
     @staticmethod

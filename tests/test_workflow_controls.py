@@ -158,7 +158,7 @@ def test_viewer_can_submit_change_request_with_assignee_and_higher_level(client:
             "return_to": "/vendors",
             "change_type": "update_vendor_profile",
             "change_notes": "Viewer-submitted request",
-            "approval_level_required": "3",
+            "approval_level_required": "9",
             "assigned_approver": "approver@example.com",
         },
         follow_redirects=True,
@@ -173,7 +173,7 @@ def test_viewer_can_submit_change_request_with_assignee_and_higher_level(client:
     assert row is not None
     payload = json.loads(str(row.get("requested_payload_json") or "{}"))
     meta = payload.get("_meta", {})
-    assert int(meta.get("approval_level_required") or 0) == 3
+    assert int(meta.get("approval_level_required") or 0) == 9
     assert str(meta.get("assigned_approver") or "") == "approver@example.com"
 
     queue = client.get("/workflows?queue=my_submissions&status=all")

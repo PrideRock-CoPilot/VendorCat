@@ -34,6 +34,9 @@ Databricks-compatible Vendor Catalog application with a complete data model, gov
   - HTTP path can be provided directly (`DATABRICKS_HTTP_PATH`) or derived from `DATABRICKS_WAREHOUSE_ID`.
   - Prod SQL policy can be enforced with `TVENDOR_ENFORCE_PROD_SQL_POLICY=true` and `TVENDOR_ALLOWED_WRITE_VERBS=INSERT,UPDATE`.
 
+Configuration reference:
+- `docs/configuration/environment-variables.md`
+
 Safety guard: local DB is enabled only for `TVENDOR_ENV` values `dev`, `development`, or `local`.
 
 Databricks schema bootstrap is intentionally manual (security boundary). Use:

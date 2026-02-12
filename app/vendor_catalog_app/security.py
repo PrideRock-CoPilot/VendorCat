@@ -19,46 +19,44 @@ ROLE_CHOICES = (
 )
 ADMIN_PORTAL_ROLES = (ROLE_SYSTEM_ADMIN, ROLE_ADMIN)
 
-DEFAULT_APPROVAL_LEVEL = 2
-APPROVAL_LEVEL_LABELS = {
-    1: "level_1",
-    2: "level_2",
-    3: "level_3",
-}
+MIN_APPROVAL_LEVEL = 0
+MAX_APPROVAL_LEVEL = 10
+MIN_CHANGE_APPROVAL_LEVEL = 1
+DEFAULT_APPROVAL_LEVEL = 6
 
 CHANGE_APPROVAL_LEVELS = {
-    "create_vendor_profile": 3,
-    "update_vendor_profile": 2,
-    "update_offering": 2,
-    "create_offering": 2,
-    "map_contract_to_offering": 2,
-    "map_demo_to_offering": 1,
-    "add_vendor_owner": 2,
-    "add_vendor_org_assignment": 2,
-    "add_vendor_contact": 1,
-    "add_offering_owner": 2,
-    "remove_offering_owner": 2,
-    "add_offering_contact": 1,
-    "remove_offering_contact": 1,
-    "update_offering_profile": 2,
-    "add_offering_note": 1,
-    "add_offering_ticket": 1,
-    "update_offering_ticket": 1,
-    "create_project": 2,
-    "update_project": 2,
-    "update_project_owner": 2,
-    "attach_project_vendor": 2,
-    "attach_project_offering": 2,
-    "add_project_note": 1,
-    "create_project_demo": 2,
-    "update_project_demo": 1,
-    "remove_project_demo": 1,
-    "create_doc_link": 1,
-    "remove_doc_link": 1,
-    "create_demo_outcome": 2,
-    "record_contract_cancellation": 3,
-    "grant_role": 3,
-    "grant_scope": 3,
+    "create_vendor_profile": 9,
+    "update_vendor_profile": 6,
+    "update_offering": 6,
+    "create_offering": 6,
+    "map_contract_to_offering": 6,
+    "map_demo_to_offering": 3,
+    "add_vendor_owner": 6,
+    "add_vendor_org_assignment": 6,
+    "add_vendor_contact": 3,
+    "add_offering_owner": 6,
+    "remove_offering_owner": 6,
+    "add_offering_contact": 3,
+    "remove_offering_contact": 3,
+    "update_offering_profile": 6,
+    "add_offering_note": 3,
+    "add_offering_ticket": 3,
+    "update_offering_ticket": 3,
+    "create_project": 6,
+    "update_project": 6,
+    "update_project_owner": 6,
+    "attach_project_vendor": 6,
+    "attach_project_offering": 6,
+    "add_project_note": 3,
+    "create_project_demo": 6,
+    "update_project_demo": 3,
+    "remove_project_demo": 3,
+    "create_doc_link": 3,
+    "remove_doc_link": 3,
+    "create_demo_outcome": 6,
+    "record_contract_cancellation": 9,
+    "grant_role": 9,
+    "grant_scope": 9,
 }
 CHANGE_ACTION_CHOICES = tuple(sorted(CHANGE_APPROVAL_LEVELS.keys()))
 
@@ -74,7 +72,7 @@ ROLE_DEFAULT_DEFINITIONS = {
     ROLE_ADMIN: {
         "role_name": "Vendor Admin",
         "description": "Full administrative access across all workflows and data changes.",
-        "approval_level": 3,
+        "approval_level": 10,
         "can_edit": True,
         "can_report": True,
         "can_direct_apply": True,
@@ -82,7 +80,7 @@ ROLE_DEFAULT_DEFINITIONS = {
     ROLE_APPROVER: {
         "role_name": "Vendor Approver",
         "description": "Can review and approve requests but cannot directly edit vendor records.",
-        "approval_level": 2,
+        "approval_level": 7,
         "can_edit": False,
         "can_report": True,
         "can_direct_apply": False,
@@ -90,7 +88,7 @@ ROLE_DEFAULT_DEFINITIONS = {
     ROLE_STEWARD: {
         "role_name": "Vendor Steward",
         "description": "Data steward with elevated review/apply rights for governed updates.",
-        "approval_level": 2,
+        "approval_level": 7,
         "can_edit": True,
         "can_report": True,
         "can_direct_apply": True,
@@ -98,7 +96,7 @@ ROLE_DEFAULT_DEFINITIONS = {
     ROLE_EDITOR: {
         "role_name": "Vendor Editor",
         "description": "Contributor role for day-to-day edits and change submissions.",
-        "approval_level": 1,
+        "approval_level": 4,
         "can_edit": True,
         "can_report": True,
         "can_direct_apply": False,
@@ -157,14 +155,11 @@ def effective_roles(user_roles: set[str]) -> set[str]:
 
 
 def approval_level_for_roles(user_roles: set[str]) -> int:
-    level = 0
-    if ROLE_EDITOR in user_roles:
-        level = max(level, 1)
-    if ROLE_STEWARD in user_roles or ROLE_APPROVER in user_roles:
-        level = max(level, 2)
-    if ROLE_ADMIN in user_roles:
-        level = max(level, 3)
-    return level
+    level = MIN_APPROVAL_LEVEL
+    for role_code in user_roles:
+        role_level = int(ROLE_DEFAULT_DEFINITIONS.get(str(role_code), {}).get("approval_level", MIN_APPROVAL_LEVEL))
+        level = max(level, role_level)
+    return max(MIN_APPROVAL_LEVEL, min(level, MAX_APPROVAL_LEVEL))
 
 
 def required_approval_level(change_type: str) -> int:
@@ -172,8 +167,8 @@ def required_approval_level(change_type: str) -> int:
 
 
 def approval_level_label(level: int) -> str:
-    level = max(1, min(int(level or DEFAULT_APPROVAL_LEVEL), 3))
-    return APPROVAL_LEVEL_LABELS.get(level, APPROVAL_LEVEL_LABELS[DEFAULT_APPROVAL_LEVEL])
+    level = max(MIN_CHANGE_APPROVAL_LEVEL, min(int(level or DEFAULT_APPROVAL_LEVEL), MAX_APPROVAL_LEVEL))
+    return f"level_{level}"
 
 
 def can_apply_change(user_roles: set[str], change_type: str) -> bool:
@@ -181,7 +176,8 @@ def can_apply_change(user_roles: set[str], change_type: str) -> bool:
 
 
 def can_review_change(user_roles: set[str], required_level: int) -> bool:
-    return approval_level_for_roles(user_roles) >= int(required_level or DEFAULT_APPROVAL_LEVEL)
+    level = max(MIN_CHANGE_APPROVAL_LEVEL, min(int(required_level or DEFAULT_APPROVAL_LEVEL), MAX_APPROVAL_LEVEL))
+    return approval_level_for_roles(user_roles) >= level
 
 
 def change_action_choices() -> tuple[str, ...]:

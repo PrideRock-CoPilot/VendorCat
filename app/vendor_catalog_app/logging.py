@@ -2,18 +2,43 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sys
 from datetime import datetime, timezone
 from typing import Any
 
+from vendor_catalog_app.env import (
+    TVENDOR_LOG_CAPTURE_ROOT,
+    TVENDOR_LOG_JSON,
+    TVENDOR_LOG_LEVEL,
+    get_env,
+    get_env_bool,
+)
+
 _LOGGING_CONFIGURED = False
-
-
-def _as_bool(value: str | None, default: bool = False) -> bool:
-    if value is None:
-        return default
-    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+_RESERVED_LOG_RECORD_FIELDS = {
+    "name",
+    "msg",
+    "args",
+    "levelname",
+    "levelno",
+    "pathname",
+    "filename",
+    "module",
+    "exc_info",
+    "exc_text",
+    "stack_info",
+    "lineno",
+    "funcName",
+    "created",
+    "msecs",
+    "relativeCreated",
+    "thread",
+    "threadName",
+    "processName",
+    "process",
+    "message",
+    "asctime",
+}
 
 
 class _JsonFormatter(logging.Formatter):
@@ -24,6 +49,12 @@ class _JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
+        for key, value in record.__dict__.items():
+            if key in _RESERVED_LOG_RECORD_FIELDS:
+                continue
+            if key.startswith("_"):
+                continue
+            payload[key] = value
         if record.exc_info:
             payload["exc_info"] = self.formatException(record.exc_info)
         return json.dumps(payload, default=str, ensure_ascii=True)
@@ -34,10 +65,10 @@ def setup_app_logging() -> None:
     if _LOGGING_CONFIGURED:
         return
 
-    level_name = str(os.getenv("TVENDOR_LOG_LEVEL", "INFO")).strip().upper() or "INFO"
+    level_name = get_env(TVENDOR_LOG_LEVEL, "INFO").upper() or "INFO"
     level = getattr(logging, level_name, logging.INFO)
-    use_json = _as_bool(os.getenv("TVENDOR_LOG_JSON"), default=False)
-    capture_root = _as_bool(os.getenv("TVENDOR_LOG_CAPTURE_ROOT"), default=False)
+    use_json = get_env_bool(TVENDOR_LOG_JSON, default=False)
+    capture_root = get_env_bool(TVENDOR_LOG_CAPTURE_ROOT, default=False)
 
     formatter: logging.Formatter
     if use_json:
