@@ -508,6 +508,23 @@ CREATE TABLE IF NOT EXISTS {fq_schema}.app_offering_ticket (
   updated_by STRING NOT NULL
 ) USING DELTA;
 
+CREATE TABLE IF NOT EXISTS {fq_schema}.app_offering_invoice (
+  invoice_id STRING NOT NULL,
+  offering_id STRING NOT NULL,
+  vendor_id STRING NOT NULL,
+  invoice_number STRING,
+  invoice_date DATE NOT NULL,
+  amount DOUBLE NOT NULL,
+  currency_code STRING NOT NULL,
+  invoice_status STRING NOT NULL,
+  notes STRING,
+  active_flag BOOLEAN NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  created_by STRING NOT NULL,
+  updated_at TIMESTAMP NOT NULL,
+  updated_by STRING NOT NULL
+) USING DELTA;
+
 CREATE TABLE IF NOT EXISTS {fq_schema}.app_document_link (
   doc_id STRING NOT NULL,
   entity_type STRING NOT NULL,

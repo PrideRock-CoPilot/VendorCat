@@ -71,6 +71,7 @@ OFFERING_SERVICE_TYPE_FALLBACK = [
 OFFERING_SECTIONS = [
     ("summary", "Summary"),
     ("profile", "Profile"),
+    ("financials", "Financials"),
     ("dataflow", "Data Flow"),
     ("ownership", "Ownership"),
     ("delivery", "Delivery"),
@@ -82,6 +83,7 @@ OFFERING_TICKET_STATUSES = ["open", "in_progress", "blocked", "resolved", "close
 OFFERING_TICKET_PRIORITIES = ["low", "medium", "high", "critical"]
 OFFERING_NOTE_TYPES = ["general", "issue", "implementation", "cost", "data_flow", "misc", "risk", "decision"]
 OFFERING_DATA_METHOD_OPTIONS = ["api", "file_transfer", "cloud_to_cloud", "event_stream", "manual", "other"]
+OFFERING_INVOICE_STATUSES = ["received", "approved", "paid", "disputed", "void"]
 
 VENDOR_SECTIONS = [
     ("summary", "Summary"),
@@ -348,6 +350,117 @@ def _build_line_chart_points(
         item["plot_x"] = x
         item["plot_y"] = y
     return " ".join(points), cleaned
+
+
+def _offering_invoice_summary(
+    offering_profile: dict[str, object] | None,
+    invoice_rows: list[dict[str, object]],
+    *,
+    window_months: int = 3,
+    alert_threshold_pct: float = 10.0,
+) -> dict[str, object]:
+    months = max(1, min(int(window_months or 3), 12))
+    estimated_value: float | None = None
+    try:
+        raw_estimated = (offering_profile or {}).get("estimated_monthly_cost")
+        if raw_estimated not in (None, ""):
+            estimated_value = float(raw_estimated)
+    except Exception:
+        estimated_value = None
+
+    if not invoice_rows:
+        return {
+            "window_months": months,
+            "invoice_count_total": 0,
+            "invoice_count_window": 0,
+            "total_actual_all_time": 0.0,
+            "total_actual_window": 0.0,
+            "actual_monthly_avg": 0.0,
+            "estimated_monthly_cost": estimated_value,
+            "variance_amount": None,
+            "variance_pct": None,
+            "status": "no_actuals" if estimated_value not in (None, 0.0) else "no_estimate",
+            "alert_flag": False,
+            "alert_message": "",
+            "last_invoice_date": "",
+        }
+
+    frame = pd.DataFrame(invoice_rows)
+    if "amount" not in frame.columns:
+        frame["amount"] = 0.0
+    if "invoice_date" not in frame.columns:
+        frame["invoice_date"] = None
+    frame["amount"] = pd.to_numeric(frame["amount"], errors="coerce").fillna(0.0)
+    frame["invoice_date"] = pd.to_datetime(frame["invoice_date"], errors="coerce")
+    frame = frame[frame["invoice_date"].notna()].copy()
+    if frame.empty:
+        return {
+            "window_months": months,
+            "invoice_count_total": int(len(invoice_rows)),
+            "invoice_count_window": 0,
+            "total_actual_all_time": 0.0,
+            "total_actual_window": 0.0,
+            "actual_monthly_avg": 0.0,
+            "estimated_monthly_cost": estimated_value,
+            "variance_amount": None,
+            "variance_pct": None,
+            "status": "no_actuals" if estimated_value not in (None, 0.0) else "no_estimate",
+            "alert_flag": False,
+            "alert_message": "",
+            "last_invoice_date": "",
+        }
+
+    total_actual_all_time = float(frame["amount"].sum())
+    invoice_count_total = int(len(frame))
+    now_ts = pd.Timestamp.utcnow()
+    if now_ts.tzinfo is not None:
+        now_ts = now_ts.tz_localize(None)
+    cutoff_month_start = (now_ts.to_period("M") - (months - 1)).to_timestamp()
+    window = frame[frame["invoice_date"] >= cutoff_month_start].copy()
+    total_actual_window = float(window["amount"].sum()) if not window.empty else 0.0
+    invoice_count_window = int(len(window))
+    actual_monthly_avg = total_actual_window / float(months)
+    last_invoice_date = ""
+    if not frame.empty:
+        last_invoice_date = str(frame["invoice_date"].max().date())
+
+    variance_amount: float | None = None
+    variance_pct: float | None = None
+    status = "no_estimate"
+    alert_flag = False
+    alert_message = ""
+    if estimated_value is not None and estimated_value > 0:
+        if invoice_count_window == 0:
+            status = "no_actuals"
+        else:
+            variance_amount = actual_monthly_avg - estimated_value
+            variance_pct = (variance_amount / estimated_value) * 100.0
+            if variance_pct >= alert_threshold_pct:
+                status = "over_budget"
+                alert_flag = True
+                alert_message = (
+                    f"Actual monthly run-rate is {variance_pct:.1f}% above estimate over the last {months} month(s)."
+                )
+            elif variance_pct <= (0.0 - alert_threshold_pct):
+                status = "under_budget"
+            else:
+                status = "on_track"
+
+    return {
+        "window_months": months,
+        "invoice_count_total": invoice_count_total,
+        "invoice_count_window": invoice_count_window,
+        "total_actual_all_time": total_actual_all_time,
+        "total_actual_window": total_actual_window,
+        "actual_monthly_avg": actual_monthly_avg,
+        "estimated_monthly_cost": estimated_value,
+        "variance_amount": variance_amount,
+        "variance_pct": variance_pct,
+        "status": status,
+        "alert_flag": alert_flag,
+        "alert_message": alert_message,
+        "last_invoice_date": last_invoice_date,
+    }
 
 
 def _vendor_nav(vendor_id: str, return_to: str, active_key: str) -> list[dict]:
@@ -1447,6 +1560,7 @@ def offering_detail_page(
         offering_profile = repo.get_offering_profile(vendor_id, offering_id)
         offering_data_flows = repo.list_offering_data_flows(vendor_id, offering_id).to_dict("records")
         offering_tickets = repo.list_offering_tickets(vendor_id, offering_id).to_dict("records")
+        offering_invoices = repo.list_offering_invoices(vendor_id, offering_id).to_dict("records")
         offering_notes = repo.list_offering_notes(offering_id).to_dict("records")
         offering_activity = repo.get_offering_activity(vendor_id, offering_id).head(50).to_dict("records")
     except Exception as exc:
@@ -1481,6 +1595,7 @@ def offering_detail_page(
         }
         offering_data_flows = []
         offering_tickets = []
+        offering_invoices = []
         offering_notes = []
         offering_activity = []
     inbound_data_flows = [
@@ -1489,6 +1604,7 @@ def offering_detail_page(
     outbound_data_flows = [
         row for row in offering_data_flows if str(row.get("direction", "")).strip().lower() == "outbound"
     ]
+    offering_invoice_summary = _offering_invoice_summary(offering_profile, offering_invoices, window_months=3)
     owner_options = repo.search_user_directory(limit=250).to_dict("records")
 
     section_key = (section or "summary").strip().lower()
@@ -1565,6 +1681,8 @@ def offering_detail_page(
             "inbound_data_flows": inbound_data_flows,
             "outbound_data_flows": outbound_data_flows,
             "offering_tickets": offering_tickets,
+            "offering_invoices": offering_invoices,
+            "offering_invoice_summary": offering_invoice_summary,
             "offering_notes": offering_notes,
             "offering_activity": offering_activity,
             "offering_owner_options": owner_options,
@@ -1580,6 +1698,7 @@ def offering_detail_page(
             "offering_service_type_options": _offering_service_type_options(repo),
             "offering_ticket_statuses": OFFERING_TICKET_STATUSES,
             "offering_ticket_priorities": OFFERING_TICKET_PRIORITIES,
+            "offering_invoice_statuses": OFFERING_INVOICE_STATUSES,
             "offering_note_types": OFFERING_NOTE_TYPES,
             "offering_data_method_options": OFFERING_DATA_METHOD_OPTIONS,
             "doc_source_options": repo.list_doc_source_options(),
@@ -2371,6 +2490,148 @@ async def update_offering_ticket_status_submit(request: Request, vendor_id: str,
 
     return RedirectResponse(
         url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=tickets&return_to={quote(return_to, safe='')}",
+        status_code=303,
+    )
+
+
+@router.post("/{vendor_id}/offerings/{offering_id}/invoices/add")
+async def add_offering_invoice_submit(request: Request, vendor_id: str, offering_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+    invoice_number = str(form.get("invoice_number", "")).strip()
+    invoice_date = str(form.get("invoice_date", "")).strip()
+    amount_raw = str(form.get("amount", "")).strip()
+    currency_code = str(form.get("currency_code", "USD")).strip().upper() or "USD"
+    invoice_status = str(form.get("invoice_status", "received")).strip().lower() or "received"
+    notes = str(form.get("notes", "")).strip()
+    reason = str(form.get("reason", "")).strip()
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=financials&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=financials&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if invoice_status not in set(OFFERING_INVOICE_STATUSES):
+        add_flash(request, f"Invoice status must be one of: {', '.join(OFFERING_INVOICE_STATUSES)}", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=financials&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    try:
+        amount_value = float(amount_raw.replace(",", ""))
+    except Exception:
+        add_flash(request, "Invoice amount must be numeric.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=financials&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+
+    payload = {
+        "offering_id": offering_id,
+        "invoice_number": invoice_number or None,
+        "invoice_date": invoice_date,
+        "amount": amount_value,
+        "currency_code": currency_code,
+        "invoice_status": invoice_status,
+        "notes": notes or None,
+        "reason": reason,
+    }
+    try:
+        if user.can_apply_change("add_offering_invoice"):
+            invoice_id = repo.add_offering_invoice(
+                vendor_id=vendor_id,
+                offering_id=offering_id,
+                invoice_number=invoice_number or None,
+                invoice_date=invoice_date,
+                amount=amount_value,
+                currency_code=currency_code,
+                invoice_status=invoice_status,
+                notes=notes or None,
+                actor_user_principal=user.user_principal,
+            )
+            add_flash(request, f"Invoice added: {invoice_id}", "success")
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="add_offering_invoice",
+                payload=payload,
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_offering_detail",
+            event_type="offering_invoice_add",
+            payload={"vendor_id": vendor_id, "offering_id": offering_id, "invoice_status": invoice_status},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not add offering invoice: {exc}", "error")
+
+    return RedirectResponse(
+        url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=financials&return_to={quote(return_to, safe='')}",
+        status_code=303,
+    )
+
+
+@router.post("/{vendor_id}/offerings/{offering_id}/invoices/{invoice_id}/remove")
+async def remove_offering_invoice_submit(request: Request, vendor_id: str, offering_id: str, invoice_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", "/vendors")))
+    reason = str(form.get("reason", "")).strip()
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=financials&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=financials&return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
+
+    payload = {"offering_id": offering_id, "invoice_id": invoice_id, "reason": reason}
+    try:
+        if user.can_apply_change("remove_offering_invoice"):
+            repo.remove_offering_invoice(
+                vendor_id=vendor_id,
+                offering_id=offering_id,
+                invoice_id=invoice_id,
+                actor_user_principal=user.user_principal,
+            )
+            add_flash(request, "Invoice removed.", "success")
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="remove_offering_invoice",
+                payload=payload,
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_offering_detail",
+            event_type="offering_invoice_remove",
+            payload={"vendor_id": vendor_id, "offering_id": offering_id, "invoice_id": invoice_id},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not remove offering invoice: {exc}", "error")
+
+    return RedirectResponse(
+        url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=financials&return_to={quote(return_to, safe='')}",
         status_code=303,
     )
 

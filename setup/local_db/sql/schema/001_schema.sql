@@ -532,6 +532,25 @@ CREATE TABLE IF NOT EXISTS app_offering_ticket (
   FOREIGN KEY (vendor_id) REFERENCES core_vendor(vendor_id)
 );
 
+CREATE TABLE IF NOT EXISTS app_offering_invoice (
+  invoice_id TEXT PRIMARY KEY,
+  offering_id TEXT NOT NULL,
+  vendor_id TEXT NOT NULL,
+  invoice_number TEXT,
+  invoice_date TEXT NOT NULL,
+  amount REAL NOT NULL,
+  currency_code TEXT NOT NULL,
+  invoice_status TEXT NOT NULL,
+  notes TEXT,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  created_at TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  FOREIGN KEY (offering_id) REFERENCES core_vendor_offering(offering_id),
+  FOREIGN KEY (vendor_id) REFERENCES core_vendor(vendor_id)
+);
+
 CREATE TABLE IF NOT EXISTS app_document_link (
   doc_id TEXT PRIMARY KEY,
   entity_type TEXT NOT NULL,
@@ -652,6 +671,8 @@ CREATE INDEX IF NOT EXISTS idx_app_offering_data_flow_offering ON app_offering_d
 CREATE INDEX IF NOT EXISTS idx_app_offering_data_flow_vendor ON app_offering_data_flow(vendor_id, active_flag, direction);
 CREATE INDEX IF NOT EXISTS idx_app_offering_ticket_offering ON app_offering_ticket(offering_id, active_flag, opened_date);
 CREATE INDEX IF NOT EXISTS idx_app_offering_ticket_vendor ON app_offering_ticket(vendor_id, active_flag);
+CREATE INDEX IF NOT EXISTS idx_app_offering_invoice_offering ON app_offering_invoice(offering_id, active_flag, invoice_date);
+CREATE INDEX IF NOT EXISTS idx_app_offering_invoice_vendor ON app_offering_invoice(vendor_id, active_flag, invoice_date);
 CREATE INDEX IF NOT EXISTS idx_app_doc_entity ON app_document_link(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_app_user_directory_login ON app_user_directory(login_identifier);
 CREATE INDEX IF NOT EXISTS idx_app_lookup_type_code ON app_lookup_option(lookup_type, option_code);

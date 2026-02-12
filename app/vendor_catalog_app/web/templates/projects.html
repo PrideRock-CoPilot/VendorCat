@@ -23,8 +23,10 @@
   <label>
     Vendor
     <input type="hidden" name="vendor" value="{{ filters.vendor }}" data-project-vendor-id>
-    <input type="text" value="{{ filters.vendor_label or '' }}" placeholder="Search vendor..." autocomplete="off" data-project-vendor-search>
-    <div class="typeahead-results hidden" data-project-vendor-results></div>
+    <div class="typeahead-block">
+      <input type="text" value="{{ filters.vendor_label or '' }}" placeholder="Search vendor..." autocomplete="off" data-project-vendor-search>
+      <div class="typeahead-results hidden" data-project-vendor-results></div>
+    </div>
     <small class="muted">Leave blank for all vendors.</small>
   </label>
   <div>

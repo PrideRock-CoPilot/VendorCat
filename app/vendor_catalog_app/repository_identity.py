@@ -293,8 +293,15 @@ class RepositoryIdentityMixin:
         like_pattern = f"%{cleaned_q.lower()}%" if cleaned_q else ""
         df = self._query_file(
             "ingestion/select_user_directory_search.sql",
-            params=(cleaned_q.lower(), like_pattern, like_pattern),
-            columns=["user_id", "login_identifier", "display_name"],
+            params=(
+                cleaned_q.lower(),
+                like_pattern,
+                like_pattern,
+                like_pattern,
+                like_pattern,
+                like_pattern,
+            ),
+            columns=["user_id", "login_identifier", "display_name", "email", "first_name", "last_name"],
             app_user_directory=self._table("app_user_directory"),
             limit=normalized_limit,
         )
@@ -302,7 +309,7 @@ class RepositoryIdentityMixin:
         if df.empty:
             return pd.DataFrame(columns=columns)
 
-        for field in ("user_id", "login_identifier", "display_name"):
+        for field in ("user_id", "login_identifier", "display_name", "email", "first_name", "last_name"):
             if field not in df.columns:
                 df[field] = ""
             df[field] = df[field].fillna("").astype(str).str.strip()

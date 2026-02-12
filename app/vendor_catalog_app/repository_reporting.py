@@ -562,6 +562,153 @@ class RepositoryReportingMixin:
             )
         return out[columns].sort_values(["owner_principal", "entity_type", "entity_name"]).head(limit)
 
+    def report_offering_budget_variance(
+        self,
+        *,
+        search_text: str = "",
+        vendor_id: str = "all",
+        lifecycle_state: str = "all",
+        horizon_days: int = 180,
+        limit: int = 500,
+    ) -> pd.DataFrame:
+        columns = [
+            "vendor_display_name",
+            "vendor_id",
+            "offering_name",
+            "offering_id",
+            "lifecycle_state",
+            "estimated_monthly_cost",
+            "avg_actual_monthly",
+            "total_invoiced_window",
+            "invoice_count_window",
+            "active_month_count",
+            "variance_amount",
+            "variance_pct",
+            "alert_status",
+            "last_invoice_date",
+        ]
+        limit = max(50, min(limit, 5000))
+        horizon_days = max(30, min(horizon_days, 730))
+        where_parts = ["1 = 1"]
+        params: list[Any] = []
+        if vendor_id != "all":
+            where_parts.append("o.vendor_id = %s")
+            params.append(str(vendor_id))
+        if lifecycle_state != "all":
+            where_parts.append("lower(coalesce(o.lifecycle_state, '')) = lower(%s)")
+            params.append(str(lifecycle_state))
+        if search_text.strip():
+            like = f"%{search_text.strip()}%"
+            where_parts.append(
+                "("
+                "lower(o.offering_id) LIKE lower(%s)"
+                " OR lower(coalesce(o.offering_name, '')) LIKE lower(%s)"
+                " OR lower(coalesce(v.display_name, v.legal_name, o.vendor_id)) LIKE lower(%s)"
+                " OR lower(coalesce(o.vendor_id, '')) LIKE lower(%s)"
+                ")"
+            )
+            params.extend([like, like, like, like])
+
+        offerings = self._query_file(
+            "reporting/report_offering_budget_variance_offerings.sql",
+            params=tuple(params) if params else None,
+            columns=[
+                "offering_id",
+                "vendor_id",
+                "vendor_display_name",
+                "offering_name",
+                "lifecycle_state",
+                "estimated_monthly_cost",
+            ],
+            where_clause=" AND ".join(where_parts),
+            limit=max(limit * 3, 150),
+            core_vendor_offering=self._table("core_vendor_offering"),
+            core_vendor=self._table("core_vendor"),
+            app_offering_profile=self._table("app_offering_profile"),
+        )
+        if offerings.empty:
+            return pd.DataFrame(columns=columns)
+
+        offering_ids = [str(value).strip() for value in offerings["offering_id"].tolist() if str(value).strip()]
+        invoice_rows = pd.DataFrame(
+            columns=["offering_id", "invoice_id", "invoice_date", "amount", "invoice_status"]
+        )
+        if offering_ids:
+            placeholders = ", ".join(["%s"] * len(offering_ids))
+            invoice_rows = self._query_file(
+                "reporting/report_offering_budget_variance_invoices.sql",
+                params=tuple(offering_ids),
+                columns=["invoice_id", "offering_id", "vendor_id", "invoice_date", "amount", "invoice_status"],
+                offering_ids_placeholders=placeholders,
+                app_offering_invoice=self._table("app_offering_invoice"),
+            )
+
+        window_start = (self._now() - pd.Timedelta(days=(horizon_days - 1))).date()
+        months_in_window = max(1, int((horizon_days + 29) // 30))
+        amount_by_offering = pd.DataFrame(columns=["offering_id", "total_invoiced_window", "active_month_count"])
+        invoice_meta = pd.DataFrame(columns=["offering_id", "invoice_count_window", "last_invoice_date"])
+        if not invoice_rows.empty:
+            invoice_rows["invoice_date"] = pd.to_datetime(invoice_rows.get("invoice_date"), errors="coerce")
+            invoice_rows["amount"] = pd.to_numeric(invoice_rows.get("amount"), errors="coerce").fillna(0.0)
+            invoice_rows = invoice_rows[invoice_rows["invoice_date"].notna()].copy()
+            if not invoice_rows.empty:
+                invoice_rows = invoice_rows[invoice_rows["invoice_date"].dt.date >= window_start].copy()
+            if not invoice_rows.empty:
+                invoice_rows["month"] = invoice_rows["invoice_date"].dt.to_period("M").dt.to_timestamp()
+                monthly = (
+                    invoice_rows.groupby(["offering_id", "month"], as_index=False)["amount"].sum()
+                )
+                amount_by_offering = (
+                    monthly.groupby("offering_id", as_index=False)
+                    .agg(
+                        total_invoiced_window=("amount", "sum"),
+                        active_month_count=("month", "nunique"),
+                    )
+                )
+                invoice_meta = (
+                    invoice_rows.groupby("offering_id", as_index=False)
+                    .agg(
+                        invoice_count_window=("invoice_id", "nunique"),
+                        last_invoice_date=("invoice_date", "max"),
+                    )
+                )
+
+        out = offerings.merge(amount_by_offering, on="offering_id", how="left")
+        out = out.merge(invoice_meta, on="offering_id", how="left")
+        out["estimated_monthly_cost"] = pd.to_numeric(out.get("estimated_monthly_cost"), errors="coerce")
+        out["total_invoiced_window"] = pd.to_numeric(out.get("total_invoiced_window"), errors="coerce").fillna(0.0)
+        out["avg_actual_monthly"] = out["total_invoiced_window"] / float(months_in_window)
+        out["invoice_count_window"] = pd.to_numeric(out.get("invoice_count_window"), errors="coerce").fillna(0).astype(int)
+        out["active_month_count"] = pd.to_numeric(out.get("active_month_count"), errors="coerce").fillna(0).astype(int)
+        out["variance_amount"] = out["avg_actual_monthly"] - out["estimated_monthly_cost"].fillna(0.0)
+        out["variance_pct"] = pd.Series([None] * len(out), dtype="float64")
+        has_estimate = out["estimated_monthly_cost"].notna() & (out["estimated_monthly_cost"] > 0)
+        out.loc[~has_estimate, "variance_amount"] = pd.NA
+        out.loc[has_estimate, "variance_pct"] = (
+            (out.loc[has_estimate, "variance_amount"] / out.loc[has_estimate, "estimated_monthly_cost"]) * 100.0
+        )
+
+        out["alert_status"] = "no_estimate"
+        out.loc[has_estimate & (out["invoice_count_window"] == 0), "alert_status"] = "no_actuals"
+        out.loc[has_estimate & (out["invoice_count_window"] > 0), "alert_status"] = "on_track"
+        out.loc[has_estimate & (out["variance_pct"] >= 10.0), "alert_status"] = "over_budget"
+        out.loc[has_estimate & (out["variance_pct"] <= -10.0), "alert_status"] = "under_budget"
+        out["last_invoice_date"] = pd.to_datetime(out.get("last_invoice_date"), errors="coerce").dt.date.astype(str)
+        out.loc[out["last_invoice_date"] == "NaT", "last_invoice_date"] = ""
+        status_rank = {
+            "over_budget": 0,
+            "on_track": 1,
+            "under_budget": 2,
+            "no_actuals": 3,
+            "no_estimate": 4,
+        }
+        out["_status_rank"] = out["alert_status"].map(lambda value: status_rank.get(str(value or "").strip(), 99))
+        out = out.sort_values(
+            ["_status_rank", "variance_pct", "vendor_display_name", "offering_name"],
+            ascending=[True, False, True, True],
+        )
+        return out[columns].head(limit)
+
     def list_vendor_offerings_for_vendors(self, vendor_ids: list[str]) -> pd.DataFrame:
         columns = [
             "offering_id",

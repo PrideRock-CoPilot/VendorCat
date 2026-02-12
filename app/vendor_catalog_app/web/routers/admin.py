@@ -361,6 +361,105 @@ async def grant_group_role(request: Request):
     return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
 
 
+@router.post("/change-group-role")
+async def change_group_role(request: Request):
+    repo = get_repo()
+    user = get_user_context(request)
+    if user.config.locked_mode:
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+    if not user.has_admin_rights:
+        add_flash(request, "Admin access required.", "error")
+        return RedirectResponse(url="/dashboard", status_code=303)
+
+    form = await request.form()
+    target_group = str(form.get("target_group", "")).strip()
+    current_role_code = str(form.get("current_role_code", "")).strip().lower()
+    new_role_code = str(form.get("new_role_code", "")).strip().lower()
+    if not target_group or not current_role_code or not new_role_code:
+        add_flash(request, "Group, current role, and new role are required.", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+    if new_role_code not in set(repo.list_known_roles() or ROLE_CHOICES):
+        add_flash(request, f"Role `{new_role_code}` is not defined. Create it in Role Catalog first.", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+    normalized_group = repo.normalize_group_principal(target_group)
+    if not normalized_group:
+        add_flash(request, "Group principal is invalid. Use a valid group identifier.", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+    if current_role_code == new_role_code:
+        add_flash(request, "Group role is already set to that value.", "success")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+
+    try:
+        repo.change_group_role_grant(
+            group_principal=normalized_group,
+            current_role_code=current_role_code,
+            new_role_code=new_role_code,
+            granted_by=user.user_principal,
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not change group role: {exc}", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+
+    repo.log_usage_event(
+        user_principal=user.user_principal,
+        page_name="admin",
+        event_type="change_group_role",
+        payload={
+            "target_group": normalized_group,
+            "current_role_code": current_role_code,
+            "new_role_code": new_role_code,
+        },
+    )
+    add_flash(request, "Group role updated.", "success")
+    return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+
+
+@router.post("/revoke-group-role")
+async def revoke_group_role(request: Request):
+    repo = get_repo()
+    user = get_user_context(request)
+    if user.config.locked_mode:
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+    if not user.has_admin_rights:
+        add_flash(request, "Admin access required.", "error")
+        return RedirectResponse(url="/dashboard", status_code=303)
+
+    form = await request.form()
+    target_group = str(form.get("target_group", "")).strip()
+    role_code = str(form.get("role_code", "")).strip().lower()
+    if not target_group or not role_code:
+        add_flash(request, "Group and role are required.", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+    if role_code not in set(repo.list_known_roles() or ROLE_CHOICES):
+        add_flash(request, f"Role `{role_code}` is not defined. Create it in Role Catalog first.", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+    normalized_group = repo.normalize_group_principal(target_group)
+    if not normalized_group:
+        add_flash(request, "Group principal is invalid. Use a valid group identifier.", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+
+    try:
+        repo.revoke_group_role_grant(
+            group_principal=normalized_group,
+            role_code=role_code,
+            revoked_by=user.user_principal,
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not revoke group role: {exc}", "error")
+        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+
+    repo.log_usage_event(
+        user_principal=user.user_principal,
+        page_name="admin",
+        event_type="revoke_group_role",
+        payload={"target_group": normalized_group, "role_code": role_code},
+    )
+    add_flash(request, "Group role revoked.", "success")
+    return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+
+
 @router.post("/grant-scope")
 async def grant_scope(request: Request):
     repo = get_repo()

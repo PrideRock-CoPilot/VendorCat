@@ -51,6 +51,16 @@ REQUIRED_SCHEMA: dict[str, tuple[str, ...]] = {
         "title",
         "status",
     ),
+    "app_offering_invoice": (
+        "invoice_id",
+        "offering_id",
+        "vendor_id",
+        "invoice_date",
+        "amount",
+        "currency_code",
+        "invoice_status",
+        "active_flag",
+    ),
     "app_offering_data_flow": (
         "data_flow_id",
         "offering_id",

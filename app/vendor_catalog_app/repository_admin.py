@@ -407,6 +407,26 @@ class RepositoryAdminMixin:
             sec_user_role_map=self._table("sec_user_role_map"),
         )
 
+    def _insert_group_role_grant(
+        self,
+        *,
+        group_principal: str,
+        role_code: str,
+        granted_by_ref: str,
+        granted_at,
+    ) -> None:
+        group_key = self.normalize_group_principal(group_principal)
+        role_key = str(role_code or "").strip().lower()
+        if not group_key:
+            raise ValueError("Group principal is required.")
+        if not role_key:
+            raise ValueError("Role code is required.")
+        self._execute_file(
+            "inserts/grant_group_role.sql",
+            params=(group_key, role_key, True, granted_by_ref, granted_at, None),
+            sec_group_role_map=self._table("sec_group_role_map"),
+        )
+
     def grant_role(self, target_user_principal: str, role_code: str, granted_by: str) -> None:
         """Grant a role to a user and write an access audit event."""
         target_ref = self.resolve_user_id(target_user_principal, allow_create=True)
@@ -482,10 +502,11 @@ class RepositoryAdminMixin:
             raise ValueError("Grant actor must resolve to a directory user.")
 
         now = self._now()
-        self._execute_file(
-            "inserts/grant_group_role.sql",
-            params=(group_key, role_key, True, granted_by_ref, now, None),
-            sec_group_role_map=self._table("sec_group_role_map"),
+        self._insert_group_role_grant(
+            group_principal=group_key,
+            role_code=role_key,
+            granted_by_ref=granted_by_ref,
+            granted_at=now,
         )
         self.bump_security_policy_version(updated_by=granted_by)
         self._audit_access(
@@ -494,6 +515,80 @@ class RepositoryAdminMixin:
             target_user_principal=None,
             target_role=role_key,
             notes=f"Role granted to group {group_key} through admin UI.",
+        )
+
+    def change_group_role_grant(
+        self,
+        *,
+        group_principal: str,
+        current_role_code: str,
+        new_role_code: str,
+        granted_by: str,
+    ) -> None:
+        group_key = self.normalize_group_principal(group_principal)
+        current_role = str(current_role_code or "").strip().lower()
+        new_role = str(new_role_code or "").strip().lower()
+        granted_by_ref = self.resolve_user_id(granted_by, allow_create=True)
+        if not group_key:
+            raise ValueError("Group principal is required.")
+        if not current_role or not new_role:
+            raise ValueError("Current role and new role are required.")
+        if not granted_by_ref:
+            raise ValueError("Grant actor must resolve to a directory user.")
+        if current_role == new_role:
+            return
+
+        now = self._now()
+        self._execute_file(
+            "updates/revoke_group_role_grant.sql",
+            params=(False, now, group_key, current_role),
+            sec_group_role_map=self._table("sec_group_role_map"),
+        )
+        self._insert_group_role_grant(
+            group_principal=group_key,
+            role_code=new_role,
+            granted_by_ref=granted_by_ref,
+            granted_at=now,
+        )
+        self.bump_security_policy_version(updated_by=granted_by)
+        self._audit_access(
+            actor_user_principal=granted_by_ref,
+            action_type="change_group_role",
+            target_user_principal=None,
+            target_role=new_role,
+            notes=f"Role changed for group {group_key}: {current_role} -> {new_role} through admin UI.",
+        )
+
+    def revoke_group_role_grant(
+        self,
+        *,
+        group_principal: str,
+        role_code: str,
+        revoked_by: str,
+    ) -> None:
+        group_key = self.normalize_group_principal(group_principal)
+        role_key = str(role_code or "").strip().lower()
+        revoked_by_ref = self.resolve_user_id(revoked_by, allow_create=True)
+        if not group_key:
+            raise ValueError("Group principal is required.")
+        if not role_key:
+            raise ValueError("Role code is required.")
+        if not revoked_by_ref:
+            raise ValueError("Grant actor must resolve to a directory user.")
+
+        now = self._now()
+        self._execute_file(
+            "updates/revoke_group_role_grant.sql",
+            params=(False, now, group_key, role_key),
+            sec_group_role_map=self._table("sec_group_role_map"),
+        )
+        self.bump_security_policy_version(updated_by=revoked_by)
+        self._audit_access(
+            actor_user_principal=revoked_by_ref,
+            action_type="revoke_group_role",
+            target_user_principal=None,
+            target_role=role_key,
+            notes=f"Role {role_key} revoked for group {group_key} through admin UI.",
         )
 
     def grant_org_scope(

@@ -286,7 +286,12 @@
 {% if section == "contracts" %}
 <div class="grid grid-2">
   <section class="card section-divider">
-    <h2>Contracts</h2>
+    <div class="section-header">
+      <h2>Contracts</h2>
+      {% if can_edit and not locked_mode %}
+      <a class="button-link subtle" href="/vendors/{{ vendor_id }}/offerings?return_to={{ return_to|urlencode }}">Map In Offerings</a>
+      {% endif %}
+    </div>
     <table>
       <thead><tr><th>Contract</th><th>Offering</th><th>Status</th><th>Start</th><th>End</th><th>Cancelled</th></tr></thead>
       <tbody>
@@ -317,7 +322,12 @@
 {% if section == "demos" %}
 <div class="grid grid-2">
   <section class="card section-divider">
-    <h2>Demo Outcomes</h2>
+    <div class="section-header">
+      <h2>Demo Outcomes</h2>
+      {% if can_edit and not locked_mode %}
+      <a class="button-link subtle" href="/vendors/{{ vendor_id }}/offerings?return_to={{ return_to|urlencode }}">Map In Offerings</a>
+      {% endif %}
+    </div>
     <table>
       <thead><tr><th>Demo</th><th>Offering</th><th>Date</th><th>Outcome</th><th>Score</th><th>Reason</th></tr></thead>
       <tbody>

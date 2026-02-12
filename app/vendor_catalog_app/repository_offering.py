@@ -103,6 +103,188 @@ class RepositoryOfferingMixin:
         out.update(row)
         return out
 
+    def list_offering_invoices(self, vendor_id: str, offering_id: str) -> pd.DataFrame:
+        self._ensure_local_offering_extension_tables()
+        rows = self._query_file(
+            "ingestion/select_offering_invoices.sql",
+            params=(offering_id, vendor_id),
+            columns=[
+                "invoice_id",
+                "offering_id",
+                "vendor_id",
+                "invoice_number",
+                "invoice_date",
+                "amount",
+                "currency_code",
+                "invoice_status",
+                "notes",
+                "active_flag",
+                "created_at",
+                "created_by",
+                "updated_at",
+                "updated_by",
+            ],
+            app_offering_invoice=self._table("app_offering_invoice"),
+        )
+        if rows.empty:
+            return rows
+        rows["amount"] = pd.to_numeric(rows.get("amount"), errors="coerce").fillna(0.0)
+        return self._decorate_user_columns(rows, ["created_by", "updated_by"])
+
+    def get_offering_invoice(
+        self,
+        *,
+        vendor_id: str,
+        offering_id: str,
+        invoice_id: str,
+    ) -> dict[str, Any] | None:
+        self._ensure_local_offering_extension_tables()
+        rows = self._query_file(
+            "ingestion/select_offering_invoice_by_id.sql",
+            params=(invoice_id, offering_id, vendor_id),
+            columns=[
+                "invoice_id",
+                "offering_id",
+                "vendor_id",
+                "invoice_number",
+                "invoice_date",
+                "amount",
+                "currency_code",
+                "invoice_status",
+                "notes",
+                "active_flag",
+                "created_at",
+                "created_by",
+                "updated_at",
+                "updated_by",
+            ],
+            app_offering_invoice=self._table("app_offering_invoice"),
+        )
+        if rows.empty:
+            return None
+        out = rows.iloc[0].to_dict()
+        try:
+            out["amount"] = float(out.get("amount") or 0.0)
+        except Exception:
+            out["amount"] = 0.0
+        return out
+
+    def add_offering_invoice(
+        self,
+        *,
+        vendor_id: str,
+        offering_id: str,
+        invoice_number: str | None,
+        invoice_date: str,
+        amount: float,
+        currency_code: str | None,
+        invoice_status: str | None,
+        notes: str | None,
+        actor_user_principal: str,
+    ) -> str:
+        if not self.offering_belongs_to_vendor(vendor_id, offering_id):
+            raise ValueError("Offering does not belong to this vendor.")
+
+        parsed_invoice_date = pd.to_datetime(str(invoice_date or "").strip(), errors="coerce")
+        if pd.isna(parsed_invoice_date):
+            raise ValueError("Invoice date is required and must be valid.")
+        invoice_date_value = parsed_invoice_date.date().isoformat()
+
+        try:
+            amount_value = float(amount)
+        except Exception as exc:
+            raise ValueError("Invoice amount must be numeric.") from exc
+        if amount_value <= 0:
+            raise ValueError("Invoice amount must be greater than zero.")
+
+        status_value = str(invoice_status or "").strip().lower() or "received"
+        allowed_statuses = {"received", "approved", "paid", "disputed", "void"}
+        if status_value not in allowed_statuses:
+            raise ValueError(f"Invoice status must be one of: {', '.join(sorted(allowed_statuses))}.")
+
+        currency_value = str(currency_code or "").strip().upper() or "USD"
+        if len(currency_value) > 8:
+            raise ValueError("Currency code must be 8 characters or fewer.")
+
+        invoice_id = self._new_id("oinv")
+        now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
+        row = {
+            "invoice_id": invoice_id,
+            "offering_id": offering_id,
+            "vendor_id": vendor_id,
+            "invoice_number": str(invoice_number or "").strip() or None,
+            "invoice_date": invoice_date_value,
+            "amount": amount_value,
+            "currency_code": currency_value,
+            "invoice_status": status_value,
+            "notes": str(notes or "").strip() or None,
+            "active_flag": True,
+            "created_at": now.isoformat(),
+            "created_by": actor_ref,
+            "updated_at": now.isoformat(),
+            "updated_by": actor_ref,
+        }
+        self._ensure_local_offering_extension_tables()
+        self._execute_file(
+            "inserts/create_offering_invoice.sql",
+            params=(
+                row["invoice_id"],
+                row["offering_id"],
+                row["vendor_id"],
+                row["invoice_number"],
+                row["invoice_date"],
+                row["amount"],
+                row["currency_code"],
+                row["invoice_status"],
+                row["notes"],
+                row["active_flag"],
+                now,
+                actor_ref,
+                now,
+                actor_ref,
+            ),
+            app_offering_invoice=self._table("app_offering_invoice"),
+        )
+        self._write_audit_entity_change(
+            entity_name="app_offering_invoice",
+            entity_id=invoice_id,
+            action_type="insert",
+            actor_user_principal=actor_user_principal,
+            before_json=None,
+            after_json=row,
+            request_id=None,
+        )
+        return invoice_id
+
+    def remove_offering_invoice(
+        self,
+        *,
+        vendor_id: str,
+        offering_id: str,
+        invoice_id: str,
+        actor_user_principal: str,
+    ) -> None:
+        current = self.get_offering_invoice(vendor_id=vendor_id, offering_id=offering_id, invoice_id=invoice_id)
+        if current is None:
+            raise ValueError("Offering invoice was not found.")
+        actor_ref = self._actor_ref(actor_user_principal)
+        now = self._now()
+        self._execute_file(
+            "updates/remove_offering_invoice_soft.sql",
+            params=(now, actor_ref, invoice_id, offering_id, vendor_id),
+            app_offering_invoice=self._table("app_offering_invoice"),
+        )
+        self._write_audit_entity_change(
+            entity_name="app_offering_invoice",
+            entity_id=invoice_id,
+            action_type="delete",
+            actor_user_principal=actor_user_principal,
+            before_json=current,
+            after_json=None,
+            request_id=None,
+        )
+
     def save_offering_profile(
         self,
         *,

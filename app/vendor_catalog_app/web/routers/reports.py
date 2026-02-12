@@ -52,6 +52,10 @@ REPORT_TYPES = {
         "label": "Owner Coverage",
         "description": "Owner-to-entity matrix for vendor, offering, and project ownership workloads.",
     },
+    "offering_budget_variance": {
+        "label": "Budget vs Actual (Invoices)",
+        "description": "Offering-level estimated monthly budget compared with actual invoice run-rate and alert status.",
+    },
 }
 
 VENDOR_LIFECYCLE_STATES = ["all", "draft", "submitted", "in_review", "approved", "active", "suspended", "retired"]
@@ -71,6 +75,7 @@ CHART_PRESETS = {
     "contract_renewals": {"kind": "line", "x": "renewal_date", "y": "annual_value"},
     "demo_outcomes": {"kind": "bar", "x": "selection_outcome", "y": ROW_COUNT_METRIC},
     "owner_coverage": {"kind": "bar", "x": "owner_principal", "y": ROW_COUNT_METRIC},
+    "offering_budget_variance": {"kind": "bar", "x": "offering_name", "y": "variance_amount"},
 }
 
 DATABRICKS_SELECTED_REPORT_PARAM = "dbx_report"
@@ -171,6 +176,14 @@ def _build_report_frame(
             search_text=search,
             vendor_id=vendor,
             outcome=outcome,
+            limit=limit,
+        )
+    elif report_type == "offering_budget_variance":
+        frame = repo.report_offering_budget_variance(
+            search_text=search,
+            vendor_id=vendor,
+            lifecycle_state=lifecycle_state,
+            horizon_days=horizon_days,
             limit=limit,
         )
     else:

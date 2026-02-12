@@ -124,6 +124,55 @@ def test_admin_can_grant_role_to_group_and_group_member_inherits_it(client: Test
     assert "group:ad-vendor-admins" in as_group_member.text
 
 
+def test_admin_can_change_group_role_from_table_flow(client: TestClient) -> None:
+    client.post(
+        "/admin/grant-group-role",
+        data={"target_group": "AD-Role-Change", "role_code": "vendor_editor"},
+        follow_redirects=False,
+    )
+
+    change = client.post(
+        "/admin/change-group-role",
+        data={
+            "target_group": "AD-Role-Change",
+            "current_role_code": "vendor_editor",
+            "new_role_code": "vendor_auditor",
+        },
+        follow_redirects=False,
+    )
+    assert change.status_code == 303
+
+    repo = get_repo()
+    grants = repo.list_group_role_grants()
+    group_rows = grants[grants["group_principal"].astype(str) == "group:ad-role-change"].copy()
+    active_rows = group_rows[group_rows["active_flag"].astype(str).str.lower().isin({"1", "true"})]
+    assert set(active_rows["role_code"].astype(str).tolist()) == {"vendor_auditor"}
+
+
+def test_admin_can_revoke_group_role_from_table_flow(client: TestClient) -> None:
+    client.post(
+        "/admin/grant-group-role",
+        data={"target_group": "AD-Role-Revoke", "role_code": "vendor_editor"},
+        follow_redirects=False,
+    )
+
+    revoke = client.post(
+        "/admin/revoke-group-role",
+        data={"target_group": "AD-Role-Revoke", "role_code": "vendor_editor"},
+        follow_redirects=False,
+    )
+    assert revoke.status_code == 303
+
+    repo = get_repo()
+    grants = repo.list_group_role_grants()
+    group_rows = grants[
+        (grants["group_principal"].astype(str) == "group:ad-role-revoke")
+        & (grants["role_code"].astype(str) == "vendor_editor")
+    ].copy()
+    active_rows = group_rows[group_rows["active_flag"].astype(str).str.lower().isin({"1", "true"})]
+    assert active_rows.empty
+
+
 def test_admin_can_add_doc_lookup_tag_and_use_in_doc_link(client: TestClient) -> None:
     save_lookup = client.post(
         "/admin/lookup/save",

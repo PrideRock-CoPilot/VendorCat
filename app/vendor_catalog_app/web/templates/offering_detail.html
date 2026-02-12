@@ -22,6 +22,7 @@
   <div class="metric"><span>Contracts</span><strong>{{ offering_contracts|length }}</strong></div>
   <div class="metric"><span>Demos</span><strong>{{ offering_demos|length }}</strong></div>
   <div class="metric"><span>Tickets</span><strong>{{ offering_tickets|length }}</strong></div>
+  <div class="metric"><span>Invoices</span><strong>{{ offering_invoices|length }}</strong></div>
   <div class="metric"><span>Notes</span><strong>{{ offering_notes|length }}</strong></div>
   <div class="metric"><span>Docs</span><strong>{{ offering_docs|length }}</strong></div>
 </section>
@@ -49,6 +50,23 @@
       <tr><th>Criticality</th><td>{{ offering.criticality_tier or "none" }}</td></tr>
       <tr><th>Monthly Cost</th><td>{% if offering_profile.estimated_monthly_cost is not none %}${{ offering_profile.estimated_monthly_cost }}{% else %}-{% endif %}</td></tr>
       <tr><th>Implementation</th><td>{{ offering_profile.implementation_notes or "-" }}</td></tr>
+      </tbody>
+    </table>
+  </section>
+  <section class="card section-divider">
+    <h2>Budget vs Actual</h2>
+    {% if offering_invoice_summary.alert_flag %}
+    <p class="field-error"><strong>Alert:</strong> {{ offering_invoice_summary.alert_message }}</p>
+    {% endif %}
+    <table>
+      <tbody>
+      <tr><th>Window</th><td>{{ offering_invoice_summary.window_months }} month(s)</td></tr>
+      <tr><th>Estimated Monthly Cost</th><td>{% if offering_invoice_summary.estimated_monthly_cost is not none %}${{ "{:,.2f}".format(offering_invoice_summary.estimated_monthly_cost) }}{% else %}-{% endif %}</td></tr>
+      <tr><th>Actual Monthly Avg</th><td>${{ "{:,.2f}".format(offering_invoice_summary.actual_monthly_avg or 0) }}</td></tr>
+      <tr><th>Variance</th><td>{% if offering_invoice_summary.variance_amount is not none %}${{ "{:,.2f}".format(offering_invoice_summary.variance_amount) }}{% else %}-{% endif %}</td></tr>
+      <tr><th>Variance %</th><td>{% if offering_invoice_summary.variance_pct is not none %}{{ "{:,.1f}".format(offering_invoice_summary.variance_pct) }}%{% else %}-{% endif %}</td></tr>
+      <tr><th>Status</th><td>{{ offering_invoice_summary.status }}</td></tr>
+      <tr><th>Last Invoice Date</th><td>{{ offering_invoice_summary.last_invoice_date or "-" }}</td></tr>
       </tbody>
     </table>
   </section>
@@ -249,6 +267,94 @@
   </table>
 </section>
 {% endif %}
+{% endif %}
+
+{% if section == "financials" %}
+<div class="grid grid-2">
+  <section class="card section-divider">
+    <h2>Budget Summary</h2>
+    {% if offering_invoice_summary.alert_flag %}
+    <p class="field-error"><strong>Alert:</strong> {{ offering_invoice_summary.alert_message }}</p>
+    {% endif %}
+    <table>
+      <tbody>
+      <tr><th>Estimated Monthly Cost</th><td>{% if offering_invoice_summary.estimated_monthly_cost is not none %}${{ "{:,.2f}".format(offering_invoice_summary.estimated_monthly_cost) }}{% else %}-{% endif %}</td></tr>
+      <tr><th>Actual Monthly Avg ({{ offering_invoice_summary.window_months }}m)</th><td>${{ "{:,.2f}".format(offering_invoice_summary.actual_monthly_avg or 0) }}</td></tr>
+      <tr><th>Total Invoiced ({{ offering_invoice_summary.window_months }}m)</th><td>${{ "{:,.2f}".format(offering_invoice_summary.total_actual_window or 0) }}</td></tr>
+      <tr><th>Invoice Count ({{ offering_invoice_summary.window_months }}m)</th><td>{{ offering_invoice_summary.invoice_count_window }}</td></tr>
+      <tr><th>Total Invoiced (All Time)</th><td>${{ "{:,.2f}".format(offering_invoice_summary.total_actual_all_time or 0) }}</td></tr>
+      <tr><th>Status</th><td>{{ offering_invoice_summary.status }}</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  {% if can_edit and not locked_mode %}
+  <section class="card section-divider">
+    <h2>Add Invoice</h2>
+    <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/invoices/add" class="grid grid-2">
+      <input type="hidden" name="return_to" value="{{ return_to }}">
+      <label>Invoice Number
+        <input type="text" name="invoice_number" placeholder="INV-1001">
+      </label>
+      <label>Invoice Date
+        <input type="date" name="invoice_date" required>
+      </label>
+      <label>Amount
+        <input type="text" name="amount" placeholder="e.g. 12500.00" required>
+      </label>
+      <label>Currency
+        <input type="text" name="currency_code" value="USD" maxlength="8">
+      </label>
+      <label>Status
+        <select name="invoice_status">
+          {% for status in offering_invoice_statuses %}
+          <option value="{{ status }}">{{ status }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="full">Notes
+        <textarea name="notes" rows="2" placeholder="Optional context"></textarea>
+      </label>
+      <label class="full">Reason
+        <input type="text" name="reason" placeholder="Why this invoice is being logged">
+      </label>
+      <div><button type="submit">Add Invoice</button></div>
+    </form>
+  </section>
+  {% endif %}
+</div>
+
+<section class="card section-divider">
+  <h2>Invoice Ledger</h2>
+  <table>
+    <thead><tr><th>Date</th><th>Invoice</th><th>Amount</th><th>Currency</th><th>Status</th><th>Notes</th><th>Action</th></tr></thead>
+    <tbody>
+    {% for row in offering_invoices %}
+    <tr>
+      <td>{{ row.invoice_date }}</td>
+      <td>{{ row.invoice_number or row.invoice_id }}</td>
+      <td>${{ "{:,.2f}".format(row.amount or 0) }}</td>
+      <td>{{ row.currency_code }}</td>
+      <td>{{ row.invoice_status }}</td>
+      <td>{{ row.notes or "-" }}</td>
+      <td>
+        {% if can_edit and not locked_mode %}
+        <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/invoices/{{ row.invoice_id }}/remove" class="inline-form">
+          <input type="hidden" name="return_to" value="{{ return_to }}">
+          <input type="text" name="reason" placeholder="Reason">
+          <button type="submit">Remove</button>
+        </form>
+        {% else %}
+        -
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7">No invoices logged.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
 {% endif %}
 
 {% if section == "dataflow" %}

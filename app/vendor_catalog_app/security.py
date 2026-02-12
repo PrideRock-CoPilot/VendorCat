@@ -42,6 +42,8 @@ CHANGE_APPROVAL_LEVELS = {
     "add_offering_note": 3,
     "add_offering_ticket": 3,
     "update_offering_ticket": 3,
+    "add_offering_invoice": 3,
+    "remove_offering_invoice": 3,
     "create_project": 6,
     "update_project": 6,
     "update_project_owner": 6,

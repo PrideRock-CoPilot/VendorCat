@@ -52,6 +52,7 @@ body {
   padding: 10px 20px;
   border-bottom: 1px solid var(--line);
   background: #fff;
+  overflow-x: auto;
 }
 .nav a {
   text-decoration: none;
@@ -202,6 +203,13 @@ table {
   border-collapse: collapse;
   font-size: 13px;
 }
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+.table-wrap table {
+  min-width: 680px;
+}
 th, td {
   border: 1px solid #e2e8f0;
   padding: 7px 8px;
@@ -229,6 +237,10 @@ th { background: #f8fafc; }
 
 .clickable-row { cursor: pointer; }
 .clickable-row:hover { background: #f0fdf9; }
+.clickable-row:focus {
+  outline: 2px solid #0f766e;
+  outline-offset: -2px;
+}
 
 .flash {
   border-radius: 8px;
@@ -380,6 +392,9 @@ th { background: #f8fafc; }
 .typeahead-option:hover {
   background: #ecfdf5;
 }
+.typeahead-option.active {
+  background: #d1fae5;
+}
 
 .chip-list {
   display: flex;
@@ -498,7 +513,9 @@ th { background: #f8fafc; }
 
 @media (max-width: 900px) {
   .metrics, .grid-2, .grid-3, .grid-5 { grid-template-columns: 1fr; }
-  .topbar, .nav { flex-wrap: wrap; }
+  .topbar, .nav { flex-wrap: nowrap; }
+  .nav { white-space: nowrap; }
   .bar-row { grid-template-columns: 1fr; }
   .role-permission-grid { grid-template-columns: 1fr; }
+  .table-wrap table { min-width: 560px; }
 }

@@ -1,12 +1,18 @@
 {% macro owner_principal_input(field_name, value="", label="Owner Principal", placeholder="user@company.com", required=false) -%}
 <label>{{ label }}{% if required %} <span class="field-error">*</span>{% endif %}
-  <input
-    type="text"
-    name="{{ field_name }}"
-    value="{{ value }}"
-    placeholder="{{ placeholder }}"
-    {% if required %}required{% endif %}
-  >
+  <div class="typeahead-block">
+    <input
+      type="text"
+      name="{{ field_name }}"
+      value="{{ value }}"
+      placeholder="{{ placeholder }}"
+      autocomplete="off"
+      data-user-search
+      {% if required %}required{% endif %}
+    >
+    <div class="typeahead-results hidden" data-user-results></div>
+  </div>
+  <small class="muted">Search by email, first name, or last name.</small>
 </label>
 {%- endmacro %}
 
