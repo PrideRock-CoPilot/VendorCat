@@ -41,7 +41,12 @@
   <div class="section-header">
     <div>
       <h2>Preview And Mapping</h2>
-      <p>{{ preview_rows|length }} row(s) parsed for layout "{{ selected_layout_spec.label }}".</p>
+      {% if preview_hidden_count %}
+      <p>Showing {{ preview_rows|length }} of {{ preview_total_rows }} row(s) for layout "{{ selected_layout_spec.label }}".</p>
+      <p class="muted">{{ preview_hidden_count }} additional row(s) are loaded and will still apply using defaults unless overridden.</p>
+      {% else %}
+      <p>{{ preview_total_rows or (preview_rows|length) }} row(s) parsed for layout "{{ selected_layout_spec.label }}".</p>
+      {% endif %}
     </div>
   </div>
   {% set summary = namespace(error_count=0, review_count=0, ready_count=0, suggested_merge=0, suggested_new=0) %}
@@ -85,7 +90,7 @@
       <div class="bulk-defaults-row">
         <label>
           Set Action For Rows Without Errors
-          <select id="bulk-action-default">
+          <select id="bulk-action-default" name="bulk_default_action">
             <option value="">Keep Suggested Actions</option>
             <option value="new">Set to new</option>
             <option value="merge">Set to merge</option>

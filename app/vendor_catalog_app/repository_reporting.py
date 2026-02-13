@@ -1170,6 +1170,29 @@ class RepositoryReportingMixin:
             core_vendor_contact=self._table("core_vendor_contact"),
         )
 
+    def list_vendor_contacts_index(self, *, limit: int = 200000) -> pd.DataFrame:
+        safe_limit = max(1, min(int(limit or 200000), 1000000))
+        return self._cached(
+            ("list_vendor_contacts_index", safe_limit),
+            lambda: self._query_file(
+                "reporting/list_vendor_contacts_index.sql",
+                columns=[
+                    "vendor_id",
+                    "contact_type",
+                    "full_name",
+                    "email",
+                    "phone",
+                    "active_flag",
+                    "vendor_display_name",
+                    "legal_name",
+                ],
+                limit=safe_limit,
+                core_vendor_contact=self._table("core_vendor_contact"),
+                core_vendor=self._table("core_vendor"),
+            ),
+            ttl_seconds=300,
+        )
+
     def get_vendor_identifiers(self, vendor_id: str) -> pd.DataFrame:
         return self._query_file(
             "ingestion/select_vendor_identifiers.sql",
