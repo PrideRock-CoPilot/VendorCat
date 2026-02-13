@@ -924,6 +924,88 @@ class RepositoryReportingMixin:
             core_vendor_offering=self._table("core_vendor_offering"),
         )
 
+    def list_contracts_workspace(
+        self,
+        *,
+        search_text: str = "",
+        status: str = "all",
+        contract_scope: str = "all",
+        limit: int = 500,
+    ) -> pd.DataFrame:
+        limit = max(25, min(int(limit or 500), 5000))
+        normalized_status = str(status or "all").strip().lower() or "all"
+        normalized_scope = str(contract_scope or "all").strip().lower() or "all"
+        columns = [
+            "contract_id",
+            "vendor_id",
+            "vendor_display_name",
+            "offering_id",
+            "offering_name",
+            "contract_number",
+            "contract_status",
+            "start_date",
+            "end_date",
+            "cancelled_flag",
+            "annual_value",
+            "updated_at",
+        ]
+
+        where_parts: list[str] = ["1 = 1"]
+        params: list[Any] = []
+
+        if normalized_status != "all":
+            if normalized_status == "cancelled":
+                where_parts.append(
+                    "(coalesce(c.cancelled_flag, false) = true OR lower(coalesce(c.contract_status, '')) = 'cancelled')"
+                )
+            else:
+                where_parts.append("lower(coalesce(c.contract_status, '')) = %s")
+                params.append(normalized_status)
+
+        if normalized_scope == "vendor":
+            where_parts.append("coalesce(trim(c.offering_id), '') = ''")
+        elif normalized_scope == "offering":
+            where_parts.append("coalesce(trim(c.offering_id), '') <> ''")
+
+        if search_text.strip():
+            like = f"%{search_text.strip()}%"
+            where_parts.append(
+                "("
+                "lower(c.contract_id) LIKE lower(%s)"
+                " OR lower(coalesce(c.contract_number, '')) LIKE lower(%s)"
+                " OR lower(coalesce(c.vendor_id, '')) LIKE lower(%s)"
+                " OR lower(coalesce(c.offering_id, '')) LIKE lower(%s)"
+                " OR lower(coalesce(c.contract_status, '')) LIKE lower(%s)"
+                " OR lower(coalesce(v.display_name, v.legal_name, c.vendor_id, '')) LIKE lower(%s)"
+                " OR lower(coalesce(o.offering_name, c.offering_id, '')) LIKE lower(%s)"
+                ")"
+            )
+            params.extend([like, like, like, like, like, like, like])
+
+        where_clause = " AND ".join(where_parts)
+
+        def _load() -> pd.DataFrame:
+            frame = self._query_file(
+                "reporting/list_contracts_workspace.sql",
+                params=tuple(params) if params else None,
+                columns=columns,
+                where_clause=where_clause,
+                limit=limit,
+                core_contract=self._table("core_contract"),
+                core_vendor=self._table("core_vendor"),
+                core_vendor_offering=self._table("core_vendor_offering"),
+            )
+            if frame.empty:
+                return frame
+            frame["annual_value"] = pd.to_numeric(frame.get("annual_value"), errors="coerce").fillna(0.0)
+            return frame
+
+        return self._cached(
+            ("list_contracts_workspace", search_text.strip().lower(), normalized_status, normalized_scope, int(limit)),
+            _load,
+            ttl_seconds=60,
+        )
+
     def list_vendors_page(
         self,
         *,
