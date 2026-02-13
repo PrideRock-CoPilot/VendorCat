@@ -1,13 +1,26 @@
 from __future__ import annotations
 
-from urllib.parse import urlencode
-
 import pandas as pd
 from fastapi import APIRouter, Request
-from fastapi.responses import RedirectResponse
 
-from vendor_catalog_app.web.flash import add_flash
-from vendor_catalog_app.web.routers.vendors.constants import CONTRACT_STATUS_OPTIONS
+from vendor_catalog_app.web.routers.contracts.common import (
+    CONTRACT_EXPIRING_WINDOW_DAYS,
+    CONTRACT_SCOPE_OPTIONS,
+    CONTRACT_STATUS_FILTER_OPTIONS,
+    CONTRACT_TAB_CANCELLED,
+    CONTRACT_TAB_EXPIRING,
+    CONTRACT_TAB_OFFERING,
+    CONTRACT_TAB_OVERVIEW,
+    CONTRACT_TAB_VENDOR,
+    CONTRACT_TABS,
+    contracts_rows_to_dict,
+    contracts_url,
+    normalize_limit,
+    normalize_scope,
+    normalize_status,
+    normalize_tab,
+    to_bool_series,
+)
 from vendor_catalog_app.web.services import (
     base_template_context,
     ensure_session_started,
@@ -19,89 +32,6 @@ from vendor_catalog_app.web.services import (
 
 router = APIRouter(prefix="/contracts")
 
-CONTRACT_TAB_OVERVIEW = "overview"
-CONTRACT_TAB_ALL = "all"
-CONTRACT_TAB_VENDOR = "vendor"
-CONTRACT_TAB_OFFERING = "offering"
-CONTRACT_TAB_EXPIRING = "expiring"
-CONTRACT_TAB_CANCELLED = "cancelled"
-
-CONTRACT_TABS = [
-    (CONTRACT_TAB_OVERVIEW, "Overview"),
-    (CONTRACT_TAB_ALL, "All Contracts"),
-    (CONTRACT_TAB_VENDOR, "Vendor-Level"),
-    (CONTRACT_TAB_OFFERING, "Offering-Level"),
-    (CONTRACT_TAB_EXPIRING, "Expiring Soon"),
-    (CONTRACT_TAB_CANCELLED, "Cancelled"),
-]
-CONTRACT_SCOPE_OPTIONS = ["all", "vendor", "offering"]
-CONTRACT_STATUS_FILTER_OPTIONS = ["all", *CONTRACT_STATUS_OPTIONS, "cancelled"]
-CONTRACT_EXPIRING_WINDOW_DAYS = 90
-
-
-def _normalize_tab(raw_value: str | None) -> str:
-    value = str(raw_value or "").strip().lower()
-    allowed = {tab_id for tab_id, _ in CONTRACT_TABS}
-    return value if value in allowed else CONTRACT_TAB_OVERVIEW
-
-
-def _normalize_status(raw_value: str | None) -> str:
-    value = str(raw_value or "").strip().lower()
-    return value if value in set(CONTRACT_STATUS_FILTER_OPTIONS) else "all"
-
-
-def _normalize_scope(raw_value: str | None) -> str:
-    value = str(raw_value or "").strip().lower()
-    return value if value in set(CONTRACT_SCOPE_OPTIONS) else "all"
-
-
-def _normalize_limit(raw_value: str | None) -> int:
-    try:
-        value = int(str(raw_value or "").strip() or "500")
-    except Exception:
-        return 500
-    return max(25, min(value, 5000))
-
-
-def _to_bool_series(series: pd.Series) -> pd.Series:
-    normalized = series.astype(str).str.strip().str.lower()
-    return normalized.isin({"1", "true", "t", "yes", "y"})
-
-
-def _contracts_url(*, tab: str, q: str, status: str, scope: str, limit: int) -> str:
-    query = {
-        "tab": tab,
-        "q": q,
-        "status": status,
-        "scope": scope,
-        "limit": str(limit),
-    }
-    return f"/contracts?{urlencode(query)}"
-
-
-def _contracts_rows_to_dict(rows: pd.DataFrame) -> list[dict[str, object]]:
-    if rows.empty:
-        return []
-    out = rows.copy()
-    out["contract_number"] = out.get("contract_number", "").fillna("")
-    out["contract_status"] = out.get("contract_status", "").fillna("")
-    out["vendor_display_name"] = out.get("vendor_display_name", "").fillna(out.get("vendor_id", ""))
-    out["offering_name"] = out.get("offering_name", "").fillna("Unassigned")
-    out["contract_scope"] = out.get("contract_scope", "").fillna("vendor")
-    out["annual_value"] = pd.to_numeric(out.get("annual_value"), errors="coerce").fillna(0.0).round(2)
-    out["start_date"] = out.get("start_date", "").fillna("").astype(str)
-    out["end_date"] = out.get("end_date", "").fillna("").astype(str)
-    out["days_to_end"] = pd.to_numeric(out.get("days_to_end"), errors="coerce").round(0)
-    out["days_to_end"] = out["days_to_end"].where(out["days_to_end"].notna(), None)
-    out["vendor_contract_url"] = out.get("vendor_id", "").fillna("").map(
-        lambda vendor_id: (
-            f"/vendors/{str(vendor_id).strip()}/contracts?return_to=%2Fcontracts"
-            if str(vendor_id).strip()
-            else ""
-        )
-    )
-    return out.to_dict("records")
-
 
 @router.get("")
 def contracts(request: Request):
@@ -110,11 +40,11 @@ def contracts(request: Request):
     ensure_session_started(request, user)
     log_page_view(request, user, "Contracts Hub")
 
-    active_tab = _normalize_tab(request.query_params.get("tab"))
+    active_tab = normalize_tab(request.query_params.get("tab"))
     search_text = str(request.query_params.get("q", "")).strip()
-    selected_status = _normalize_status(request.query_params.get("status"))
-    selected_scope = _normalize_scope(request.query_params.get("scope"))
-    selected_limit = _normalize_limit(request.query_params.get("limit"))
+    selected_status = normalize_status(request.query_params.get("status"))
+    selected_scope = normalize_scope(request.query_params.get("scope"))
+    selected_limit = normalize_limit(request.query_params.get("limit"))
 
     contracts_df = repo.list_contracts_workspace(
         search_text=search_text,
@@ -143,7 +73,7 @@ def contracts(request: Request):
     contracts_df = contracts_df.copy()
     contracts_df["contract_status"] = contracts_df.get("contract_status", "").fillna("").astype(str)
     contracts_df["contract_status_norm"] = contracts_df["contract_status"].str.strip().str.lower()
-    contracts_df["cancelled_flag_bool"] = _to_bool_series(contracts_df.get("cancelled_flag", pd.Series(dtype="object")))
+    contracts_df["cancelled_flag_bool"] = to_bool_series(contracts_df.get("cancelled_flag", pd.Series(dtype="object")))
     contracts_df["offering_id"] = contracts_df.get("offering_id", "").fillna("").astype(str).str.strip()
     contracts_df["contract_scope"] = contracts_df["offering_id"].map(lambda value: "offering" if value else "vendor")
     contracts_df["start_date_ts"] = pd.to_datetime(contracts_df.get("start_date"), errors="coerce")
@@ -215,8 +145,8 @@ def contracts(request: Request):
         selected_rows_df = cancelled_rows_df
         selected_tab_title = "Cancelled Contracts"
 
-    selected_rows = _contracts_rows_to_dict(selected_rows_df)
-    overview_rows = _contracts_rows_to_dict(expiring_rows_df.head(25))
+    selected_rows = contracts_rows_to_dict(selected_rows_df)
+    overview_rows = contracts_rows_to_dict(expiring_rows_df.head(25))
 
     cancellation_rows: list[dict[str, object]] = []
     if active_tab in {CONTRACT_TAB_OVERVIEW, CONTRACT_TAB_CANCELLED}:
@@ -235,7 +165,7 @@ def contracts(request: Request):
         {
             "id": tab_id,
             "label": tab_label,
-            "href": _contracts_url(
+            "href": contracts_url(
                 tab=tab_id,
                 q=search_text,
                 status=selected_status,
@@ -286,13 +216,3 @@ def contracts(request: Request):
     )
     return request.app.state.templates.TemplateResponse(request, "contracts.html", context)
 
-
-@router.post("/cancel")
-async def record_cancellation(request: Request):
-    _ = await request.form()
-    add_flash(
-        request,
-        "Contract cancellation is managed in Vendor 360 (Vendor -> Contracts or Offering -> Delivery).",
-        "info",
-    )
-    return RedirectResponse(url="/contracts", status_code=303)
