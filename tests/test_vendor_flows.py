@@ -353,6 +353,44 @@ def test_contract_and_demo_forms_use_expected_inputs(client: TestClient) -> None
     assert "/api/offerings/search" in demos_page.text
 
 
+def test_demo_review_form_template_and_submission_flow(client: TestClient) -> None:
+    review_page = client.get("/demos/demo-001/review-form")
+    assert review_page.status_code == 200
+    assert "Review Template Builder" in review_page.text
+
+    template_save = client.post(
+        "/demos/demo-001/review-form/template",
+        data={
+            "template_title": "Enterprise Demo Scorecard",
+            "max_score": "10",
+            "criteria_csv": "Business Fit, Security, Supportability",
+            "instructions": "Score each category from 0 to 10.",
+        },
+        follow_redirects=False,
+    )
+    assert template_save.status_code == 303
+
+    review_submit = client.post(
+        "/demos/demo-001/review-form/submit",
+        data={
+            "score_business_fit": "8.5",
+            "score_security": "9.0",
+            "score_supportability": "7.5",
+            "review_comment": "Strong overall fit with minor support concerns.",
+        },
+        follow_redirects=False,
+    )
+    assert review_submit.status_code == 303
+
+    refreshed = client.get("/demos/demo-001/review-form")
+    assert refreshed.status_code == 200
+    assert "Enterprise Demo Scorecard" in refreshed.text
+    assert "Business Fit" in refreshed.text
+    assert "Security" in refreshed.text
+    assert "Supportability" in refreshed.text
+    assert "Submissions" in refreshed.text
+
+
 def test_vendor_contracts_page_supports_add_and_cancel(client: TestClient) -> None:
     add_response = client.post(
         "/vendors/vnd-001/contracts/add",

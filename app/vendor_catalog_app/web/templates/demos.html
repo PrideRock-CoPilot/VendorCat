@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Demo Outcomes</h1>
+<p class="muted">Capture outcomes, then use shared review forms for multi-reviewer grading and summary scoring.</p>
 
 <section class="card">
   <table>
     <thead>
-      <tr><th>Demo</th><th>Vendor</th><th>Offering</th><th>Date</th><th>Score</th><th>Outcome</th><th>Reason</th><th>Notes</th></tr>
+      <tr><th>Demo</th><th>Vendor</th><th>Offering</th><th>Date</th><th>Score</th><th>Outcome</th><th>Reason</th><th>Notes</th><th>Review Form</th></tr>
     </thead>
     <tbody>
       {% for row in rows %}
@@ -18,9 +19,10 @@
         <td>{{ row.selection_outcome }}</td>
         <td>{{ row.non_selection_reason_code }}</td>
         <td>{{ row.notes }}</td>
+        <td>{% if row.review_form_url %}<a href="{{ row.review_form_url }}">Open</a>{% endif %}</td>
       </tr>
       {% else %}
-      <tr><td colspan="8">No demo outcomes</td></tr>
+      <tr><td colspan="9">No demo outcomes</td></tr>
       {% endfor %}
     </tbody>
   </table>

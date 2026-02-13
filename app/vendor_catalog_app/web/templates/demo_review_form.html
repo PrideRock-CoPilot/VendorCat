@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="breadcrumbs">
+  <a href="/demos">Demos</a>
+  <span class="breadcrumb-sep">/</span>
+  <span aria-current="page">Review Form: {{ demo_id }}</span>
+</div>
+
+<h1>Demo Review Form</h1>
+<p class="muted">Shared scorecard for multi-reviewer demo grading. Each reviewer submits independently and the app rolls up summary scores.</p>
+
+<section class="card">
+  <table>
+    <tbody>
+      <tr><th>Demo ID</th><td>{{ demo.demo_id }}</td></tr>
+      <tr><th>Vendor</th><td>{{ demo.vendor_id }}</td></tr>
+      <tr><th>Offering</th><td>{{ demo.offering_id or "Unassigned" }}</td></tr>
+      <tr><th>Demo Date</th><td>{{ demo.demo_date }}</td></tr>
+      <tr><th>Current Outcome</th><td>{{ demo.selection_outcome }}</td></tr>
+      <tr><th>Recorded Overall Score</th><td>{{ demo.overall_score }}</td></tr>
+    </tbody>
+  </table>
+  {% if is_demo_closed %}
+  <p class="muted"><strong>Demo status:</strong> Closed ({{ demo.selection_outcome }}). Review submissions are summarized below.</p>
+  {% else %}
+  <p class="muted"><strong>Demo status:</strong> Open for review submissions.</p>
+  {% endif %}
+</section>
+
+{% if can_edit %}
+<section class="card">
+  <h2>Review Template Builder</h2>
+  <form method="post" action="/demos/{{ demo_id }}/review-form/template" class="grid grid-3">
+    <label>Template Title
+      <input type="text" name="template_title" value="{{ review_template.title if review_template else 'Demo Scorecard' }}">
+    </label>
+    <label>Max Score Per Criterion
+      <input type="number" name="max_score" min="1" max="100" step="0.5" value="{{ review_template.criteria[0].max_score if review_template and review_template.criteria else 10 }}">
+    </label>
+    <label class="full">Criteria (comma, semicolon, or new line separated)
+      <textarea name="criteria_csv" rows="3" required>{% if review_template and review_template.criteria %}{% for c in review_template.criteria %}{{ c.label }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</textarea>
+    </label>
+    <label class="full">Instructions
+      <textarea name="instructions" rows="2">{% if review_template %}{{ review_template.instructions }}{% endif %}</textarea>
+    </label>
+    <div><button type="submit">Save Review Template</button></div>
+  </form>
+  <p class="muted">Saving the template updates the shared form for all reviewers.</p>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Current Scorecard</h2>
+  {% if review_template %}
+  <p class="muted"><strong>{{ review_template.title }}</strong></p>
+  {% if review_template.instructions %}
+  <p class="muted">{{ review_template.instructions }}</p>
+  {% endif %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Criterion</th><th>Max Score</th></tr></thead>
+      <tbody>
+      {% for row in review_template.criteria %}
+      <tr><td>{{ row.label }}</td><td>{{ row.max_score }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No review template is configured yet. Create one above before collecting reviewer scores.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Submit Review</h2>
+  {% if review_template and can_submit_review %}
+  <form method="post" action="/demos/{{ demo_id }}/review-form/submit" class="grid grid-3">
+    {% for row in review_template.criteria %}
+    <label>{{ row.label }} (0 - {{ row.max_score }})
+      <input type="number" name="score_{{ row.code }}" min="0" max="{{ row.max_score }}" step="0.1" required>
+    </label>
+    {% endfor %}
+    <label class="full">Reviewer Comment
+      <textarea name="review_comment" rows="2"></textarea>
+    </label>
+    <div><button type="submit">Submit Review</button></div>
+  </form>
+  {% elif not review_template %}
+  <p class="muted">Create a template first to enable review submissions.</p>
+  {% else %}
+  <p class="muted">Review submission requires a valid user identity and unlocked mode.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Review Summary</h2>
+  <div class="metrics">
+    <div class="metric"><span>Submissions</span><strong>{{ review_summary.submission_count }}</strong></div>
+    <div class="metric"><span>Average Score (0-10)</span><strong>{{ review_summary.overall_avg if review_summary.overall_avg is not none else '--' }}</strong></div>
+  </div>
+  <div class="grid grid-2">
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Criterion</th><th>Average</th><th>Responses</th></tr></thead>
+        <tbody>
+          {% for row in review_summary.criterion_stats %}
+          <tr>
+            <td>{{ row.label }}</td>
+            <td>{{ row.avg_score if row.avg_score is not none else '--' }}</td>
+            <td>{{ row.response_count }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3">No criterion stats yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Reviewer</th><th>Submitted</th><th>Overall</th><th>Comment</th></tr></thead>
+        <tbody>
+          {% for row in review_summary.submissions %}
+          <tr>
+            <td>{{ row.reviewer }}</td>
+            <td>{{ row.submitted_at }}</td>
+            <td>{{ row.overall_score }}</td>
+            <td>{{ row.comment }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4">No submissions yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
