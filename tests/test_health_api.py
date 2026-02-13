@@ -13,7 +13,7 @@ if str(APP_ROOT) not in sys.path:
 from vendor_catalog_app.config import AppConfig
 from vendor_catalog_app.repository import SchemaBootstrapRequiredError
 from vendor_catalog_app.web.app import create_app
-from vendor_catalog_app.web.routers import api as api_router
+from vendor_catalog_app.web.routers.system import api_health as api_router
 
 
 class _HealthyRepo:

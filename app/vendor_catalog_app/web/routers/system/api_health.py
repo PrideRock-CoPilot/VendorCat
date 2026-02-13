@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from vendor_catalog_app.observability import get_observability_manager
-from vendor_catalog_app.repository import SchemaBootstrapRequiredError
 from vendor_catalog_app.web.bootstrap_diagnostics import (
     bootstrap_diagnostics_authorized,
     build_bootstrap_diagnostics_payload,
@@ -15,34 +12,11 @@ from vendor_catalog_app.web.bootstrap_diagnostics import (
     path_preview,
     raw_env_key_presence,
 )
-from vendor_catalog_app.web.services import (
-    ensure_session_started,
-    get_config,
-    get_repo,
-    get_user_context,
-    resolve_databricks_request_identity,
-)
+from vendor_catalog_app.web.routers.system.common import _runtime_ready, _utc_now_iso
+from vendor_catalog_app.web.services import get_config, get_repo, resolve_databricks_request_identity
 
 
 router = APIRouter(prefix="/api")
-
-
-def _normalize_limit(limit: int) -> int:
-    return max(1, min(int(limit or 20), 50))
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _runtime_ready(repo) -> tuple[bool, str | None]:
-    try:
-        repo.ensure_runtime_tables()
-        return True, None
-    except SchemaBootstrapRequiredError as exc:
-        return False, str(exc)
-    except Exception as exc:
-        return False, f"Connection check failed: {exc}"
 
 
 @router.get("/health/live")
@@ -142,52 +116,3 @@ def api_bootstrap_diagnostics(request: Request):
     identity = resolve_databricks_request_identity(request)
     payload, status_code = build_bootstrap_diagnostics_payload(repo, config, identity)
     return JSONResponse(payload, status_code=status_code)
-
-
-@router.get("/vendors/search")
-def api_vendor_search(request: Request, q: str = "", limit: int = 20):
-    repo = get_repo()
-    user = get_user_context(request)
-    ensure_session_started(request, user)
-    rows = repo.search_vendors_typeahead(q=q, limit=_normalize_limit(limit)).to_dict("records")
-    return JSONResponse({"items": rows})
-
-
-@router.get("/offerings/search")
-def api_offering_search(request: Request, vendor_id: str = "", q: str = "", limit: int = 20):
-    repo = get_repo()
-    user = get_user_context(request)
-    ensure_session_started(request, user)
-    rows = repo.search_offerings_typeahead(
-        vendor_id=vendor_id.strip() or None,
-        q=q,
-        limit=_normalize_limit(limit),
-    ).to_dict("records")
-    return JSONResponse({"items": rows})
-
-
-@router.get("/projects/search")
-def api_project_search(request: Request, q: str = "", limit: int = 20):
-    repo = get_repo()
-    user = get_user_context(request)
-    ensure_session_started(request, user)
-    rows = repo.search_projects_typeahead(q=q, limit=_normalize_limit(limit)).to_dict("records")
-    return JSONResponse({"items": rows})
-
-
-@router.get("/contracts/search")
-def api_contract_search(request: Request, q: str = "", limit: int = 20):
-    repo = get_repo()
-    user = get_user_context(request)
-    ensure_session_started(request, user)
-    rows = repo.search_contracts_typeahead(q=q, limit=_normalize_limit(limit)).to_dict("records")
-    return JSONResponse({"items": rows})
-
-
-@router.get("/users/search")
-def api_user_search(request: Request, q: str = "", limit: int = 20):
-    repo = get_repo()
-    user = get_user_context(request)
-    ensure_session_started(request, user)
-    rows = repo.search_user_directory(q=q, limit=_normalize_limit(limit)).to_dict("records")
-    return JSONResponse({"items": rows})
