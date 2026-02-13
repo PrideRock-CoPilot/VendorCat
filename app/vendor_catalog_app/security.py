@@ -29,6 +29,8 @@ CHANGE_APPROVAL_LEVELS = {
     "update_vendor_profile": 6,
     "update_offering": 6,
     "create_offering": 6,
+    "create_contract": 6,
+    "update_contract": 6,
     "map_contract_to_offering": 6,
     "map_demo_to_offering": 3,
     "add_vendor_owner": 6,

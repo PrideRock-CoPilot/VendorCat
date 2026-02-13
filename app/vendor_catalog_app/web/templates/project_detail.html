@@ -1,6 +1,15 @@
 {% extends "base.html" %}
 {% from "doc_link_form.html" import render_doc_link_form with context %}
 {% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ return_to }}">Vendor 360</a>
+  <span class="breadcrumb-sep" aria-hidden="true">/</span>
+  <a href="/vendors/{{ vendor_id }}/summary?return_to={{ return_to|urlencode }}">{{ vendor_display_name }}</a>
+  <span class="breadcrumb-sep" aria-hidden="true">/</span>
+  <a href="/vendors/{{ vendor_id }}/projects?return_to={{ return_to|urlencode }}">Projects</a>
+  <span class="breadcrumb-sep" aria-hidden="true">/</span>
+  <span aria-current="page">{{ project.project_name }}</span>
+</nav>
 <div class="section-header">
   <div>
     <h1>{{ project.project_name }}</h1>
@@ -24,7 +33,7 @@
   <div class="metric"><span>Linked Offerings</span><strong>{{ project_offerings|length }}</strong></div>
 </section>
 
-<section class="card section-nav-card">
+<section class="card section-nav-card sticky-section-nav">
   <div class="section-nav-links">
     {% for item in vendor_nav %}
     <a class="{% if item.active %}active{% endif %}" href="{{ item.url }}">{{ item.label }}</a>

@@ -43,6 +43,19 @@
 </section>
 {% endif %}
 
+{% if not rows %}
+<section class="card empty-state-card section-divider">
+  <h2>No Projects Found</h2>
+  <p>Adjust your filters or create a new project to begin tracking work.</p>
+  <div class="empty-state-actions">
+    <a class="button-link subtle" href="/projects">Clear Filters</a>
+    {% if can_edit and not locked_mode %}
+    <a class="button-link" href="/projects/new?return_to=%2Fprojects">Create Project</a>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
 <section class="card section-divider">
   <h2>Project List</h2>
   <table>

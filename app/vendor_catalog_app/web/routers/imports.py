@@ -368,6 +368,12 @@ def _build_preview_rows(repo, layout_key: str, rows: list[dict[str, str]]) -> li
         if layout_key == "projects" and not str(row_data.get("project_name") or "").strip():
             errors.append("project_name is required for new records.")
 
+        row_status = "ready"
+        if errors:
+            row_status = "error"
+        elif notes:
+            row_status = "review"
+
         preview_rows.append(
             {
                 "row_index": idx,
@@ -379,6 +385,7 @@ def _build_preview_rows(repo, layout_key: str, rows: list[dict[str, str]]) -> li
                 "suggested_target_label": suggested_target_label,
                 "notes": notes,
                 "errors": errors,
+                "row_status": row_status,
             }
         )
     return preview_rows

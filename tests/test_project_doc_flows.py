@@ -66,6 +66,7 @@ def test_create_project_and_add_demo(client: TestClient) -> None:
     detail_response = client.get(f"/projects/{project_id}/demos?return_to=%2Fprojects")
     assert detail_response.status_code == 200
     assert "Transition Demo Session" in detail_response.text
+    assert "section-nav-card sticky-section-nav" in detail_response.text
 
 
 def test_projects_home_and_new_page(client: TestClient) -> None:
@@ -78,6 +79,62 @@ def test_projects_home_and_new_page(client: TestClient) -> None:
     assert new_page.status_code == 200
     assert "New Project" in new_page.text
     assert "Linked Vendors (optional)" in new_page.text
+
+
+def test_vendor_project_detail_uses_sticky_section_nav(client: TestClient) -> None:
+    create_response = client.post(
+        "/vendors/vnd-001/projects/new",
+        data={
+            "return_to": "/vendors",
+            "project_name": "Vendor Detail Sticky Nav",
+            "project_type": "implementation",
+            "status": "active",
+        },
+        follow_redirects=False,
+    )
+    assert create_response.status_code == 303
+    match = re.search(r"/projects/(prj-[^/]+)/summary", create_response.headers["location"])
+    assert match is not None
+    project_id = match.group(1)
+
+    detail = client.get(f"/vendors/vnd-001/projects/{project_id}?return_to=%2Fvendors")
+    assert detail.status_code == 200
+    assert "section-nav-card sticky-section-nav" in detail.text
+
+
+def test_projects_empty_state_shows_next_actions(client: TestClient) -> None:
+    response = client.get("/projects?search=__no_project_match__")
+    assert response.status_code == 200
+    assert "No Projects Found" in response.text
+    assert "Clear Filters" in response.text
+    assert "Create Project" in response.text
+
+
+def test_project_chip_remove_controls_include_accessibility_text(client: TestClient) -> None:
+    new_page = client.get("/projects/new?return_to=%2Fprojects")
+    assert new_page.status_code == 200
+    assert "Remove Vendor" in new_page.text
+    assert "Remove Offering" in new_page.text
+
+    create_response = client.post(
+        "/projects/new",
+        data={
+            "return_to": "/projects",
+            "project_name": "Accessibility Labels Project",
+            "project_type": "implementation",
+            "status": "draft",
+        },
+        follow_redirects=False,
+    )
+    assert create_response.status_code == 303
+    match = re.search(r"/projects/(prj-[^/]+)/summary", create_response.headers["location"])
+    assert match is not None
+    project_id = match.group(1)
+
+    edit_page = client.get(f"/projects/{project_id}/edit?return_to=%2Fprojects")
+    assert edit_page.status_code == 200
+    assert "Remove Vendor" in edit_page.text
+    assert "Remove Offering" in edit_page.text
 
 
 def test_create_project_without_vendor_then_attach_multiple(client: TestClient) -> None:

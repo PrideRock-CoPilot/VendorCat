@@ -13,6 +13,7 @@ from vendor_catalog_app.env import (
     DATABRICKS_WAREHOUSE_ID_KEYS,
     TVENDOR_ALLOWED_WRITE_VERBS,
     TVENDOR_CATALOG,
+    TVENDOR_DEV_ALLOW_ALL_ACCESS,
     TVENDOR_ENFORCE_PROD_SQL_POLICY,
     TVENDOR_ENV,
     TVENDOR_FQ_SCHEMA,
@@ -122,6 +123,7 @@ class AppConfig:
     enforce_prod_sql_policy: bool = True
     allowed_write_verbs: tuple[str, ...] = ("INSERT", "UPDATE")
     schema_bootstrap_sql_path: str = "setup/databricks/001_create_databricks_schema.sql"
+    dev_allow_all_access: bool = False
 
     @property
     def fq_schema(self) -> str:
@@ -165,5 +167,9 @@ class AppConfig:
             schema_bootstrap_sql_path=get_env(
                 TVENDOR_SCHEMA_BOOTSTRAP_SQL,
                 "setup/databricks/001_create_databricks_schema.sql",
+            ),
+            dev_allow_all_access=(
+                env_name in DEV_ENV_NAMES
+                and get_env_bool(TVENDOR_DEV_ALLOW_ALL_ACCESS, default=False)
             ),
         )

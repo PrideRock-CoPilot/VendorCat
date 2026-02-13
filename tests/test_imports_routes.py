@@ -105,6 +105,9 @@ def test_import_preview_and_apply_vendor_create(
     )
     assert preview.status_code == 200
     assert "Preview And Mapping" in preview.text
+    assert "Bulk Action Defaults" in preview.text
+    assert "Row Status" in preview.text
+    assert "status-ready" in preview.text
 
     token_match = re.search(r'name="preview_token" value="([a-f0-9]+)"', preview.text)
     assert token_match is not None

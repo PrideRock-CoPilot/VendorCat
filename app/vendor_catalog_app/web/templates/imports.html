@@ -44,6 +44,34 @@
       <p>{{ preview_rows|length }} row(s) parsed for layout "{{ selected_layout_spec.label }}".</p>
     </div>
   </div>
+  {% set summary = namespace(error_count=0, review_count=0, ready_count=0, suggested_merge=0, suggested_new=0) %}
+  {% for row in preview_rows %}
+    {% if row.row_status == "error" %}
+      {% set summary.error_count = summary.error_count + 1 %}
+    {% elif row.row_status == "review" %}
+      {% set summary.review_count = summary.review_count + 1 %}
+    {% else %}
+      {% set summary.ready_count = summary.ready_count + 1 %}
+    {% endif %}
+    {% if row.suggested_action == "merge" %}
+      {% set summary.suggested_merge = summary.suggested_merge + 1 %}
+    {% else %}
+      {% set summary.suggested_new = summary.suggested_new + 1 %}
+    {% endif %}
+  {% endfor %}
+
+  <div class="import-preview-summary">
+    <span class="status-badge status-{{ 'error' if summary.error_count else 'ready' }}">Errors: {{ summary.error_count }}</span>
+    <span class="status-badge status-review">Needs Review: {{ summary.review_count }}</span>
+    <span class="status-badge status-ready">Ready: {{ summary.ready_count }}</span>
+    <span class="status-badge status-merged">Suggested Merge: {{ summary.suggested_merge }}</span>
+    <span class="status-badge status-new">Suggested New: {{ summary.suggested_new }}</span>
+  </div>
+  {% if summary.error_count %}
+  <div class="flash error">
+    {{ summary.error_count }} row(s) have validation errors. Fix action/target values before applying.
+  </div>
+  {% endif %}
 
   <form method="post" action="/imports/apply">
     <input type="hidden" name="preview_token" value="{{ preview_token }}">
@@ -52,52 +80,84 @@
       <input type="text" name="reason" value="{{ import_reason }}" placeholder="Bulk import update reason (required for merge actions)">
     </label>
 
-    <table>
-      <thead>
-        <tr>
-          <th>Line</th>
-          {% for field in selected_layout_spec.fields %}
-          <th>{{ field }}</th>
-          {% endfor %}
-          <th>Match</th>
-          <th>Action</th>
-          <th>Target ID</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in preview_rows %}
-        <tr>
-          <td>{{ row.line_number or row.row_index }}</td>
-          {% for field in selected_layout_spec.fields %}
-          <td>{{ row.row_data.get(field, "") }}</td>
-          {% endfor %}
-          <td>
-            {% if row.suggested_target_label %}
-            <div>{{ row.suggested_target_label }}</div>
-            {% else %}
-            <div>None</div>
-            {% endif %}
-            {% for note in row.notes %}
-            <small class="muted">{{ note }}</small><br>
+    <section class="bulk-defaults-card">
+      <h3>Bulk Action Defaults</h3>
+      <div class="bulk-defaults-row">
+        <label>
+          Set Action For Rows Without Errors
+          <select id="bulk-action-default">
+            <option value="">Keep Suggested Actions</option>
+            <option value="new">Set to new</option>
+            <option value="merge">Set to merge</option>
+            <option value="skip">Set to skip</option>
+          </select>
+        </label>
+        <div class="button-group">
+          <button type="button" id="bulk-action-all-new">All New</button>
+          <button type="button" id="bulk-action-all-merge">All Merge</button>
+          <button type="button" id="bulk-action-all-skip">All Skip</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="table-wrap preview-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Line</th>
+            <th>Row Status</th>
+            {% for field in selected_layout_spec.fields %}
+            <th>{{ field }}</th>
             {% endfor %}
-            {% for err in row.errors %}
-            <small class="muted">{{ err }}</small><br>
+            <th>Match</th>
+            <th>Action</th>
+            <th>Target ID</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in preview_rows %}
+          <tr data-row-status="{{ row.row_status }}" class="import-row-status-{{ row.row_status }}">
+            <td>{{ row.line_number or row.row_index }}</td>
+            <td>
+              {% if row.row_status == "error" %}
+              <span class="status-badge status-error">error</span>
+              {% elif row.row_status == "review" %}
+              <span class="status-badge status-review">review</span>
+              {% else %}
+              <span class="status-badge status-ready">ready</span>
+              {% endif %}
+            </td>
+            {% for field in selected_layout_spec.fields %}
+            <td>{{ row.row_data.get(field, "") }}</td>
             {% endfor %}
-          </td>
-          <td>
-            <select name="action_{{ row.row_index }}">
-              <option value="new" {% if row.suggested_action == "new" %}selected{% endif %}>new</option>
-              <option value="merge" {% if row.suggested_action == "merge" %}selected{% endif %}>merge</option>
-              <option value="skip">skip</option>
-            </select>
-          </td>
-          <td>
-            <input type="text" name="target_{{ row.row_index }}" value="{{ row.suggested_target_id }}" placeholder="target id for merge">
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+            <td>
+              {% if row.suggested_target_label %}
+              <div>{{ row.suggested_target_label }}</div>
+              {% else %}
+              <div>None</div>
+              {% endif %}
+              {% for note in row.notes %}
+              <div><small class="status-badge status-review">{{ note }}</small></div>
+              {% endfor %}
+              {% for err in row.errors %}
+              <div><small class="status-badge status-error">{{ err }}</small></div>
+              {% endfor %}
+            </td>
+            <td>
+              <select name="action_{{ row.row_index }}" data-import-action-select>
+                <option value="new" {% if row.suggested_action == "new" %}selected{% endif %}>new</option>
+                <option value="merge" {% if row.suggested_action == "merge" %}selected{% endif %}>merge</option>
+                <option value="skip">skip</option>
+              </select>
+            </td>
+            <td>
+              <input type="text" name="target_{{ row.row_index }}" value="{{ row.suggested_target_id }}" placeholder="target id for merge">
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
 
     <div class="button-group" style="margin-top:10px;">
       <button type="submit">Apply Import</button>
@@ -129,5 +189,56 @@
     </tbody>
   </table>
 </section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if preview_rows %}
+<script>
+(() => {
+  const actionSelects = Array.from(document.querySelectorAll("[data-import-action-select]"));
+  if (!actionSelects.length) {
+    return;
+  }
+  const getRows = () => actionSelects.map((select) => ({
+    select,
+    row: select.closest("tr"),
+  })).filter((item) => !!item.row);
+
+  const setAllActions = (value, onlyWithoutErrors) => {
+    getRows().forEach((item) => {
+      const rowStatus = item.row.getAttribute("data-row-status") || "";
+      if (onlyWithoutErrors && rowStatus === "error") {
+        return;
+      }
+      item.select.value = value;
+    });
+  };
+
+  const defaultsSelect = document.getElementById("bulk-action-default");
+  if (defaultsSelect) {
+    defaultsSelect.addEventListener("change", () => {
+      const value = defaultsSelect.value;
+      if (!value) {
+        return;
+      }
+      setAllActions(value, true);
+    });
+  }
+
+  const allNew = document.getElementById("bulk-action-all-new");
+  if (allNew) {
+    allNew.addEventListener("click", () => setAllActions("new", false));
+  }
+  const allMerge = document.getElementById("bulk-action-all-merge");
+  if (allMerge) {
+    allMerge.addEventListener("click", () => setAllActions("merge", false));
+  }
+  const allSkip = document.getElementById("bulk-action-all-skip");
+  if (allSkip) {
+    allSkip.addEventListener("click", () => setAllActions("skip", false));
+  }
+})();
+</script>
 {% endif %}
 {% endblock %}

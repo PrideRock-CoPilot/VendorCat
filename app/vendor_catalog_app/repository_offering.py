@@ -1167,6 +1167,237 @@ class RepositoryOfferingMixin:
         )
         return offering_id
 
+    def create_contract(
+        self,
+        *,
+        vendor_id: str,
+        actor_user_principal: str,
+        contract_number: str,
+        contract_status: str = "active",
+        offering_id: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        annual_value: float | None = None,
+    ) -> str:
+        profile = self.get_vendor_profile(vendor_id)
+        if profile.empty:
+            raise ValueError("Vendor not found.")
+
+        normalized_offering_id = self._normalize_offering_id(offering_id)
+        if normalized_offering_id and not self.offering_belongs_to_vendor(vendor_id, normalized_offering_id):
+            raise ValueError("Selected offering does not belong to this vendor.")
+
+        contract_number_value = str(contract_number or "").strip()
+        if not contract_number_value:
+            raise ValueError("Contract number is required.")
+
+        allowed_statuses = {"draft", "pending", "active", "retired", "expired", "cancelled"}
+        status_value = str(contract_status or "").strip().lower() or "active"
+        if status_value not in allowed_statuses:
+            raise ValueError(f"Contract status must be one of: {', '.join(sorted(allowed_statuses))}.")
+
+        start_value = str(start_date or "").strip()
+        start_date_value: str | None = None
+        if start_value:
+            parsed_start = pd.to_datetime(start_value, errors="coerce")
+            if pd.isna(parsed_start):
+                raise ValueError("Start date must be a valid date.")
+            start_date_value = parsed_start.date().isoformat()
+
+        end_value = str(end_date or "").strip()
+        end_date_value: str | None = None
+        if end_value:
+            parsed_end = pd.to_datetime(end_value, errors="coerce")
+            if pd.isna(parsed_end):
+                raise ValueError("End date must be a valid date.")
+            end_date_value = parsed_end.date().isoformat()
+
+        if start_date_value and end_date_value and end_date_value < start_date_value:
+            raise ValueError("End date must be on or after start date.")
+
+        annual_value_value: float | None = None
+        if annual_value not in (None, ""):
+            try:
+                annual_value_value = float(annual_value)
+            except Exception as exc:
+                raise ValueError("Annual value must be numeric.") from exc
+            if annual_value_value < 0:
+                raise ValueError("Annual value must be zero or greater.")
+
+        contract_id = self._new_id("ctr")
+        now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
+        cancelled_flag = bool(status_value == "cancelled")
+        row = {
+            "contract_id": contract_id,
+            "vendor_id": vendor_id,
+            "offering_id": normalized_offering_id,
+            "contract_number": contract_number_value,
+            "contract_status": status_value,
+            "start_date": start_date_value,
+            "end_date": end_date_value,
+            "cancelled_flag": cancelled_flag,
+            "annual_value": annual_value_value,
+            "updated_at": now.isoformat(),
+            "updated_by": actor_ref,
+        }
+
+        self._execute_file(
+            "inserts/create_contract.sql",
+            params=(
+                contract_id,
+                vendor_id,
+                normalized_offering_id,
+                contract_number_value,
+                status_value,
+                start_date_value,
+                end_date_value,
+                cancelled_flag,
+                annual_value_value,
+                now,
+                actor_ref,
+            ),
+            core_contract=self._table("core_contract"),
+        )
+        self._write_audit_entity_change(
+            entity_name="core_contract",
+            entity_id=contract_id,
+            action_type="insert",
+            actor_user_principal=actor_user_principal,
+            before_json=None,
+            after_json=row,
+            request_id=None,
+        )
+        return contract_id
+
+    def update_contract(
+        self,
+        *,
+        vendor_id: str,
+        contract_id: str,
+        actor_user_principal: str,
+        updates: dict[str, Any],
+        reason: str,
+    ) -> dict[str, str]:
+        if not reason.strip():
+            raise ValueError("Reason is required.")
+
+        contracts = self.get_vendor_contracts(vendor_id)
+        target = contracts[contracts["contract_id"].astype(str) == str(contract_id)]
+        if target.empty:
+            raise ValueError("Contract does not belong to this vendor.")
+
+        before = target.iloc[0].to_dict()
+        clean_updates: dict[str, Any] = {}
+        allowed_statuses = {"draft", "pending", "active", "retired", "expired", "cancelled"}
+        allowed_fields = {"contract_number", "offering_id", "contract_status", "start_date", "end_date", "annual_value"}
+
+        for field, raw_value in (updates or {}).items():
+            field_name = str(field or "").strip()
+            if field_name not in allowed_fields:
+                continue
+
+            if field_name == "contract_number":
+                value = str(raw_value or "").strip()
+                if not value:
+                    raise ValueError("Contract number is required.")
+                if value != str(before.get("contract_number") or "").strip():
+                    clean_updates[field_name] = value
+                continue
+
+            if field_name == "offering_id":
+                value = self._normalize_offering_id(raw_value)
+                if value and not self.offering_belongs_to_vendor(vendor_id, value):
+                    raise ValueError("Selected offering does not belong to this vendor.")
+                before_value = self._normalize_offering_id(before.get("offering_id"))
+                if value != before_value:
+                    clean_updates[field_name] = value
+                continue
+
+            if field_name == "contract_status":
+                value = str(raw_value or "").strip().lower()
+                if value not in allowed_statuses:
+                    raise ValueError(f"Contract status must be one of: {', '.join(sorted(allowed_statuses))}.")
+                before_value = str(before.get("contract_status") or "").strip().lower()
+                if value != before_value:
+                    clean_updates[field_name] = value
+                    clean_updates["cancelled_flag"] = bool(value == "cancelled")
+                continue
+
+            if field_name in {"start_date", "end_date"}:
+                text = str(raw_value or "").strip()
+                value: str | None = None
+                if text:
+                    parsed = pd.to_datetime(text, errors="coerce")
+                    if pd.isna(parsed):
+                        raise ValueError(f"{field_name.replace('_', ' ').title()} must be a valid date.")
+                    value = parsed.date().isoformat()
+                before_raw = str(before.get(field_name) or "").strip()
+                before_value = before_raw.split(" ")[0] if before_raw else None
+                if value != before_value:
+                    clean_updates[field_name] = value
+                continue
+
+            if field_name == "annual_value":
+                text = str(raw_value or "").strip()
+                value: float | None = None
+                if text:
+                    try:
+                        value = float(text)
+                    except Exception as exc:
+                        raise ValueError("Annual value must be numeric.") from exc
+                    if value < 0:
+                        raise ValueError("Annual value must be zero or greater.")
+                before_raw = before.get("annual_value")
+                try:
+                    before_value = float(before_raw) if before_raw not in (None, "") else None
+                except Exception:
+                    before_value = None
+                if value != before_value:
+                    clean_updates[field_name] = value
+                continue
+
+        start_date_value = clean_updates.get("start_date")
+        if start_date_value is None:
+            existing_start = str(before.get("start_date") or "").strip()
+            start_date_value = existing_start.split(" ")[0] if existing_start else None
+        end_date_value = clean_updates.get("end_date")
+        if end_date_value is None:
+            existing_end = str(before.get("end_date") or "").strip()
+            end_date_value = existing_end.split(" ")[0] if existing_end else None
+        if start_date_value and end_date_value and str(end_date_value) < str(start_date_value):
+            raise ValueError("End date must be on or after start date.")
+
+        if not clean_updates:
+            raise ValueError("No contract fields changed.")
+
+        now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
+        set_columns = list(clean_updates.keys())
+        set_clause = ", ".join([f"{column} = %s" for column in set_columns])
+        params = tuple(clean_updates[column] for column in set_columns) + (now, actor_ref, contract_id, vendor_id)
+
+        self._execute_file(
+            "updates/update_contract_fields.sql",
+            params=params,
+            core_contract=self._table("core_contract"),
+            set_clause=set_clause,
+        )
+
+        after = dict(before)
+        after.update(clean_updates)
+        request_id = str(uuid.uuid4())
+        change_event_id = self._write_audit_entity_change(
+            entity_name="core_contract",
+            entity_id=contract_id,
+            action_type="update",
+            actor_user_principal=actor_user_principal,
+            before_json=before,
+            after_json=after,
+            request_id=request_id,
+        )
+        return {"request_id": request_id, "change_event_id": change_event_id}
+
     def update_offering_fields(
         self,
         *,
@@ -1290,6 +1521,166 @@ class RepositoryOfferingMixin:
             request_id=request_id,
         )
         return {"request_id": request_id, "change_event_id": change_event_id}
+
+    def bulk_map_contracts_to_offering(
+        self,
+        *,
+        contract_ids: list[str],
+        vendor_id: str,
+        offering_id: str,
+        actor_user_principal: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        if not reason.strip():
+            raise ValueError("Reason is required.")
+        cleaned_contract_ids: list[str] = []
+        seen_ids: set[str] = set()
+        for contract_id in contract_ids:
+            cleaned = str(contract_id or "").strip()
+            if not cleaned or cleaned in seen_ids:
+                continue
+            cleaned_contract_ids.append(cleaned)
+            seen_ids.add(cleaned)
+        if not cleaned_contract_ids:
+            raise ValueError("At least one contract is required.")
+        normalized_offering_id = self._normalize_offering_id(offering_id)
+        if not normalized_offering_id:
+            raise ValueError("Offering ID is required.")
+        if not self.offering_belongs_to_vendor(vendor_id, normalized_offering_id):
+            raise ValueError("Selected offering does not belong to this vendor.")
+
+        contracts = self.get_vendor_contracts(vendor_id)
+        by_contract_id: dict[str, dict[str, Any]] = {}
+        for row in contracts.to_dict("records"):
+            key = str(row.get("contract_id") or "").strip()
+            if key:
+                by_contract_id[key] = row
+        missing_ids = [contract_id for contract_id in cleaned_contract_ids if contract_id not in by_contract_id]
+        if missing_ids:
+            preview = ", ".join(missing_ids[:5])
+            if len(missing_ids) > 5:
+                preview = f"{preview}, +{len(missing_ids) - 5} more"
+            raise ValueError(f"Contracts do not belong to this vendor: {preview}")
+
+        request_ids: list[str] = []
+        change_event_ids: list[str] = []
+        skipped_count = 0
+        actor_ref = self._actor_ref(actor_user_principal)
+        statement = self._sql(
+            "updates/map_contract_to_offering.sql",
+            core_contract=self._table("core_contract"),
+        )
+        for contract_id in cleaned_contract_ids:
+            before = dict(by_contract_id[contract_id])
+            current_offering = self._normalize_offering_id(before.get("offering_id"))
+            if current_offering == normalized_offering_id:
+                skipped_count += 1
+                continue
+            after = dict(before)
+            after["offering_id"] = normalized_offering_id
+            request_id = str(uuid.uuid4())
+            self.client.execute(
+                statement,
+                (normalized_offering_id, self._now(), actor_ref, contract_id, vendor_id),
+            )
+            change_event_id = self._write_audit_entity_change(
+                entity_name="core_contract",
+                entity_id=contract_id,
+                action_type="update",
+                actor_user_principal=actor_user_principal,
+                before_json=before,
+                after_json=after,
+                request_id=request_id,
+            )
+            request_ids.append(request_id)
+            change_event_ids.append(change_event_id)
+        self._cache_clear()
+        return {
+            "mapped_count": len(change_event_ids),
+            "skipped_count": skipped_count,
+            "request_ids": request_ids,
+            "change_event_ids": change_event_ids,
+        }
+
+    def bulk_map_demos_to_offering(
+        self,
+        *,
+        demo_ids: list[str],
+        vendor_id: str,
+        offering_id: str,
+        actor_user_principal: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        if not reason.strip():
+            raise ValueError("Reason is required.")
+        cleaned_demo_ids: list[str] = []
+        seen_ids: set[str] = set()
+        for demo_id in demo_ids:
+            cleaned = str(demo_id or "").strip()
+            if not cleaned or cleaned in seen_ids:
+                continue
+            cleaned_demo_ids.append(cleaned)
+            seen_ids.add(cleaned)
+        if not cleaned_demo_ids:
+            raise ValueError("At least one demo is required.")
+        normalized_offering_id = self._normalize_offering_id(offering_id)
+        if not normalized_offering_id:
+            raise ValueError("Offering ID is required.")
+        if not self.offering_belongs_to_vendor(vendor_id, normalized_offering_id):
+            raise ValueError("Selected offering does not belong to this vendor.")
+
+        demos = self.get_vendor_demos(vendor_id)
+        by_demo_id: dict[str, dict[str, Any]] = {}
+        for row in demos.to_dict("records"):
+            key = str(row.get("demo_id") or "").strip()
+            if key:
+                by_demo_id[key] = row
+        missing_ids = [demo_id for demo_id in cleaned_demo_ids if demo_id not in by_demo_id]
+        if missing_ids:
+            preview = ", ".join(missing_ids[:5])
+            if len(missing_ids) > 5:
+                preview = f"{preview}, +{len(missing_ids) - 5} more"
+            raise ValueError(f"Demos do not belong to this vendor: {preview}")
+
+        request_ids: list[str] = []
+        change_event_ids: list[str] = []
+        skipped_count = 0
+        actor_ref = self._actor_ref(actor_user_principal)
+        statement = self._sql(
+            "updates/map_demo_to_offering.sql",
+            core_vendor_demo=self._table("core_vendor_demo"),
+        )
+        for demo_id in cleaned_demo_ids:
+            before = dict(by_demo_id[demo_id])
+            current_offering = self._normalize_offering_id(before.get("offering_id"))
+            if current_offering == normalized_offering_id:
+                skipped_count += 1
+                continue
+            after = dict(before)
+            after["offering_id"] = normalized_offering_id
+            request_id = str(uuid.uuid4())
+            self.client.execute(
+                statement,
+                (normalized_offering_id, self._now(), actor_ref, demo_id, vendor_id),
+            )
+            change_event_id = self._write_audit_entity_change(
+                entity_name="core_vendor_demo",
+                entity_id=demo_id,
+                action_type="update",
+                actor_user_principal=actor_user_principal,
+                before_json=before,
+                after_json=after,
+                request_id=request_id,
+            )
+            request_ids.append(request_id)
+            change_event_ids.append(change_event_id)
+        self._cache_clear()
+        return {
+            "mapped_count": len(change_event_ids),
+            "skipped_count": skipped_count,
+            "request_ids": request_ids,
+            "change_event_ids": change_event_ids,
+        }
 
     def add_vendor_owner(
         self,

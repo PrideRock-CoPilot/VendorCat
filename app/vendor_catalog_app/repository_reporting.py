@@ -870,7 +870,13 @@ class RepositoryReportingMixin:
             core_vendor=self._table("core_vendor"),
         )
 
-    def search_contracts_typeahead(self, *, q: str = "", limit: int = 20) -> pd.DataFrame:
+    def search_contracts_typeahead(
+        self,
+        *,
+        q: str = "",
+        limit: int = 20,
+        active_or_future_only: bool = False,
+    ) -> pd.DataFrame:
         limit = max(1, min(int(limit or 20), 100))
         columns = [
             "contract_id",
@@ -883,10 +889,18 @@ class RepositoryReportingMixin:
             "label",
         ]
         params: list[Any] = []
-        where = "1 = 1"
+        where_parts: list[str] = ["1 = 1"]
+        if active_or_future_only:
+            where_parts.append(
+                "("
+                "lower(coalesce(c.contract_status, '')) = 'active'"
+                " OR c.start_date > current_date"
+                ")"
+            )
+            where_parts.append("coalesce(c.cancelled_flag, false) = false")
         if q.strip():
             like = f"%{q.strip()}%"
-            where = (
+            where_parts.append(
                 "("
                 "lower(c.contract_id) LIKE lower(%s)"
                 " OR lower(coalesce(c.contract_number, '')) LIKE lower(%s)"
@@ -898,6 +912,7 @@ class RepositoryReportingMixin:
                 ")"
             )
             params.extend([like, like, like, like, like, like, like])
+        where = " AND ".join(where_parts)
         return self._query_file(
             "reporting/search_contracts_typeahead.sql",
             params=tuple(params) if params else None,
@@ -1153,6 +1168,7 @@ class RepositoryReportingMixin:
                 "start_date",
                 "end_date",
                 "cancelled_flag",
+                "annual_value",
             ],
             core_contract=self._table("core_contract"),
         )

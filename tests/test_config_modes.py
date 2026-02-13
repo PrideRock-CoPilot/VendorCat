@@ -16,6 +16,7 @@ def _clear_mode_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in (
         "TVENDOR_ENV",
         "TVENDOR_USE_LOCAL_DB",
+        "TVENDOR_DEV_ALLOW_ALL_ACCESS",
         "DATABRICKS_HTTP_PATH",
         "DATABRICKS_SQL_HTTP_PATH",
         "DBSQL_HTTP_PATH",
@@ -151,3 +152,25 @@ def test_local_db_path_is_repo_root_relative_not_cwd_relative(monkeypatch: pytes
 
     assert Path(config.local_db_path).is_absolute()
     assert str(config.local_db_path).replace("\\", "/").endswith("setup/local_db/twvendor_local.db")
+
+
+def test_dev_can_enable_allow_all_access(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_mode_env(monkeypatch)
+    monkeypatch.setenv("TVENDOR_ENV", "dev")
+    monkeypatch.setenv("TVENDOR_DEV_ALLOW_ALL_ACCESS", "true")
+
+    config = AppConfig.from_env()
+
+    assert config.dev_allow_all_access is True
+
+
+def test_prod_ignores_allow_all_access_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_mode_env(monkeypatch)
+    monkeypatch.setenv("TVENDOR_ENV", "prod")
+    monkeypatch.setenv("TVENDOR_CATALOG", "a1_dlk")
+    monkeypatch.setenv("TVENDOR_SCHEMA", "twanalytics")
+    monkeypatch.setenv("TVENDOR_DEV_ALLOW_ALL_ACCESS", "true")
+
+    config = AppConfig.from_env()
+
+    assert config.dev_allow_all_access is False

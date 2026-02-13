@@ -124,6 +124,8 @@
         remove.type = "button";
         remove.className = "chip-remove";
         remove.textContent = "x";
+        remove.title = config.removeLabel;
+        remove.setAttribute("aria-label", `${config.removeLabel}: ${config.renderLabel(item)}`);
         remove.addEventListener("click", () => {
           state.delete(key);
           renderSelected();
@@ -197,6 +199,7 @@
     selected: root.querySelector("[data-vendor-selected]"),
     hidden: root.querySelector("[data-vendor-hidden-inputs]"),
     hiddenName: "linked_vendors",
+    removeLabel: "Remove Vendor",
     initial: parseJson("project-initial-vendors"),
     getId: (item) => (item.vendor_id || "").trim(),
     renderLabel: (item) => `${item.label || item.vendor_id} (${item.vendor_id})`,
@@ -214,6 +217,7 @@
     selected: root.querySelector("[data-offering-selected]"),
     hidden: root.querySelector("[data-offering-hidden-inputs]"),
     hiddenName: "linked_offerings",
+    removeLabel: "Remove Offering",
     initial: parseJson("project-initial-offerings"),
     getId: (item) => (item.offering_id || "").trim(),
     renderLabel: (item) => item.label || item.offering_id || "",

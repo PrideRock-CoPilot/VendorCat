@@ -68,7 +68,8 @@ def test_workflow_queue_supports_approve_decision(client: TestClient) -> None:
     queue = client.get("/workflows?status=pending")
     assert queue.status_code == 200
     assert request_id in queue.text
-    assert "/decision" not in queue.text
+    assert "Open Next Pending" in queue.text
+    assert "Quick Approve" in queue.text
 
     decide = client.post(
         f"/workflows/{request_id}/decision",
@@ -80,6 +81,42 @@ def test_workflow_queue_supports_approve_decision(client: TestClient) -> None:
     approved = client.get("/workflows?status=approved")
     assert approved.status_code == 200
     assert request_id in approved.text
+
+
+def test_workflow_open_next_pending_redirects_to_detail(client: TestClient) -> None:
+    submit = client.post(
+        "/vendors/vnd-001/change-request",
+        data={
+            "return_to": "/vendors/vnd-001/changes",
+            "change_type": "update_vendor_profile",
+            "change_notes": "next pending triage target abc123",
+        },
+        follow_redirects=True,
+    )
+    assert submit.status_code == 200
+    match = re.search(r"Change request submitted:\s*([0-9a-f-]{36})", submit.text)
+    assert match is not None
+    request_id = match.group(1)
+
+    next_pending = client.get(
+        "/workflows/next-pending?status=pending&queue=my_submissions&people=abc123",
+        follow_redirects=False,
+    )
+    assert next_pending.status_code == 302
+    location = str(next_pending.headers.get("location") or "")
+    assert location.startswith(f"/workflows/{request_id}?return_to=")
+
+    detail = client.get(location)
+    assert detail.status_code == 200
+    assert request_id in detail.text
+
+
+def test_workflow_queue_empty_state_shows_next_actions(client: TestClient) -> None:
+    queue = client.get("/workflows?status=pending&queue=my_approvals&people=__nobody__")
+    assert queue.status_code == 200
+    assert "No Approval Requests" in queue.text
+    assert "Reset Queue Filters" in queue.text
+    assert "Open My Submissions" in queue.text
 
 
 def test_system_admin_override_can_access_admin_but_cannot_edit_or_approve(client: TestClient) -> None:

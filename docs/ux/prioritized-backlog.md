@@ -59,6 +59,7 @@ Size:
 - Priority: `P0`
 - Size: `M`
 - Area: `Vendor Summary`, `Vendor Ownership`, `Admin`
+- Status: `Done (2026-02-12)`
 - Problem:
   - Critical actions are hidden in `<details>` blocks.
 - Change:
@@ -72,6 +73,7 @@ Size:
 - Priority: `P1`
 - Size: `M`
 - Area: `Reports`
+- Status: `Done (2026-02-12)`
 - Problem:
   - One large filter form is visually heavy.
 - Change:
@@ -83,6 +85,7 @@ Size:
 - Priority: `P1`
 - Size: `S`
 - Area: `Vendor`, `Offering`, `Project` detail pages
+- Status: `Done (2026-02-13)`
 - Problem:
   - Back navigation depends on `return_to` and can be unclear.
 - Change:
@@ -94,6 +97,7 @@ Size:
 - Priority: `P1`
 - Size: `L`
 - Area: `Vendor Offerings`
+- Status: `Done (2026-02-13)`
 - Problem:
   - Mapping unassigned contracts/demos row by row is slow at scale.
 - Change:
@@ -105,6 +109,7 @@ Size:
 - Priority: `P1`
 - Size: `M`
 - Area: `Imports`
+- Status: `Done (2026-02-13)`
 - Problem:
   - Large preview tables are hard to scan quickly.
 - Change:
@@ -116,6 +121,7 @@ Size:
 - Priority: `P1`
 - Size: `M`
 - Area: `Pending Approvals`
+- Status: `Done (2026-02-13)`
 - Problem:
   - Triage requires opening each request.
 - Change:
@@ -129,6 +135,7 @@ Size:
 - Priority: `P2`
 - Size: `S`
 - Area: `Project New`
+- Status: `Done (2026-02-13)`
 - Problem:
   - Chip remove control appears as `x` only.
 - Change:
@@ -140,6 +147,7 @@ Size:
 - Priority: `P2`
 - Size: `S`
 - Area: `Vendor list`, `Projects`, `Offerings`, `Approvals`
+- Status: `Done (2026-02-13)`
 - Problem:
   - Some empty states do not suggest next steps.
 - Change:
@@ -151,6 +159,7 @@ Size:
 - Priority: `P2`
 - Size: `M`
 - Area: `Offering Detail`, `Project Detail`
+- Status: `Done (2026-02-13)`
 - Problem:
   - Long scroll pages make section jumping harder.
 - Change:

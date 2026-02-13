@@ -29,6 +29,14 @@ def test_vendors_page_renders(client: TestClient) -> None:
     assert "Vendor 360" in response.text
 
 
+def test_vendor_list_empty_state_shows_next_actions(client: TestClient) -> None:
+    response = client.get("/vendors?q=__no_match_vendor__")
+    assert response.status_code == 200
+    assert "No Vendors Found" in response.text
+    assert "Clear Filters" in response.text
+    assert "Create Vendor" in response.text
+
+
 def test_vendor_new_requires_edit_permissions(client: TestClient) -> None:
     response = client.get("/vendors/new?as_user=viewer.only@example.com", follow_redirects=False)
     assert response.status_code == 303
@@ -133,6 +141,62 @@ def test_create_offering_and_map_unassigned_records(client: TestClient) -> None:
     assert offering_detail_page.status_code == 200
     assert "ctr-001" in offering_detail_page.text
     assert "demo-002" in offering_detail_page.text
+    assert "section-nav-card sticky-section-nav" in offering_detail_page.text
+
+
+def test_bulk_map_unassigned_records_to_offering(client: TestClient) -> None:
+    new_offering_response = client.post(
+        "/vendors/vnd-003/offerings/new",
+        data={
+            "return_to": "/vendors",
+            "offering_name": "Bulk Mapping Offering",
+            "offering_type": "SaaS",
+            "lifecycle_state": "draft",
+            "criticality_tier": "tier_2",
+        },
+        follow_redirects=False,
+    )
+    assert new_offering_response.status_code == 303
+    match = re.search(r"/vendors/vnd-003/offerings/(off-[^?]+)", new_offering_response.headers["location"])
+    assert match is not None
+    offering_id = match.group(1)
+
+    bulk_contract_response = client.post(
+        "/vendors/vnd-003/map-contracts/bulk",
+        data={
+            "return_to": "/vendors/vnd-003/offerings",
+            "offering_id": offering_id,
+            "contract_ids": "ctr-001",
+            "reason": "Bulk map contracts",
+        },
+        follow_redirects=False,
+    )
+    assert bulk_contract_response.status_code == 303
+
+    bulk_demo_response = client.post(
+        "/vendors/vnd-003/map-demos/bulk",
+        data={
+            "return_to": "/vendors/vnd-003/offerings",
+            "offering_id": offering_id,
+            "demo_ids": "demo-002",
+            "reason": "Bulk map demos",
+        },
+        follow_redirects=False,
+    )
+    assert bulk_demo_response.status_code == 303
+
+    offerings_page = client.get("/vendors/vnd-003/offerings?return_to=%2Fvendors")
+    assert offerings_page.status_code == 200
+    assert "No unassigned contracts." in offerings_page.text
+    assert "No unassigned demos." in offerings_page.text
+    assert "bulk-map-contracts-form" in offerings_page.text
+    assert "bulk-map-demos-form" in offerings_page.text
+
+    offering_detail_page = client.get(f"/vendors/vnd-003/offerings/{offering_id}?return_to=%2Fvendors")
+    assert offering_detail_page.status_code == 200
+    assert "ctr-001" in offering_detail_page.text
+    assert "demo-002" in offering_detail_page.text
+    assert "section-nav-card sticky-section-nav" in offering_detail_page.text
 
 
 def test_offering_type_uses_dropdown_in_new_and_edit_forms(client: TestClient) -> None:
@@ -176,6 +240,14 @@ def test_offering_create_with_lob_and_service_type_persists_to_detail(client: Te
     assert detail.status_code == 200
     assert "Finance" in detail.text
     assert "Platform" in detail.text
+
+
+def test_vendor_offerings_empty_state_shows_next_actions(client: TestClient) -> None:
+    offerings_page = client.get("/vendors/vnd-003/offerings?return_to=%2Fvendors")
+    assert offerings_page.status_code == 200
+    assert "No Offerings Found" in offerings_page.text
+    assert "Create Offering" in offerings_page.text
+    assert "Open Vendor Summary" in offerings_page.text
 
 
 def test_create_offering_rejects_invalid_offering_type(client: TestClient) -> None:
@@ -267,11 +339,11 @@ def test_typeahead_vendor_offering_and_project_api(client: TestClient) -> None:
     assert any("MS-2024-001" in str(row.get("label", "")) for row in contract_items)
 
 
-def test_contract_and_demo_forms_expose_search_typeahead_inputs(client: TestClient) -> None:
+def test_contract_and_demo_forms_use_expected_inputs(client: TestClient) -> None:
     contracts_page = client.get("/contracts")
     assert contracts_page.status_code == 200
-    assert "data-contract-search" in contracts_page.text
-    assert "/api/contracts/search" in contracts_page.text
+    assert "Manage Contracts In Vendor 360" in contracts_page.text
+    assert 'action="/contracts/cancel"' not in contracts_page.text
 
     demos_page = client.get("/demos")
     assert demos_page.status_code == 200
@@ -279,6 +351,99 @@ def test_contract_and_demo_forms_expose_search_typeahead_inputs(client: TestClie
     assert "data-demo-offering-search" in demos_page.text
     assert "/api/vendors/search" in demos_page.text
     assert "/api/offerings/search" in demos_page.text
+
+
+def test_vendor_contracts_page_supports_add_and_cancel(client: TestClient) -> None:
+    add_response = client.post(
+        "/vendors/vnd-001/contracts/add",
+        data={
+            "return_to": "/vendors/vnd-001/contracts?return_to=%2Fvendors",
+            "contract_number": "MS-2026-NEW",
+            "offering_id": "off-002",
+            "contract_status": "active",
+            "start_date": "2026-03-01",
+            "end_date": "2027-02-28",
+            "annual_value": "125000.50",
+            "reason": "Add new offering license contract",
+        },
+        follow_redirects=False,
+    )
+    assert add_response.status_code == 303
+
+    contracts_page = client.get("/vendors/vnd-001/contracts?return_to=%2Fvendors")
+    assert contracts_page.status_code == 200
+    assert "MS-2026-NEW" in contracts_page.text
+    assert "Cancel Contract" in contracts_page.text
+    assert 'name="reason_code"' in contracts_page.text
+    assert "Select cancellation reason" in contracts_page.text
+
+    contract_search = client.get("/api/contracts/search?q=MS-2026-NEW&limit=5")
+    assert contract_search.status_code == 200
+    payload = contract_search.json()
+    contract_id = ""
+    for row in payload.get("items", []):
+        if str(row.get("contract_number") or "") == "MS-2026-NEW":
+            contract_id = str(row.get("contract_id") or "").strip()
+            break
+    assert contract_id
+
+    update_response = client.post(
+        f"/vendors/vnd-001/contracts/{contract_id}/update",
+        data={
+            "return_to": "/vendors/vnd-001/contracts?return_to=%2Fvendors",
+            "contract_number": "MS-2026-UPDATED",
+            "offering_id": "off-002",
+            "contract_status": "active",
+            "start_date": "2026-03-01",
+            "end_date": "2027-02-28",
+            "annual_value": "130000.00",
+            "reason": "Correct contract metadata",
+        },
+        follow_redirects=False,
+    )
+    assert update_response.status_code == 303
+
+    contracts_after_update = client.get("/vendors/vnd-001/contracts?return_to=%2Fvendors")
+    assert contracts_after_update.status_code == 200
+    assert "MS-2026-UPDATED" in contracts_after_update.text
+
+    cancel_response = client.post(
+        f"/vendors/vnd-001/contracts/{contract_id}/cancel",
+        data={
+            "return_to": "/vendors/vnd-001/contracts?return_to=%2Fvendors",
+            "reason_code": "business_change",
+            "notes": "Contract retired after scope consolidation",
+        },
+        follow_redirects=False,
+    )
+    assert cancel_response.status_code == 303
+
+    contracts_after_cancel = client.get("/vendors/vnd-001/contracts?return_to=%2Fvendors")
+    assert contracts_after_cancel.status_code == 200
+    assert "MS-2026-UPDATED" in contracts_after_cancel.text
+    assert "cancelled" in contracts_after_cancel.text.lower()
+
+
+def test_offering_delivery_supports_add_contract(client: TestClient) -> None:
+    add_response = client.post(
+        "/vendors/vnd-001/contracts/add",
+        data={
+            "return_to": "/vendors/vnd-001/offerings/off-002?section=delivery&return_to=%2Fvendors",
+            "contract_number": "MS-2026-OFFERING",
+            "offering_id": "off-002",
+            "contract_status": "active",
+            "start_date": "2026-04-01",
+            "end_date": "2027-03-31",
+            "annual_value": "88000",
+            "reason": "Add app-specific license contract",
+        },
+        follow_redirects=False,
+    )
+    assert add_response.status_code == 303
+
+    delivery_page = client.get("/vendors/vnd-001/offerings/off-002?section=delivery&return_to=%2Fvendors")
+    assert delivery_page.status_code == 200
+    assert "MS-2026-OFFERING" in delivery_page.text
 
 
 def test_vendor_change_trail_shows_field_level_diff(client: TestClient) -> None:

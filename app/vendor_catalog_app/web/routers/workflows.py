@@ -4,7 +4,7 @@ import json
 import logging
 import re
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
@@ -624,26 +624,39 @@ def _build_target_links(repo, row: dict[str, Any], payload: dict[str, Any], *, r
     return target_links
 
 
-@router.get("")
-def workflow_queue(request: Request, status: str = "pending"):
-    repo = get_repo()
-    user = get_user_context(request)
-    ensure_session_started(request, user)
-    log_page_view(request, user, "Workflow Queue")
+def _workflow_queue_url(
+    *,
+    selected_status: str,
+    selected_queue: str,
+    selected_lob: str,
+    selected_requestor: str,
+    selected_assignee: str,
+    selected_people: str,
+) -> str:
+    return "/workflows?" + urlencode(
+        {
+            "status": selected_status,
+            "queue": selected_queue,
+            "lob": selected_lob,
+            "requestor": selected_requestor,
+            "assignee": selected_assignee,
+            "people": selected_people,
+        }
+    )
 
-    if not user.can_access_workflows:
-        add_flash(request, "Workflow access is not available for this role.", "error")
-        return RedirectResponse(url="/dashboard", status_code=303)
 
-    status_options = _workflow_filter_status_options(repo)
-    selected_status = _normalize_status(status, set(status_options))
-    selected_queue = _normalize_queue(request.query_params.get("queue"))
-    selected_lob = str(request.query_params.get("lob", "all")).strip()
-    selected_requestor = str(request.query_params.get("requestor", "all")).strip()
-    selected_assignee = str(request.query_params.get("assignee", "all")).strip()
-    selected_people = str(request.query_params.get("people", "")).strip()
+def _load_workflow_queue_view(
+    repo,
+    user,
+    *,
+    selected_status: str,
+    selected_queue: str,
+    selected_lob: str,
+    selected_requestor: str,
+    selected_assignee: str,
+    selected_people: str,
+) -> dict[str, Any]:
     selected_people_filter = selected_people.lower()
-
     query_status = "all" if selected_status in {"pending", "all"} else selected_status
     rows = repo.list_change_requests(status=query_status).to_dict("records")
 
@@ -692,6 +705,10 @@ def workflow_queue(request: Request, status: str = "pending"):
         row["_approval_level"] = level
         row["_approval_label"] = approval_level_label(level)
         row["_can_decide"] = user.can_review_level(level)
+        status_value = str(row.get("status") or "").strip().lower()
+        row["_is_terminal"] = _is_terminal_workflow_status(status_value)
+        row["_can_quick_decide"] = bool(row["_can_decide"]) and not bool(row["_is_terminal"])
+
         vendor_id = str(row.get("vendor_id") or "").strip()
         vendor_name = vendor_display_by_id.get(vendor_id, vendor_id)
         row["_vendor_display"] = "global" if vendor_id == GLOBAL_CHANGE_VENDOR_ID else vendor_name
@@ -724,9 +741,9 @@ def workflow_queue(request: Request, status: str = "pending"):
             assignee_options_set.add(assignee)
 
         requestor_match = requestor_raw.lower() in user_refs
-        if selected_status == "pending" and _is_terminal_workflow_status(str(row.get("status") or "")):
+        if selected_status == "pending" and row["_is_terminal"]:
             continue
-        if not _status_allows_queue(str(row.get("status") or ""), selected_queue, bool(row.get("_can_decide")), requestor_match):
+        if not _status_allows_queue(status_value, selected_queue, bool(row.get("_can_decide")), requestor_match):
             continue
         if selected_queue == "my_approvals" and user.can_approve_requests:
             if not _row_in_user_scope(
@@ -758,6 +775,63 @@ def workflow_queue(request: Request, status: str = "pending"):
                 continue
         filtered_rows.append(row)
 
+    return {
+        "rows": filtered_rows,
+        "lob_options": sorted(lob_options_set, key=lambda item: item.lower()),
+        "requestor_options": sorted(requestor_options_set, key=lambda item: item.lower()),
+        "assignee_options": sorted(assignee_options_set, key=lambda item: item.lower()),
+    }
+
+
+@router.get("")
+def workflow_queue(request: Request, status: str = "pending"):
+    repo = get_repo()
+    user = get_user_context(request)
+    ensure_session_started(request, user)
+    log_page_view(request, user, "Workflow Queue")
+
+    if not user.can_access_workflows:
+        add_flash(request, "Workflow access is not available for this role.", "error")
+        return RedirectResponse(url="/dashboard", status_code=303)
+
+    status_options = _workflow_filter_status_options(repo)
+    selected_status = _normalize_status(status, set(status_options))
+    selected_queue = _normalize_queue(request.query_params.get("queue"))
+    selected_lob = str(request.query_params.get("lob", "all")).strip()
+    selected_requestor = str(request.query_params.get("requestor", "all")).strip()
+    selected_assignee = str(request.query_params.get("assignee", "all")).strip()
+    selected_people = str(request.query_params.get("people", "")).strip()
+    queue_view = _load_workflow_queue_view(
+        repo,
+        user,
+        selected_status=selected_status,
+        selected_queue=selected_queue,
+        selected_lob=selected_lob,
+        selected_requestor=selected_requestor,
+        selected_assignee=selected_assignee,
+        selected_people=selected_people,
+    )
+    filtered_rows = list(queue_view.get("rows") or [])
+    current_view_url = _workflow_queue_url(
+        selected_status=selected_status,
+        selected_queue=selected_queue,
+        selected_lob=selected_lob,
+        selected_requestor=selected_requestor,
+        selected_assignee=selected_assignee,
+        selected_people=selected_people,
+    )
+    decision_status_options = _workflow_status_options(repo)
+    quick_approve_enabled = "approved" in decision_status_options
+    quick_reject_enabled = "rejected" in decision_status_options
+    next_candidate = next((row for row in filtered_rows if bool(row.get("_can_quick_decide"))), None)
+    if next_candidate is None and filtered_rows:
+        next_candidate = filtered_rows[0]
+    next_pending_url = ""
+    if next_candidate:
+        next_id = str(next_candidate.get("change_request_id") or "").strip()
+        if next_id:
+            next_pending_url = f"/workflows/{next_id}?return_to={quote(current_view_url, safe='')}"
+
     context = base_template_context(
         request=request,
         context=user,
@@ -770,19 +844,73 @@ def workflow_queue(request: Request, status: str = "pending"):
             "selected_queue": selected_queue,
             "queue_options": WORKFLOW_QUEUES,
             "selected_lob": selected_lob,
-            "lob_options": sorted(lob_options_set, key=lambda item: item.lower()),
+            "lob_options": queue_view.get("lob_options", []),
             "selected_requestor": selected_requestor,
-            "requestor_options": sorted(requestor_options_set, key=lambda item: item.lower()),
+            "requestor_options": queue_view.get("requestor_options", []),
             "selected_assignee": selected_assignee,
-            "assignee_options": sorted(assignee_options_set, key=lambda item: item.lower()),
+            "assignee_options": queue_view.get("assignee_options", []),
             "selected_people": selected_people,
-            "current_view_url": f"{request.url.path}?{request.url.query}" if request.url.query else str(request.url.path),
-            "current_view_url_encoded": quote(
-                f"{request.url.path}?{request.url.query}" if request.url.query else str(request.url.path), safe=""
-            ),
+            "current_view_url": current_view_url,
+            "current_view_url_encoded": quote(current_view_url, safe=""),
+            "next_pending_url": next_pending_url,
+            "quick_approve_enabled": quick_approve_enabled,
+            "quick_reject_enabled": quick_reject_enabled,
         },
     )
     return request.app.state.templates.TemplateResponse(request, "workflows.html", context)
+
+
+@router.get("/next-pending")
+def workflow_next_pending(request: Request, status: str = "pending"):
+    repo = get_repo()
+    user = get_user_context(request)
+    ensure_session_started(request, user)
+    log_page_view(request, user, "Workflow Queue")
+
+    if not user.can_access_workflows:
+        add_flash(request, "Workflow access is not available for this role.", "error")
+        return RedirectResponse(url="/dashboard", status_code=303)
+
+    status_options = _workflow_filter_status_options(repo)
+    selected_status = _normalize_status(status, set(status_options))
+    selected_queue = _normalize_queue(request.query_params.get("queue"))
+    selected_lob = str(request.query_params.get("lob", "all")).strip()
+    selected_requestor = str(request.query_params.get("requestor", "all")).strip()
+    selected_assignee = str(request.query_params.get("assignee", "all")).strip()
+    selected_people = str(request.query_params.get("people", "")).strip()
+    queue_url = _workflow_queue_url(
+        selected_status=selected_status,
+        selected_queue=selected_queue,
+        selected_lob=selected_lob,
+        selected_requestor=selected_requestor,
+        selected_assignee=selected_assignee,
+        selected_people=selected_people,
+    )
+
+    queue_view = _load_workflow_queue_view(
+        repo,
+        user,
+        selected_status=selected_status,
+        selected_queue=selected_queue,
+        selected_lob=selected_lob,
+        selected_requestor=selected_requestor,
+        selected_assignee=selected_assignee,
+        selected_people=selected_people,
+    )
+    filtered_rows = list(queue_view.get("rows") or [])
+    if not filtered_rows:
+        add_flash(request, "No requests available in the current queue filters.", "info")
+        return RedirectResponse(url=queue_url, status_code=303)
+
+    candidate = next((row for row in filtered_rows if bool(row.get("_can_quick_decide"))), None)
+    if candidate is None:
+        candidate = filtered_rows[0]
+    change_request_id = str(candidate.get("change_request_id") or "").strip()
+    if not change_request_id:
+        add_flash(request, "Could not identify the next request in queue.", "error")
+        return RedirectResponse(url=queue_url, status_code=303)
+    detail_url = f"/workflows/{change_request_id}?return_to={quote(queue_url, safe='')}"
+    return RedirectResponse(url=detail_url, status_code=302)
 
 
 @router.get("/pending-approvals")

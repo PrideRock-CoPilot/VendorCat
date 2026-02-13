@@ -2,6 +2,30 @@
 {% from "doc_link_form.html" import render_doc_link_form with context %}
 {% from "owner_forms.html" import project_owner_update_form with context %}
 {% block content %}
+{% set section_labels = {
+  "summary": "Summary",
+  "ownership": "Ownership",
+  "offerings": "Offerings",
+  "demos": "Demos",
+  "docs": "Documents",
+  "notes": "Notes"
+} %}
+{% set section_label = section_labels.get(section, section|replace("_", " ")|title) %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ return_to }}">Projects</a>
+  {% if vendor_id %}
+  <span class="breadcrumb-sep" aria-hidden="true">/</span>
+  <a href="/vendors/{{ vendor_id }}/summary?return_to={{ return_to|urlencode }}">{{ vendor_display_name }}</a>
+  {% endif %}
+  <span class="breadcrumb-sep" aria-hidden="true">/</span>
+  {% if section == "summary" %}
+  <span aria-current="page">{{ project.project_name }}</span>
+  {% else %}
+  <a href="/projects/{{ project_id }}/summary?return_to={{ return_to|urlencode }}">{{ project.project_name }}</a>
+  <span class="breadcrumb-sep" aria-hidden="true">/</span>
+  <span aria-current="page">{{ section_label }}</span>
+  {% endif %}
+</nav>
 <div class="section-header">
   <div>
     <h1>{{ project.project_name }}</h1>
@@ -29,7 +53,7 @@
   <div class="metric"><span>Docs</span><strong>{{ summary.doc_count }}</strong></div>
 </section>
 
-<section class="card section-nav-card">
+<section class="card section-nav-card sticky-section-nav">
   <div class="section-nav-links">
     {% for item in project_nav %}
     <a class="{% if item.active %}active{% endif %}" href="{{ item.url }}">{{ item.label }}</a>

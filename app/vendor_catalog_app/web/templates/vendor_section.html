@@ -2,6 +2,26 @@
 {% from "doc_link_form.html" import render_doc_link_form with context %}
 {% from "owner_forms.html" import vendor_owner_add_form, vendor_org_assignment_add_form, vendor_contact_add_form with context %}
 {% block content %}
+{% set section_labels = {
+  "summary": "Summary",
+  "ownership": "Ownership",
+  "contracts": "Contracts",
+  "demos": "Demos",
+  "lineage": "Lineage",
+  "changes": "Changes"
+} %}
+{% set section_label = section_labels.get(section, section|replace("_", " ")|title) %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ return_to }}">Vendor 360</a>
+  <span class="breadcrumb-sep" aria-hidden="true">/</span>
+  {% if section == "summary" %}
+  <span aria-current="page">{{ vendor_display_name }}</span>
+  {% else %}
+  <a href="/vendors/{{ vendor_id }}/summary?return_to={{ return_to|urlencode }}">{{ vendor_display_name }}</a>
+  <span class="breadcrumb-sep" aria-hidden="true">/</span>
+  <span aria-current="page">{{ section_label }}</span>
+  {% endif %}
+</nav>
 <div class="section-header">
   <div>
     <h1>{{ vendor_display_name }}</h1>
@@ -133,16 +153,14 @@
       </tbody>
     </table>
     {% if can_edit and not locked_mode %}
-    <details style="margin-top:12px;">
-      <summary><strong>Add New Document Link</strong></summary>
-      <div style="margin-top:10px;">
-        {{ render_doc_link_form(
-             post_url="/vendors/" ~ vendor_id ~ "/docs/link",
-             return_to=return_to,
-             submit_label="Add Link"
-           ) }}
-      </div>
-    </details>
+    <h3 style="margin-top:12px;">Add New Document Link</h3>
+    <div style="margin-top:10px;">
+      {{ render_doc_link_form(
+           post_url="/vendors/" ~ vendor_id ~ "/docs/link",
+           return_to=return_to,
+           submit_label="Add Link"
+         ) }}
+    </div>
     {% endif %}
   </section>
 </div>
@@ -217,17 +235,15 @@
       </tbody>
     </table>
     {% if can_edit and not locked_mode %}
-    <details style="margin-top:10px;">
-      <summary><strong>Add Owner</strong></summary>
-      <div style="margin-top:10px;">
-        {{ vendor_owner_add_form(
-             post_url="/vendors/" ~ vendor_id ~ "/owners/add",
-             return_to="/vendors/" ~ vendor_id ~ "/ownership",
-             default_role="business_owner",
-             submit_label="Add Owner"
-           ) }}
-      </div>
-    </details>
+    <h3 style="margin-top:10px;">Add Owner</h3>
+    <div style="margin-top:10px;">
+      {{ vendor_owner_add_form(
+           post_url="/vendors/" ~ vendor_id ~ "/owners/add",
+           return_to="/vendors/" ~ vendor_id ~ "/ownership",
+           default_role="business_owner",
+           submit_label="Add Owner"
+         ) }}
+    </div>
     {% endif %}
   </section>
   <section class="card section-divider">
@@ -243,16 +259,14 @@
       </tbody>
     </table>
     {% if can_edit and not locked_mode %}
-    <details style="margin-top:10px;">
-      <summary><strong>Add Assignment</strong></summary>
-      <div style="margin-top:10px;">
-        {{ vendor_org_assignment_add_form(
-             post_url="/vendors/" ~ vendor_id ~ "/org-assignments/add",
-             return_to="/vendors/" ~ vendor_id ~ "/ownership",
-             submit_label="Add Assignment"
-           ) }}
-      </div>
-    </details>
+    <h3 style="margin-top:10px;">Add Assignment</h3>
+    <div style="margin-top:10px;">
+      {{ vendor_org_assignment_add_form(
+           post_url="/vendors/" ~ vendor_id ~ "/org-assignments/add",
+           return_to="/vendors/" ~ vendor_id ~ "/ownership",
+           submit_label="Add Assignment"
+         ) }}
+    </div>
     {% endif %}
   </section>
   <section class="card section-divider">
@@ -268,16 +282,14 @@
       </tbody>
     </table>
     {% if can_edit and not locked_mode %}
-    <details style="margin-top:10px;">
-      <summary><strong>Add Contact</strong></summary>
-      <div style="margin-top:10px;">
-        {{ vendor_contact_add_form(
-             post_url="/vendors/" ~ vendor_id ~ "/contacts/add",
-             return_to="/vendors/" ~ vendor_id ~ "/ownership",
-             submit_label="Add Contact"
-           ) }}
-      </div>
-    </details>
+    <h3 style="margin-top:10px;">Add Contact</h3>
+    <div style="margin-top:10px;">
+      {{ vendor_contact_add_form(
+           post_url="/vendors/" ~ vendor_id ~ "/contacts/add",
+           return_to="/vendors/" ~ vendor_id ~ "/ownership",
+           submit_label="Add Contact"
+         ) }}
+    </div>
     {% endif %}
   </section>
 </div>
@@ -292,13 +304,103 @@
       <a class="button-link subtle" href="/vendors/{{ vendor_id }}/offerings?return_to={{ return_to|urlencode }}">Map In Offerings</a>
       {% endif %}
     </div>
+    {% if can_edit and not locked_mode %}
+    <form method="post" action="/vendors/{{ vendor_id }}/contracts/add" class="grid grid-3" style="margin-bottom:10px;">
+      <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/contracts?return_to={{ return_to|urlencode }}">
+      <label>Contract Number
+        <input type="text" name="contract_number" required placeholder="e.g. MS-2026-001">
+      </label>
+      <label>Offering (optional)
+        <select name="offering_id">
+          {% for option in offering_options %}
+          <option value="{{ option.offering_id }}">{{ option.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Status
+        <select name="contract_status">
+          {% for status in contract_status_options %}
+          <option value="{{ status }}" {% if status == "active" %}selected{% endif %}>{{ status }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Start Date
+        <input type="date" name="start_date">
+      </label>
+      <label>End Date
+        <input type="date" name="end_date">
+      </label>
+      <label>Annual Value
+        <input type="text" name="annual_value" placeholder="e.g. 125000.00">
+      </label>
+      <label class="full">Reason
+        <input type="text" name="reason" placeholder="Why this contract is being added">
+      </label>
+      <div><button type="submit">Add Contract</button></div>
+    </form>
+    {% endif %}
     <table>
-      <thead><tr><th>Contract</th><th>Offering</th><th>Status</th><th>Start</th><th>End</th><th>Cancelled</th></tr></thead>
+      <thead><tr><th>Contract</th><th>Offering</th><th>Status</th><th>Start</th><th>End</th><th>Annual</th><th>Cancelled</th><th>Action</th></tr></thead>
       <tbody>
       {% for row in contracts %}
-      <tr><td>{{ row.contract_number or row.contract_id }}</td><td>{{ row.offering_id }}</td><td>{{ row.contract_status }}</td><td>{{ row.start_date }}</td><td>{{ row.end_date }}</td><td>{{ row.cancelled_flag }}</td></tr>
+      <tr>
+        <td>
+          {% if row.contract_number %}
+          {{ row.contract_number }} ({{ row.contract_id }})
+          {% else %}
+          {{ row.contract_id }}
+          {% endif %}
+        </td>
+        <td>{{ row.offering_id or "Vendor-level" }}</td>
+        <td>{{ row.contract_status }}</td>
+        <td>{{ row.start_date }}</td>
+        <td>{{ row.end_date }}</td>
+        <td>{% if row.annual_value is not none %}${{ "{:,.2f}".format(row.annual_value or 0) }}{% else %}-{% endif %}</td>
+        <td>{{ row.cancelled_flag }}</td>
+        <td>
+          {% if can_edit and not locked_mode %}
+          <details class="inline-details">
+            <summary>Edit Contract</summary>
+            <form method="post" action="/vendors/{{ vendor_id }}/contracts/{{ row.contract_id }}/update" class="inline-form" style="margin-top:6px;">
+              <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/contracts?return_to={{ return_to|urlencode }}">
+              <input type="text" name="contract_number" value="{{ row.contract_number or '' }}" placeholder="Contract Number" required>
+              <select name="offering_id">
+                {% for option in offering_options %}
+                <option value="{{ option.offering_id }}" {% if option.offering_id == (row.offering_id or '') %}selected{% endif %}>{{ option.label }}</option>
+                {% endfor %}
+              </select>
+              <select name="contract_status">
+                {% for status in contract_status_options %}
+                <option value="{{ status }}" {% if status == (row.contract_status|string|lower) %}selected{% endif %}>{{ status }}</option>
+                {% endfor %}
+              </select>
+              <input type="date" name="start_date" value="{{ row.start_date or '' }}">
+              <input type="date" name="end_date" value="{{ row.end_date or '' }}">
+              <input type="text" name="annual_value" value="{{ row.annual_value or '' }}" placeholder="Annual Value">
+              <input type="text" name="reason" placeholder="Reason for update" required>
+              <button type="submit">Save Contract</button>
+            </form>
+          </details>
+          {% endif %}
+          {% if can_edit and not locked_mode and (row.contract_status|string|lower) != "cancelled" %}
+          <form method="post" action="/vendors/{{ vendor_id }}/contracts/{{ row.contract_id }}/cancel" class="inline-form" style="margin-top:6px;">
+            <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/contracts?return_to={{ return_to|urlencode }}">
+            <select name="reason_code" required>
+              <option value="" selected disabled>Select cancellation reason</option>
+              {% for code in contract_cancel_reason_options %}
+              <option value="{{ code }}">{{ code|replace('_', ' ')|title }}</option>
+              {% endfor %}
+            </select>
+            <input type="text" name="notes" placeholder="Notes">
+            <button type="submit">Cancel Contract</button>
+          </form>
+          {% else %}
+          -
+          {% endif %}
+        </td>
+      </tr>
       {% else %}
-      <tr><td colspan="6">No contracts</td></tr>
+      <tr><td colspan="8">No contracts</td></tr>
       {% endfor %}
       </tbody>
     </table>

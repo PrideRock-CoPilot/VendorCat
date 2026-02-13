@@ -50,6 +50,29 @@
 </section>
 
 <section class="card section-divider">
+  <div class="section-header">
+    <div>
+      <h2>Queue</h2>
+      <p>{{ rows|length }} request(s) in the current view.</p>
+    </div>
+    <div class="button-group">
+      {% if next_pending_url %}
+      <a class="button-link" href="{{ next_pending_url }}">Open Next Pending</a>
+      {% else %}
+      <span class="muted">No request available for current filters.</span>
+      {% endif %}
+    </div>
+  </div>
+  {% if not rows %}
+  <section class="card empty-state-card section-divider">
+    <h2>No Approval Requests</h2>
+    <p>No requests match the current queue filters. Reset filters or review your submitted requests.</p>
+    <div class="empty-state-actions">
+      <a class="button-link subtle" href="/workflows?status=pending&queue=my_approvals&lob=all&requestor=all&assignee=all">Reset Queue Filters</a>
+      <a class="button-link" href="/workflows?status=all&queue=my_submissions&lob=all&requestor=all&assignee=all">Open My Submissions</a>
+    </div>
+  </section>
+  {% endif %}
   <table>
     <thead>
       <tr>
@@ -63,6 +86,7 @@
         <th>Assignee</th>
         <th>Summary</th>
         <th>Submitted</th>
+        <th>Actions</th>
       </tr>
     </thead>
     <tbody>
@@ -80,9 +104,30 @@
         <td>{{ row._assignee }}</td>
         <td>{{ row._summary }}</td>
         <td>{{ row.submitted_at }}</td>
+        <td>
+          <div class="queue-row-actions">
+            <a class="button-link subtle" href="/workflows/{{ row.change_request_id }}?return_to={{ current_view_url_encoded }}">Open</a>
+            {% if row._can_quick_decide and not locked_mode and quick_approve_enabled %}
+            <form method="post" action="/workflows/{{ row.change_request_id }}/decision" class="inline-form queue-inline-action">
+              <input type="hidden" name="return_to" value="{{ current_view_url }}">
+              <input type="hidden" name="decision" value="approved">
+              <input type="hidden" name="notes" value="Quick approve from pending approvals queue.">
+              <button type="submit">Quick Approve</button>
+            </form>
+            {% endif %}
+            {% if row._can_quick_decide and not locked_mode and quick_reject_enabled %}
+            <form method="post" action="/workflows/{{ row.change_request_id }}/decision" class="inline-form queue-inline-action">
+              <input type="hidden" name="return_to" value="{{ current_view_url }}">
+              <input type="hidden" name="decision" value="rejected">
+              <input type="hidden" name="notes" value="Quick reject from pending approvals queue.">
+              <button type="submit">Quick Reject</button>
+            </form>
+            {% endif %}
+          </div>
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="10">No approval requests.</td></tr>
+      <tr><td colspan="11">No approval requests.</td></tr>
       {% endfor %}
     </tbody>
   </table>

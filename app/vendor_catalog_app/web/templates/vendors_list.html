@@ -125,6 +125,19 @@
 </section>
 {% endif %}
 
+{% if not vendors %}
+<section class="card empty-state-card section-divider">
+  <h2>No Vendors Found</h2>
+  <p>Try clearing filters or create a new vendor profile to get started.</p>
+  <div class="empty-state-actions">
+    <a class="button-link subtle" href="/vendors">Clear Filters</a>
+    {% if can_edit and not locked_mode %}
+    <a class="button-link" href="/vendors/new?return_to=%2Fvendors">Create Vendor</a>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
 <section class="card">
   <table id="vendor-table" class="vendor-table">
     <thead>

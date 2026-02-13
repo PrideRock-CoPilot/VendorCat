@@ -45,6 +45,7 @@ from vendor_catalog_app.security import (
     MIN_APPROVAL_LEVEL,
     MIN_CHANGE_APPROVAL_LEVEL,
     ROLE_CHOICES,
+    ROLE_ADMIN,
     ROLE_VIEWER,
     effective_roles,
 )
@@ -376,10 +377,19 @@ def get_user_context(request: Request) -> UserContext:
 
     repo = get_repo()
     config = get_config()
+    dev_allow_all_access = bool(
+        getattr(config, "is_dev_env", False)
+        and getattr(config, "dev_allow_all_access", False)
+    )
     repo.ensure_runtime_tables()
     forwarded_identity = resolve_databricks_request_identity(request)
 
     user_principal = _resolve_user_principal(repo, config, request, forwarded_identity)
+    if dev_allow_all_access and user_principal == UNKNOWN_USER_PRINCIPAL:
+        # Dev convenience mode: avoid anonymous principal while forcing admin access.
+        fallback_dev_user = str(os.getenv("TVENDOR_TEST_USER", "dev_admin@example.com") or "").strip()
+        if fallback_dev_user:
+            user_principal = fallback_dev_user
     group_principals = resolve_databricks_request_group_principals(request) if user_principal != UNKNOWN_USER_PRINCIPAL else set()
     if user_principal != UNKNOWN_USER_PRINCIPAL:
         session = request.scope.get("session")
@@ -428,12 +438,14 @@ def get_user_context(request: Request) -> UserContext:
                         if str(item).strip()
                     }
                 )
+                snapshot_dev_allow_all_access = bool(raw_snapshot.get("dev_allow_all_access", False))
                 is_fresh = (now_ts - captured_at) < snapshot_ttl_sec
                 if (
                     is_fresh
                     and snapshot_version == policy_version
                     and snapshot_override == role_override_session
                     and snapshot_groups == sorted(group_principals)
+                    and snapshot_dev_allow_all_access == dev_allow_all_access
                 ):
                     snapshot = raw_snapshot
             except Exception:
@@ -470,6 +482,11 @@ def get_user_context(request: Request) -> UserContext:
             allow_testing_override=testing_role_override_enabled(config),
         )
         role_policy = repo.resolve_role_policy(roles)
+        if dev_allow_all_access:
+            raw_roles = {ROLE_ADMIN}
+            roles = {ROLE_ADMIN}
+            role_override = None
+            role_policy = repo.resolve_role_policy(roles)
         if isinstance(session, dict) and snapshot_ttl_sec > 0:
             session[snapshot_key] = {
                 "captured_at": now_ts,
@@ -479,7 +496,14 @@ def get_user_context(request: Request) -> UserContext:
                 "role_override": role_override or "",
                 "group_principals": sorted(group_principals),
                 "role_policy": dict(role_policy or {}),
+                "dev_allow_all_access": dev_allow_all_access,
             }
+
+    if dev_allow_all_access and ROLE_ADMIN not in roles:
+        raw_roles = {ROLE_ADMIN}
+        roles = {ROLE_ADMIN}
+        role_override = None
+        role_policy = repo.resolve_role_policy(roles)
 
     context = UserContext(
         user_principal=user_principal,

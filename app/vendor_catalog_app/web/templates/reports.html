@@ -10,6 +10,10 @@
 <form method="get" action="/reports" class="card grid grid-3">
   <input type="hidden" name="run" value="1">
   <input type="hidden" name="dbx_report" value="{{ filters.dbx_report }}">
+  <div class="full">
+    <h2>Core Filters</h2>
+    <p class="muted">Start with these defaults, then open Advanced Filters only if needed.</p>
+  </div>
   <label>
     Report Type
     <select name="report_type">
@@ -32,82 +36,10 @@
     </select>
   </label>
   <label>
-    Lifecycle
-    <select name="lifecycle_state">
-      {% for option in vendor_lifecycle_states %}
-      <option value="{{ option }}" {% if option == filters.lifecycle_state %}selected{% endif %}>{{ option }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>
-    Project Status
-    <select name="project_status">
-      {% for option in project_statuses %}
-      <option value="{{ option }}" {% if option == filters.project_status %}selected{% endif %}>{{ option }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>
-    Demo Outcome
-    <select name="outcome">
-      {% for option in demo_outcomes %}
-      <option value="{{ option }}" {% if option == filters.outcome %}selected{% endif %}>{{ option }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>
-    Owner Principal
-    <input type="text" name="owner_principal" value="{{ filters.owner_principal }}" placeholder="bob.smith@example.com">
-  </label>
-  <label>
-    Org Scope
-    <select name="org">
-      {% for option in orgs %}
-      <option value="{{ option }}" {% if option == filters.org %}selected{% endif %}>{{ "all" if option == "all" else option }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>
-    Renewal Horizon (days)
-    <input type="number" name="horizon_days" value="{{ filters.horizon_days }}" min="30" max="730">
-  </label>
-  <label>
     Max Rows
     <select name="limit">
       {% for option in row_limits %}
       <option value="{{ option }}" {% if option == filters.limit %}selected{% endif %}>{{ option }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>
-    Result View
-    <select name="view_mode">
-      {% for option in view_modes %}
-      <option value="{{ option }}" {% if option == filters.view_mode %}selected{% endif %}>{{ option }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>
-    Graph Type
-    <select name="chart_kind">
-      {% for option in chart_kinds %}
-      <option value="{{ option }}" {% if option == filters.chart_kind %}selected{% endif %}>{{ option }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>
-    Graph Dimension
-    <select name="chart_x">
-      {% for option in chart_dimension_options %}
-      <option value="{{ option.key }}" {% if option.key == filters.chart_x %}selected{% endif %}>{{ option.label }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>
-    Graph Metric
-    <select name="chart_y">
-      {% for option in chart_metric_options %}
-      <option value="{{ option.key }}" {% if option.key == filters.chart_y %}selected{% endif %}>{{ option.label }}</option>
       {% endfor %}
     </select>
   </label>
@@ -120,6 +52,91 @@
     <a class="button-link subtle" href="{{ powerbi_download_url }}">Download Power BI Bundle</a>
     {% endif %}
   </div>
+
+  {% set show_advanced = filters.lifecycle_state != "all"
+    or filters.project_status != "all"
+    or filters.outcome != "all"
+    or filters.owner_principal
+    or filters.org != "all"
+    or filters.horizon_days != 180
+    or filters.view_mode != "both" %}
+  <details class="full" {% if show_advanced %}open{% endif %}>
+    <summary><strong>Advanced Filters</strong></summary>
+    <div class="grid grid-3" style="margin-top:10px;">
+      <label>
+        Lifecycle
+        <select name="lifecycle_state">
+          {% for option in vendor_lifecycle_states %}
+          <option value="{{ option }}" {% if option == filters.lifecycle_state %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Project Status
+        <select name="project_status">
+          {% for option in project_statuses %}
+          <option value="{{ option }}" {% if option == filters.project_status %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Demo Outcome
+        <select name="outcome">
+          {% for option in demo_outcomes %}
+          <option value="{{ option }}" {% if option == filters.outcome %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Owner Principal
+        <input type="text" name="owner_principal" value="{{ filters.owner_principal }}" placeholder="bob.smith@example.com">
+      </label>
+      <label>
+        Org Scope
+        <select name="org">
+          {% for option in orgs %}
+          <option value="{{ option }}" {% if option == filters.org %}selected{% endif %}>{{ "all" if option == "all" else option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Renewal Horizon (days)
+        <input type="number" name="horizon_days" value="{{ filters.horizon_days }}" min="30" max="730">
+      </label>
+      <label>
+        Result View
+        <select name="view_mode">
+          {% for option in view_modes %}
+          <option value="{{ option }}" {% if option == filters.view_mode %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Graph Type
+        <select name="chart_kind">
+          {% for option in chart_kinds %}
+          <option value="{{ option }}" {% if option == filters.chart_kind %}selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Graph Dimension
+        <select name="chart_x">
+          {% for option in chart_dimension_options %}
+          <option value="{{ option.key }}" {% if option.key == filters.chart_x %}selected{% endif %}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Graph Metric
+        <select name="chart_y">
+          {% for option in chart_metric_options %}
+          <option value="{{ option.key }}" {% if option.key == filters.chart_y %}selected{% endif %}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+  </details>
 </form>
 
 {% if databricks_reports %}

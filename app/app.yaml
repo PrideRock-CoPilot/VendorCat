@@ -14,6 +14,8 @@ env:
     value: "false"
   - name: "TVENDOR_LOCKED_MODE"
     value: "false"
+  - name: "TVENDOR_DEV_ALLOW_ALL_ACCESS"
+    value: "false"
   - name: "TVENDOR_CATALOG"
     value: "a1_dlk"
   - name: "TVENDOR_SCHEMA"

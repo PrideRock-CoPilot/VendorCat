@@ -239,20 +239,18 @@
         {% endfor %}
       </tbody>
     </table>
-    <details style="margin-top:10px;">
-      <summary>Grant Role</summary>
-      <form method="post" action="/admin/grant-role" class="grid grid-1" style="margin-top:10px;">
-        <label>User Principal<input type="text" name="target_user" list="admin-user-principals" required></label>
-        <label>Role
-          <select name="role_code">
-            {% for role in grantable_roles %}
-            <option value="{{ role }}">{{ role }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <div><button type="submit">Grant Role</button></div>
-      </form>
-    </details>
+    <h3 style="margin-top:10px;">Grant Role</h3>
+    <form method="post" action="/admin/grant-role" class="grid grid-1" style="margin-top:10px;">
+      <label>User Principal<input type="text" name="target_user" list="admin-user-principals" required></label>
+      <label>Role
+        <select name="role_code">
+          {% for role in grantable_roles %}
+          <option value="{{ role }}">{{ role }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div><button type="submit">Grant Role</button></div>
+    </form>
   </section>
 
   <section class="card">
@@ -286,21 +284,19 @@
         {% endfor %}
       </tbody>
     </table>
-    <details style="margin-top:10px;">
-      <summary>Grant Org Scope</summary>
-      <form method="post" action="/admin/grant-scope" class="grid grid-1" style="margin-top:10px;">
-        <label>User Principal<input type="text" name="target_user" required></label>
-        <label>Org ID<input type="text" name="org_id" required></label>
-        <label>Scope Level
-          <select name="scope_level">
-            <option value="read">read</option>
-            <option value="edit">edit</option>
-            <option value="full">full</option>
-          </select>
-        </label>
-        <div><button type="submit">Grant Scope</button></div>
-      </form>
-    </details>
+    <h3 style="margin-top:10px;">Grant Org Scope</h3>
+    <form method="post" action="/admin/grant-scope" class="grid grid-1" style="margin-top:10px;">
+      <label>User Principal<input type="text" name="target_user" required></label>
+      <label>Org ID<input type="text" name="org_id" required></label>
+      <label>Scope Level
+        <select name="scope_level">
+          <option value="read">read</option>
+          <option value="edit">edit</option>
+          <option value="full">full</option>
+        </select>
+      </label>
+      <div><button type="submit">Grant Scope</button></div>
+    </form>
   </section>
 </div>
 
@@ -348,20 +344,18 @@
       {% endfor %}
     </tbody>
   </table>
-  <details style="margin-top:10px;">
-    <summary>Grant Group Role</summary>
-    <form method="post" action="/admin/grant-group-role" class="grid grid-1" style="margin-top:10px;">
-      <label>Group Principal<input type="text" name="target_group" placeholder="group:ad-vendor-admins" required></label>
-      <label>Role
-        <select name="role_code">
-          {% for role in grantable_roles %}
-          <option value="{{ role }}">{{ role }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <div><button type="submit">Grant Group Role</button></div>
-    </form>
-  </details>
+  <h3 style="margin-top:10px;">Grant Group Role</h3>
+  <form method="post" action="/admin/grant-group-role" class="grid grid-1" style="margin-top:10px;">
+    <label>Group Principal<input type="text" name="target_group" placeholder="group:ad-vendor-admins" required></label>
+    <label>Role
+      <select name="role_code">
+        {% for role in grantable_roles %}
+        <option value="{{ role }}">{{ role }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div><button type="submit">Grant Group Role</button></div>
+  </form>
 </section>
 {% endif %}
 {% endblock %}

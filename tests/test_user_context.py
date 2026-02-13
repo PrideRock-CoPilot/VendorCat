@@ -11,7 +11,7 @@ if str(APP_ROOT) not in sys.path:
 
 from vendor_catalog_app.config import AppConfig
 from vendor_catalog_app.repository import UNKNOWN_USER_PRINCIPAL
-from vendor_catalog_app.security import ROLE_VIEWER
+from vendor_catalog_app.security import ROLE_ADMIN, ROLE_VIEWER
 from vendor_catalog_app.web import services
 
 
@@ -229,3 +229,43 @@ def test_session_policy_snapshot_refreshes_on_policy_version_change(monkeypatch)
     assert context_refreshed.roles == {"vendor_admin"}
     assert repo.bootstrap_called == 2
     assert repo.resolve_policy_called == 2
+
+
+def test_dev_allow_all_access_forces_admin_role(monkeypatch) -> None:
+    repo = _FakeRepo(current_user="viewer@example.com", roles={ROLE_VIEWER})
+    config = AppConfig("", "", "", use_local_db=False, env="dev", dev_allow_all_access=True)
+    monkeypatch.setattr(services, "get_repo", lambda: repo)
+    monkeypatch.setattr(services, "get_config", lambda: config)
+
+    context = services.get_user_context(_request())
+
+    assert context.roles == {ROLE_ADMIN}
+    assert context.raw_roles == {ROLE_ADMIN}
+    assert context.is_admin is True
+    assert context.can_edit is True
+    assert context.can_approve_requests is True
+    assert context.has_admin_rights is True
+
+
+def test_dev_allow_all_access_is_ignored_outside_dev(monkeypatch) -> None:
+    repo = _FakeRepo(current_user="viewer@example.com", roles={ROLE_VIEWER})
+    config = AppConfig("", "", "", use_local_db=False, env="prod", dev_allow_all_access=True)
+    monkeypatch.setattr(services, "get_repo", lambda: repo)
+    monkeypatch.setattr(services, "get_config", lambda: config)
+
+    context = services.get_user_context(_request())
+
+    assert context.roles == {ROLE_VIEWER}
+
+
+def test_dev_allow_all_access_replaces_unknown_principal(monkeypatch) -> None:
+    repo = _FakeRepo(current_user=UNKNOWN_USER_PRINCIPAL, roles={ROLE_VIEWER})
+    config = AppConfig("", "", "", use_local_db=False, env="dev", dev_allow_all_access=True)
+    monkeypatch.setattr(services, "get_repo", lambda: repo)
+    monkeypatch.setattr(services, "get_config", lambda: config)
+    monkeypatch.setenv("TVENDOR_TEST_USER", "dev.user@example.com")
+
+    context = services.get_user_context(_request())
+
+    assert context.user_principal == "dev.user@example.com"
+    assert context.roles == {ROLE_ADMIN}
