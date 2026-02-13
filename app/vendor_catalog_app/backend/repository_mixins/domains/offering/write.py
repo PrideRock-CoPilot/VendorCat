@@ -848,16 +848,28 @@ class RepositoryOfferingWriteMixin:
             default=owner_role_options[0],
         )
         owner_id = self._new_id("oown")
+        now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
         row = {
             "offering_owner_id": owner_id,
             "offering_id": offering_id,
             "owner_user_principal": owner_ref,
             "owner_role": owner_role_value,
             "active_flag": True,
+            "updated_at": now.isoformat(),
+            "updated_by": actor_ref,
         }
         self._execute_file(
             "inserts/add_offering_owner.sql",
-            params=(owner_id, offering_id, row["owner_user_principal"], row["owner_role"], True),
+            params=(
+                owner_id,
+                offering_id,
+                row["owner_user_principal"],
+                row["owner_role"],
+                True,
+                now,
+                actor_ref,
+            ),
             core_offering_business_owner=self._table("core_offering_business_owner"),
         )
         self._write_audit_entity_change(
@@ -919,6 +931,8 @@ class RepositoryOfferingWriteMixin:
             default=contact_type_options[0],
         )
         contact_id = self._new_id("ocon")
+        now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
         row = {
             "offering_contact_id": contact_id,
             "offering_id": offering_id,
@@ -927,10 +941,22 @@ class RepositoryOfferingWriteMixin:
             "email": (email or "").strip() or None,
             "phone": (phone or "").strip() or None,
             "active_flag": True,
+            "updated_at": now.isoformat(),
+            "updated_by": actor_ref,
         }
         self._execute_file(
             "inserts/add_offering_contact.sql",
-            params=(contact_id, offering_id, row["contact_type"], row["full_name"], row["email"], row["phone"], True),
+            params=(
+                contact_id,
+                offering_id,
+                row["contact_type"],
+                row["full_name"],
+                row["email"],
+                row["phone"],
+                True,
+                now,
+                actor_ref,
+            ),
             core_offering_contact=self._table("core_offering_contact"),
         )
         self._write_audit_entity_change(

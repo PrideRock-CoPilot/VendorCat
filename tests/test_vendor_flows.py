@@ -600,6 +600,39 @@ def test_vendor_ownership_allows_adding_owner_assignment_and_contact(client: Tes
     assert "Taylor Ops" in ownership_page.text
 
 
+def test_offering_ownership_allows_adding_owner_and_contact(client: TestClient) -> None:
+    owner_response = client.post(
+        "/vendors/vnd-001/offerings/off-004/owners/add",
+        data={
+            "return_to": "/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors",
+            "owner_user_principal": "offering.owner@example.com",
+            "owner_role": "business_owner",
+            "reason": "Assign offering owner.",
+        },
+        follow_redirects=False,
+    )
+    assert owner_response.status_code == 303
+
+    contact_response = client.post(
+        "/vendors/vnd-001/offerings/off-004/contacts/add",
+        data={
+            "return_to": "/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors",
+            "full_name": "Offering Contact",
+            "contact_type": "support",
+            "email": "offering.contact@example.com",
+            "phone": "555-0119",
+            "reason": "Assign offering support contact.",
+        },
+        follow_redirects=False,
+    )
+    assert contact_response.status_code == 303
+
+    ownership_page = client.get("/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors")
+    assert ownership_page.status_code == 200
+    assert "offering.owner@example.com" in ownership_page.text
+    assert "Offering Contact" in ownership_page.text
+
+
 def test_offering_sectioned_page_supports_operational_profile_updates(client: TestClient) -> None:
     summary_page = client.get("/vendors/vnd-001/offerings/off-004?return_to=%2Fvendors")
     assert summary_page.status_code == 200
