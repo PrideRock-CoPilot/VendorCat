@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import pandas as pd
 from fastapi import APIRouter, Request
-
+from vendor_catalog_app.web.core.activity import ensure_session_started, log_page_view
+from vendor_catalog_app.web.core.runtime import get_repo
+from vendor_catalog_app.web.core.template_context import base_template_context
+from vendor_catalog_app.web.core.user_context_service import get_user_context
 from vendor_catalog_app.web.routers.contracts.common import (
     CONTRACT_EXPIRING_WINDOW_DAYS,
     CONTRACT_SCOPE_OPTIONS,
@@ -21,14 +24,6 @@ from vendor_catalog_app.web.routers.contracts.common import (
     normalize_tab,
     to_bool_series,
 )
-from vendor_catalog_app.web.services import (
-    base_template_context,
-    ensure_session_started,
-    get_repo,
-    get_user_context,
-    log_page_view,
-)
-
 
 router = APIRouter(prefix="/contracts")
 
@@ -215,4 +210,5 @@ def contracts(request: Request):
         },
     )
     return request.app.state.templates.TemplateResponse(request, "contracts.html", context)
+
 

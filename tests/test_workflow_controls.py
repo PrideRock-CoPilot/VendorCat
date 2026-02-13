@@ -13,7 +13,7 @@ if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
 from vendor_catalog_app.web.app import create_app
-from vendor_catalog_app.web.services import get_config, get_repo
+from vendor_catalog_app.web.core.runtime import get_config, get_repo
 
 
 @pytest.fixture()
@@ -319,4 +319,5 @@ def test_workflow_decision_status_is_admin_managed(client: TestClient) -> None:
     queued = client.get("/workflows?status=awaiting_info&queue=all")
     assert queued.status_code == 200
     assert request_id in queued.text
+
 

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
-
-from vendor_catalog_app.web.flash import add_flash
-from vendor_catalog_app.web.routers.admin.common import ADMIN_SECTION_ACCESS, _admin_redirect_url
-from vendor_catalog_app.web.services import get_repo, get_user_context
-
+from vendor_catalog_app.web.core.runtime import get_repo
+from vendor_catalog_app.web.core.user_context_service import get_user_context
+from vendor_catalog_app.web.http.flash import add_flash
+from vendor_catalog_app.web.routers.admin.common import (
+    ADMIN_SECTION_ACCESS,
+    _admin_redirect_url,
+)
 
 router = APIRouter(prefix="/admin")
 
@@ -85,3 +87,4 @@ async def revoke_scope(request: Request):
     )
     add_flash(request, "Org scope revoked.", "success")
     return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+

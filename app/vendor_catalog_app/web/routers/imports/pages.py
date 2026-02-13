@@ -2,15 +2,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse, Response
-
-from vendor_catalog_app.web.flash import add_flash
+from vendor_catalog_app.web.http.flash import add_flash
 from vendor_catalog_app.web.routers.imports.parsing import (
     can_manage_imports,
     import_template_csv,
     render_context,
     safe_layout,
 )
-
 
 router = APIRouter()
 
@@ -53,3 +51,4 @@ def import_template_download(layout_key: str):
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+

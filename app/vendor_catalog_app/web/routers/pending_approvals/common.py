@@ -8,7 +8,6 @@ from urllib.parse import quote, urlencode
 
 from fastapi import Request
 from fastapi.responses import RedirectResponse
-
 from vendor_catalog_app.repository import GLOBAL_CHANGE_VENDOR_ID
 from vendor_catalog_app.security import (
     MAX_APPROVAL_LEVEL,
@@ -16,14 +15,11 @@ from vendor_catalog_app.security import (
     approval_level_label,
     required_approval_level,
 )
-from vendor_catalog_app.web.flash import add_flash
-from vendor_catalog_app.web.services import (
-    base_template_context,
-    ensure_session_started,
-    get_repo,
-    get_user_context,
-    log_page_view,
-)
+from vendor_catalog_app.web.core.activity import ensure_session_started, log_page_view
+from vendor_catalog_app.web.core.runtime import get_repo
+from vendor_catalog_app.web.core.template_context import base_template_context
+from vendor_catalog_app.web.core.user_context_service import get_user_context
+from vendor_catalog_app.web.http.flash import add_flash
 
 LOGGER = logging.getLogger(__name__)
 
@@ -788,5 +784,6 @@ def _load_workflow_queue_view(
 
 # Export underscore-prefixed helpers for module-split star imports.
 __all__ = [name for name in globals() if not name.startswith("__")]
+
 
 

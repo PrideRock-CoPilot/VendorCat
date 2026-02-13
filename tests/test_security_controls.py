@@ -13,13 +13,17 @@ if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
 from vendor_catalog_app.web.app import create_app
-from vendor_catalog_app.web.security_controls import CSRF_HEADER, CSRF_SESSION_KEY, request_matches_csrf_token
+from vendor_catalog_app.web.security.controls import (
+    CSRF_HEADER,
+    CSRF_SESSION_KEY,
+    request_matches_csrf_token,
+)
 
 
 @pytest.fixture()
 def _clear_app_caches() -> None:
     from vendor_catalog_app.observability import get_observability_manager
-    from vendor_catalog_app.web.services import get_config, get_repo
+    from vendor_catalog_app.web.core.runtime import get_config, get_repo
 
     get_observability_manager.cache_clear()
     get_repo.cache_clear()
@@ -193,3 +197,4 @@ def test_security_headers_include_frame_src_for_databricks_embed(
     assert response.status_code == 200
     csp = response.headers.get("Content-Security-Policy", "")
     assert "frame-src 'self' https://dbc-123.cloud.databricks.com" in csp
+

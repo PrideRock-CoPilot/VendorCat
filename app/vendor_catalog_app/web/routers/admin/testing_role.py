@@ -2,16 +2,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
-
 from vendor_catalog_app.security import ROLE_CHOICES
-from vendor_catalog_app.web.flash import add_flash
-from vendor_catalog_app.web.services import (
+from vendor_catalog_app.web.core.runtime import get_repo, testing_role_override_enabled
+from vendor_catalog_app.web.core.user_context_service import (
     ADMIN_ROLE_OVERRIDE_SESSION_KEY,
-    get_repo,
     get_user_context,
-    testing_role_override_enabled,
 )
-
+from vendor_catalog_app.web.http.flash import add_flash
 
 router = APIRouter(prefix="/admin")
 
@@ -45,3 +42,4 @@ async def set_testing_role(request: Request):
         request.session.pop(ADMIN_ROLE_OVERRIDE_SESSION_KEY, None)
         add_flash(request, "Testing role override cleared.", "success")
     return RedirectResponse(url=f"{safe_return_to}", status_code=303)
+

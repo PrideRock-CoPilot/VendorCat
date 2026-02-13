@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-
+from vendor_catalog_app.web.core.activity import ensure_session_started
+from vendor_catalog_app.web.core.runtime import get_repo
+from vendor_catalog_app.web.core.user_context_service import get_user_context
 from vendor_catalog_app.web.routers.system.common import _normalize_limit
-from vendor_catalog_app.web.services import ensure_session_started, get_repo, get_user_context
-
 
 router = APIRouter(prefix="/api")
 
@@ -57,3 +57,4 @@ def api_user_search(request: Request, q: str = "", limit: int = 20):
     ensure_session_started(request, user)
     rows = repo.search_user_directory(q=q, limit=_normalize_limit(limit)).to_dict("records")
     return JSONResponse({"items": rows})
+

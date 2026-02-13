@@ -1,19 +1,25 @@
 from __future__ import annotations
+
 from urllib.parse import quote
+
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 from vendor_catalog_app.defaults import DEFAULT_DOC_TITLE_MAX_LENGTH
-from vendor_catalog_app.web.flash import add_flash
-from vendor_catalog_app.web.routers.vendors.common import _request_scope_vendor_id, _safe_return_to, _write_blocked
+from vendor_catalog_app.web.core.runtime import get_repo
+from vendor_catalog_app.web.core.user_context_service import get_user_context
+from vendor_catalog_app.web.http.flash import add_flash
+from vendor_catalog_app.web.routers.vendors.common import (
+    _request_scope_vendor_id,
+    _safe_return_to,
+    _write_blocked,
+)
 from vendor_catalog_app.web.routers.vendors.constants import VENDOR_DEFAULT_RETURN_TO
-from vendor_catalog_app.web.services import get_repo, get_user_context
 from vendor_catalog_app.web.utils.doc_links import (
     extract_doc_fqdn,
     normalize_doc_tags,
     suggest_doc_title,
     suggest_doc_type,
 )
-
 
 router = APIRouter(prefix="/vendors")
 
@@ -275,3 +281,4 @@ async def doc_link_remove_submit(request: Request, doc_id: str):
     except Exception as exc:
         add_flash(request, f"Could not remove document link: {exc}", "error")
     return RedirectResponse(url=return_to, status_code=303)
+

@@ -2,25 +2,24 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
-
-from vendor_catalog_app.security import CHANGE_APPROVAL_LEVELS, ROLE_CHOICES, change_action_choices
-from vendor_catalog_app.web.flash import add_flash
+from vendor_catalog_app.security import (
+    CHANGE_APPROVAL_LEVELS,
+    ROLE_CHOICES,
+    change_action_choices,
+)
+from vendor_catalog_app.web.core.activity import ensure_session_started, log_page_view
+from vendor_catalog_app.web.core.runtime import get_repo
+from vendor_catalog_app.web.core.template_context import base_template_context
+from vendor_catalog_app.web.core.user_context_service import get_user_context
+from vendor_catalog_app.web.http.flash import add_flash
 from vendor_catalog_app.web.routers.admin.common import (
+    LOOKUP_TYPE_LABELS,
     _date_value,
     _normalize_admin_section,
     _normalize_as_of_date,
     _normalize_lookup_status,
     _normalize_lookup_type,
-    LOOKUP_TYPE_LABELS,
 )
-from vendor_catalog_app.web.services import (
-    base_template_context,
-    ensure_session_started,
-    get_repo,
-    get_user_context,
-    log_page_view,
-)
-
 
 router = APIRouter(prefix="/admin")
 
@@ -131,3 +130,4 @@ def admin(request: Request):
         },
     )
     return request.app.state.templates.TemplateResponse(request, "admin.html", context)
+

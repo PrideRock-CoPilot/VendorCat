@@ -4,18 +4,14 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
-
-from vendor_catalog_app.web.flash import add_flash
-from vendor_catalog_app.web.services import (
-    base_template_context,
-    ensure_session_started,
-    get_repo,
-    get_user_context,
-    log_page_view,
-)
+from vendor_catalog_app.web.core.activity import ensure_session_started, log_page_view
+from vendor_catalog_app.web.core.runtime import get_repo
+from vendor_catalog_app.web.core.template_context import base_template_context
+from vendor_catalog_app.web.core.user_context_service import get_user_context
+from vendor_catalog_app.web.http.flash import add_flash
 from vendor_catalog_app.web.routers.projects.common import (
-    PROJECT_STATUSES,
     PROJECT_STATUS_VALUES,
+    PROJECT_STATUSES,
     _project_base_context,
     _project_type_options,
     _render_project_section,
@@ -24,7 +20,6 @@ from vendor_catalog_app.web.routers.projects.common import (
     _selected_offering_rows,
     _selected_vendor_rows,
 )
-
 
 router = APIRouter(prefix="/projects")
 
@@ -150,6 +145,7 @@ def project_edit_form(request: Request, project_id: str, return_to: str = "/proj
         },
     )
     return request.app.state.templates.TemplateResponse(request, "project_edit.html", context)
+
 
 
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 from urllib.parse import quote
 
 from fastapi import Request
-
 from vendor_catalog_app.defaults import (
     DEFAULT_ALLOWED_RETURN_TO_PREFIXES,
     DEFAULT_RETURN_TO_PATH,
@@ -11,18 +10,15 @@ from vendor_catalog_app.defaults import (
     DEFAULT_VENDOR_SUMMARY_MONTHS,
 )
 from vendor_catalog_app.repository import GLOBAL_CHANGE_VENDOR_ID
-from vendor_catalog_app.web.flash import add_flash
+from vendor_catalog_app.web.core.activity import ensure_session_started, log_page_view
+from vendor_catalog_app.web.core.template_context import base_template_context
+from vendor_catalog_app.web.core.user_context_service import get_user_context
+from vendor_catalog_app.web.http.flash import add_flash
 from vendor_catalog_app.web.routers.vendors.constants import (
     LIFECYCLE_STATES,
     OFFERING_SECTIONS,
     RISK_TIERS,
     VENDOR_SECTIONS,
-)
-from vendor_catalog_app.web.services import (
-    base_template_context,
-    ensure_session_started,
-    get_user_context,
-    log_page_view,
 )
 
 
@@ -220,3 +216,4 @@ def _render_vendor_new_form(
         },
     )
     return request.app.state.templates.TemplateResponse(request, "vendor_new.html", context, status_code=status_code)
+

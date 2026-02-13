@@ -12,7 +12,7 @@ if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
 from vendor_catalog_app.web.app import create_app
-from vendor_catalog_app.web.services import get_config, get_repo
+from vendor_catalog_app.web.core.runtime import get_config, get_repo
 
 
 @pytest.fixture()
@@ -410,4 +410,5 @@ def test_doc_link_rejects_unknown_tag_not_in_admin_lookup(client: TestClient) ->
     )
     assert response.status_code == 200
     assert "Tags must be selected from admin-managed options" in response.text
+
 

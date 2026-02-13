@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
-
 from vendor_catalog_app.repository import UNKNOWN_USER_PRINCIPAL
-from vendor_catalog_app.web.flash import add_flash
+from vendor_catalog_app.web.core.activity import ensure_session_started, log_page_view
+from vendor_catalog_app.web.core.runtime import get_repo
+from vendor_catalog_app.web.core.template_context import base_template_context
+from vendor_catalog_app.web.core.user_context_service import get_user_context
+from vendor_catalog_app.web.http.flash import add_flash
 from vendor_catalog_app.web.routers.demos.common import (
     DEMO_CLOSED_OUTCOMES,
     DEMO_REVIEW_SUBMISSION_NOTE_TYPE,
@@ -14,14 +17,6 @@ from vendor_catalog_app.web.routers.demos.common import (
     parse_template_note,
     today_iso,
 )
-from vendor_catalog_app.web.services import (
-    base_template_context,
-    ensure_session_started,
-    get_repo,
-    get_user_context,
-    log_page_view,
-)
-
 
 router = APIRouter(prefix="/demos")
 
@@ -97,4 +92,5 @@ def demo_review_form(request: Request, demo_id: str):
         },
     )
     return request.app.state.templates.TemplateResponse(request, "demo_review_form.html", context)
+
 

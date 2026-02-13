@@ -4,14 +4,24 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
-
-from vendor_catalog_app.defaults import DEFAULT_PROJECT_STATUS_ACTIVE, DEFAULT_VENDOR_SUMMARY_MONTHS
-from vendor_catalog_app.web.flash import add_flash
-from vendor_catalog_app.web.routers.vendors.common import _safe_return_to, _vendor_base_context, _write_blocked
+from vendor_catalog_app.defaults import (
+    DEFAULT_PROJECT_STATUS_ACTIVE,
+    DEFAULT_VENDOR_SUMMARY_MONTHS,
+)
+from vendor_catalog_app.web.core.runtime import get_repo
+from vendor_catalog_app.web.core.template_context import base_template_context
+from vendor_catalog_app.web.core.user_context_service import get_user_context
+from vendor_catalog_app.web.http.flash import add_flash
+from vendor_catalog_app.web.routers.vendors.common import (
+    _safe_return_to,
+    _vendor_base_context,
+    _write_blocked,
+)
 from vendor_catalog_app.web.routers.vendors.constants import VENDOR_DEFAULT_RETURN_TO
-from vendor_catalog_app.web.routers.vendors.pages import _build_line_chart_points, _series_with_bar_pct
-from vendor_catalog_app.web.services import base_template_context, get_repo, get_user_context
-
+from vendor_catalog_app.web.routers.vendors.pages import (
+    _build_line_chart_points,
+    _series_with_bar_pct,
+)
 
 router = APIRouter(prefix="/vendors")
 
@@ -283,6 +293,7 @@ def vendor_portfolio_compat(request: Request, vendor_id: str, return_to: str = V
         url=f"/vendors/{vendor_id}/offerings?return_to={quote(_safe_return_to(return_to), safe='')}",
         status_code=302,
     )
+
 
 
 

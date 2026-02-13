@@ -5,9 +5,13 @@ from datetime import date
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
-
-from vendor_catalog_app.repository import GLOBAL_CHANGE_VENDOR_ID, UNKNOWN_USER_PRINCIPAL
-from vendor_catalog_app.web.flash import add_flash
+from vendor_catalog_app.repository import (
+    GLOBAL_CHANGE_VENDOR_ID,
+    UNKNOWN_USER_PRINCIPAL,
+)
+from vendor_catalog_app.web.core.runtime import get_repo
+from vendor_catalog_app.web.core.user_context_service import get_user_context
+from vendor_catalog_app.web.http.flash import add_flash
 from vendor_catalog_app.web.routers.demos.common import (
     DEMO_REVIEW_SUBMISSION_NOTE_TYPE,
     DEMO_REVIEW_TEMPLATE_NOTE_TYPE,
@@ -15,8 +19,6 @@ from vendor_catalog_app.web.routers.demos.common import (
     parse_criteria_csv,
     parse_template_note,
 )
-from vendor_catalog_app.web.services import get_repo, get_user_context
-
 
 router = APIRouter(prefix="/demos")
 
@@ -234,4 +236,5 @@ async def submit_demo_review_form(request: Request, demo_id: str):
     except Exception as exc:
         add_flash(request, f"Could not submit review form: {exc}", "error")
     return RedirectResponse(url=f"/demos/{demo_id}/review-form", status_code=303)
+
 

@@ -11,7 +11,7 @@ if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
 from vendor_catalog_app.web.app import create_app
-from vendor_catalog_app.web.services import get_config, get_repo
+from vendor_catalog_app.web.core.runtime import get_config, get_repo
 
 
 @pytest.fixture()
@@ -319,4 +319,5 @@ def test_admin_defaults_section_resequences_sort_order(client: TestClient) -> No
     active_rows = repo.list_lookup_options("doc_tag", active_only=True)
     assert "priority_review" not in active_rows["option_code"].tolist()
     assert active_rows["sort_order"].tolist() == list(range(1, len(active_rows) + 1))
+
 

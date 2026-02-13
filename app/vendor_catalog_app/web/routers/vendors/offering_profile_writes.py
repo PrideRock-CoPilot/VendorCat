@@ -4,9 +4,13 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
-
-from vendor_catalog_app.web.flash import add_flash
-from vendor_catalog_app.web.routers.vendors.common import _safe_return_to, _write_blocked
+from vendor_catalog_app.web.core.runtime import get_repo
+from vendor_catalog_app.web.core.user_context_service import get_user_context
+from vendor_catalog_app.web.http.flash import add_flash
+from vendor_catalog_app.web.routers.vendors.common import (
+    _safe_return_to,
+    _write_blocked,
+)
 from vendor_catalog_app.web.routers.vendors.constants import (
     OFFERING_DATA_METHOD_OPTIONS,
     OFFERING_NOTE_TYPES,
@@ -14,8 +18,6 @@ from vendor_catalog_app.web.routers.vendors.constants import (
     OFFERING_TICKET_STATUSES,
     VENDOR_DEFAULT_RETURN_TO,
 )
-from vendor_catalog_app.web.services import get_repo, get_user_context
-
 
 router = APIRouter(prefix="/vendors")
 
@@ -710,4 +712,5 @@ async def update_offering_ticket_status_submit(request: Request, vendor_id: str,
         url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=tickets&return_to={quote(return_to, safe='')}",
         status_code=303,
     )
+
 

@@ -12,7 +12,7 @@ if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
 from vendor_catalog_app.web.app import create_app
-from vendor_catalog_app.web.services import get_config, get_repo
+from vendor_catalog_app.web.core.runtime import get_config, get_repo
 
 
 @pytest.fixture()
@@ -787,4 +787,5 @@ def test_offering_tickets_and_notes_can_be_added(client: TestClient) -> None:
     notes_page = client.get("/vendors/vnd-001/offerings/off-004?section=notes&return_to=%2Fvendors")
     assert notes_page.status_code == 200
     assert "API latency increased after tenant policy update." in notes_page.text
+
 

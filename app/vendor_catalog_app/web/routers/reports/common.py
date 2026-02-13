@@ -11,23 +11,18 @@ from urllib.parse import urlencode, urlparse, urlunparse
 import pandas as pd
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse, Response
-
 from vendor_catalog_app.env import (
-    TVENDOR_DATABRICKS_REPORTS_ALLOWED_HOSTS,
     TVENDOR_DATABRICKS_REPORTS_ALLOW_EMBED,
+    TVENDOR_DATABRICKS_REPORTS_ALLOWED_HOSTS,
     TVENDOR_DATABRICKS_REPORTS_JSON,
     get_env,
     get_env_bool,
 )
-from vendor_catalog_app.web.flash import add_flash
-from vendor_catalog_app.web.services import (
-    base_template_context,
-    ensure_session_started,
-    get_repo,
-    get_user_context,
-    log_page_view,
-)
-
+from vendor_catalog_app.web.core.activity import ensure_session_started, log_page_view
+from vendor_catalog_app.web.core.runtime import get_repo
+from vendor_catalog_app.web.core.template_context import base_template_context
+from vendor_catalog_app.web.core.user_context_service import get_user_context
+from vendor_catalog_app.web.http.flash import add_flash
 
 router = APIRouter()
 
@@ -525,3 +520,4 @@ def _databricks_report_options(config) -> list[dict[str, object]]:
 # Export underscore-prefixed helper functions so modular route files can
 # `from ...common import *` without changing runtime behavior.
 __all__ = [name for name in globals() if not name.startswith("__")]
+

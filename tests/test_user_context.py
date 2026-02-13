@@ -12,7 +12,7 @@ if str(APP_ROOT) not in sys.path:
 from vendor_catalog_app.config import AppConfig
 from vendor_catalog_app.repository import UNKNOWN_USER_PRINCIPAL
 from vendor_catalog_app.security import ROLE_ADMIN, ROLE_VIEWER
-from vendor_catalog_app.web import services
+from vendor_catalog_app.web.core import identity, user_context_service
 
 
 class _FakeRepo:
@@ -82,10 +82,11 @@ def _request(
 def test_unknown_user_gets_viewer_without_bootstrap(monkeypatch) -> None:
     repo = _FakeRepo(current_user=UNKNOWN_USER_PRINCIPAL, roles={"vendor_admin"})
     config = AppConfig("", "", "", use_local_db=False)
-    monkeypatch.setattr(services, "get_repo", lambda: repo)
-    monkeypatch.setattr(services, "get_config", lambda: config)
+    monkeypatch.setattr(user_context_service, "get_repo", lambda: repo)
+    monkeypatch.setattr(user_context_service, "get_config", lambda: config)
+    monkeypatch.setattr(identity, "get_config", lambda: config)
 
-    context = services.get_user_context(_request())
+    context = user_context_service.get_user_context(_request())
 
     assert context.user_principal == UNKNOWN_USER_PRINCIPAL
     assert context.roles == {ROLE_VIEWER}
@@ -96,10 +97,11 @@ def test_unknown_user_gets_viewer_without_bootstrap(monkeypatch) -> None:
 def test_non_unknown_user_uses_bootstrap_roles(monkeypatch) -> None:
     repo = _FakeRepo(current_user="editor@example.com", roles={"vendor_editor"})
     config = AppConfig("", "", "", use_local_db=False)
-    monkeypatch.setattr(services, "get_repo", lambda: repo)
-    monkeypatch.setattr(services, "get_config", lambda: config)
+    monkeypatch.setattr(user_context_service, "get_repo", lambda: repo)
+    monkeypatch.setattr(user_context_service, "get_config", lambda: config)
+    monkeypatch.setattr(identity, "get_config", lambda: config)
 
-    context = services.get_user_context(_request())
+    context = user_context_service.get_user_context(_request())
 
     assert context.user_principal == "editor@example.com"
     assert context.roles == {"vendor_editor"}
@@ -110,8 +112,9 @@ def test_non_unknown_user_uses_bootstrap_roles(monkeypatch) -> None:
 def test_forwarded_identity_header_takes_precedence(monkeypatch) -> None:
     repo = _FakeRepo(current_user="service_principal@databricks", roles={"vendor_editor"})
     config = AppConfig("", "", "", use_local_db=False)
-    monkeypatch.setattr(services, "get_repo", lambda: repo)
-    monkeypatch.setattr(services, "get_config", lambda: config)
+    monkeypatch.setattr(user_context_service, "get_repo", lambda: repo)
+    monkeypatch.setattr(user_context_service, "get_config", lambda: config)
+    monkeypatch.setattr(identity, "get_config", lambda: config)
     request = _request(
         headers=[
             (b"x-forwarded-preferred-username", b"jane.doe@example.com"),
@@ -119,7 +122,7 @@ def test_forwarded_identity_header_takes_precedence(monkeypatch) -> None:
         ]
     )
 
-    context = services.get_user_context(request)
+    context = user_context_service.get_user_context(request)
 
     assert context.user_principal == "jane.doe@example.com"
     assert context.roles == {"vendor_editor"}
@@ -132,7 +135,7 @@ def test_forwarded_identity_header_takes_precedence(monkeypatch) -> None:
 
 
 def test_resolve_databricks_identity_uses_explicit_name_and_network_headers(monkeypatch) -> None:
-    monkeypatch.setattr(services, "get_config", lambda: AppConfig("", "", "", use_local_db=False, env="prod"))
+    monkeypatch.setattr(identity, "get_config", lambda: AppConfig("", "", "", use_local_db=False, env="prod"))
     monkeypatch.setenv("TVENDOR_TRUST_FORWARDED_IDENTITY_HEADERS", "true")
     request = _request(
         headers=[
@@ -145,18 +148,18 @@ def test_resolve_databricks_identity_uses_explicit_name_and_network_headers(monk
         ]
     )
 
-    identity = services.resolve_databricks_request_identity(request)
+    resolved_identity = identity.resolve_databricks_request_identity(request)
 
-    assert identity["principal"] == "jane.doe@example.com"
-    assert identity["email"] == "jane.doe@example.com"
-    assert identity["network_id"] == "1234567890123456"
-    assert identity["first_name"] == "Jane"
-    assert identity["last_name"] == "Doe"
-    assert identity["display_name"] == "Jane Doe"
+    assert resolved_identity["principal"] == "jane.doe@example.com"
+    assert resolved_identity["email"] == "jane.doe@example.com"
+    assert resolved_identity["network_id"] == "1234567890123456"
+    assert resolved_identity["first_name"] == "Jane"
+    assert resolved_identity["last_name"] == "Doe"
+    assert resolved_identity["display_name"] == "Jane Doe"
 
 
 def test_resolve_databricks_identity_uses_forwarded_user_for_network_id(monkeypatch) -> None:
-    monkeypatch.setattr(services, "get_config", lambda: AppConfig("", "", "", use_local_db=False, env="prod"))
+    monkeypatch.setattr(identity, "get_config", lambda: AppConfig("", "", "", use_local_db=False, env="prod"))
     monkeypatch.setenv("TVENDOR_TRUST_FORWARDED_IDENTITY_HEADERS", "true")
     request = _request(
         headers=[
@@ -165,18 +168,19 @@ def test_resolve_databricks_identity_uses_forwarded_user_for_network_id(monkeypa
         ]
     )
 
-    identity = services.resolve_databricks_request_identity(request)
+    resolved_identity = identity.resolve_databricks_request_identity(request)
 
-    assert identity["principal"] == "user123@example.com"
-    assert identity["email"] == "user123@example.com"
-    assert identity["network_id"] == "john_smith"
+    assert resolved_identity["principal"] == "user123@example.com"
+    assert resolved_identity["email"] == "user123@example.com"
+    assert resolved_identity["network_id"] == "john_smith"
 
 
 def test_forwarded_group_principals_are_normalized_and_passed_to_bootstrap(monkeypatch) -> None:
     repo = _FakeRepo(current_user="service_principal@databricks", roles={"vendor_editor"})
     config = AppConfig("", "", "", use_local_db=False, env="prod")
-    monkeypatch.setattr(services, "get_repo", lambda: repo)
-    monkeypatch.setattr(services, "get_config", lambda: config)
+    monkeypatch.setattr(user_context_service, "get_repo", lambda: repo)
+    monkeypatch.setattr(user_context_service, "get_config", lambda: config)
+    monkeypatch.setattr(identity, "get_config", lambda: config)
     monkeypatch.setenv("TVENDOR_TRUST_FORWARDED_IDENTITY_HEADERS", "true")
     monkeypatch.setenv("TVENDOR_FORWARDED_GROUP_HEADERS", "x-forwarded-groups")
     request = _request(
@@ -186,7 +190,7 @@ def test_forwarded_group_principals_are_normalized_and_passed_to_bootstrap(monke
         ]
     )
 
-    context = services.get_user_context(request)
+    context = user_context_service.get_user_context(request)
 
     assert context.user_principal == "group.member@example.com"
     assert context.roles == {"vendor_editor"}
@@ -195,37 +199,38 @@ def test_forwarded_group_principals_are_normalized_and_passed_to_bootstrap(monke
 
 
 def test_display_name_formats_email_to_first_last() -> None:
-    assert services._display_name_for_principal("jane.doe@example.com") == "Jane Doe"
+    assert identity.display_name_for_principal("jane.doe@example.com") == "Jane Doe"
 
 
 def test_display_name_formats_network_principal_to_first_last() -> None:
-    assert services._display_name_for_principal(r"CORP\john_smith") == "John Smith"
+    assert identity.display_name_for_principal(r"CORP\john_smith") == "John Smith"
 
 
 def test_display_name_single_token_gets_user_suffix() -> None:
-    assert services._display_name_for_principal("admin@example.com") == "Admin User"
+    assert identity.display_name_for_principal("admin@example.com") == "Admin User"
 
 
 def test_session_policy_snapshot_refreshes_on_policy_version_change(monkeypatch) -> None:
     repo = _FakeRepo(current_user="editor@example.com", roles={"vendor_editor"})
     config = AppConfig("", "", "", use_local_db=False)
-    monkeypatch.setattr(services, "get_repo", lambda: repo)
-    monkeypatch.setattr(services, "get_config", lambda: config)
+    monkeypatch.setattr(user_context_service, "get_repo", lambda: repo)
+    monkeypatch.setattr(user_context_service, "get_config", lambda: config)
+    monkeypatch.setattr(identity, "get_config", lambda: config)
     session: dict = {}
 
-    context_first = services.get_user_context(_request(session=session))
+    context_first = user_context_service.get_user_context(_request(session=session))
     assert context_first.roles == {"vendor_editor"}
     assert repo.bootstrap_called == 1
     assert repo.resolve_policy_called == 1
 
     repo.roles = {"vendor_admin"}
-    context_cached = services.get_user_context(_request(session=session))
+    context_cached = user_context_service.get_user_context(_request(session=session))
     assert context_cached.roles == {"vendor_editor"}
     assert repo.bootstrap_called == 1
     assert repo.resolve_policy_called == 1
 
     repo.policy_version = 2
-    context_refreshed = services.get_user_context(_request(session=session))
+    context_refreshed = user_context_service.get_user_context(_request(session=session))
     assert context_refreshed.roles == {"vendor_admin"}
     assert repo.bootstrap_called == 2
     assert repo.resolve_policy_called == 2
@@ -234,10 +239,11 @@ def test_session_policy_snapshot_refreshes_on_policy_version_change(monkeypatch)
 def test_dev_allow_all_access_forces_admin_role(monkeypatch) -> None:
     repo = _FakeRepo(current_user="viewer@example.com", roles={ROLE_VIEWER})
     config = AppConfig("", "", "", use_local_db=False, env="dev", dev_allow_all_access=True)
-    monkeypatch.setattr(services, "get_repo", lambda: repo)
-    monkeypatch.setattr(services, "get_config", lambda: config)
+    monkeypatch.setattr(user_context_service, "get_repo", lambda: repo)
+    monkeypatch.setattr(user_context_service, "get_config", lambda: config)
+    monkeypatch.setattr(identity, "get_config", lambda: config)
 
-    context = services.get_user_context(_request())
+    context = user_context_service.get_user_context(_request())
 
     assert context.roles == {ROLE_ADMIN}
     assert context.raw_roles == {ROLE_ADMIN}
@@ -250,10 +256,11 @@ def test_dev_allow_all_access_forces_admin_role(monkeypatch) -> None:
 def test_dev_allow_all_access_is_ignored_outside_dev(monkeypatch) -> None:
     repo = _FakeRepo(current_user="viewer@example.com", roles={ROLE_VIEWER})
     config = AppConfig("", "", "", use_local_db=False, env="prod", dev_allow_all_access=True)
-    monkeypatch.setattr(services, "get_repo", lambda: repo)
-    monkeypatch.setattr(services, "get_config", lambda: config)
+    monkeypatch.setattr(user_context_service, "get_repo", lambda: repo)
+    monkeypatch.setattr(user_context_service, "get_config", lambda: config)
+    monkeypatch.setattr(identity, "get_config", lambda: config)
 
-    context = services.get_user_context(_request())
+    context = user_context_service.get_user_context(_request())
 
     assert context.roles == {ROLE_VIEWER}
 
@@ -261,11 +268,12 @@ def test_dev_allow_all_access_is_ignored_outside_dev(monkeypatch) -> None:
 def test_dev_allow_all_access_replaces_unknown_principal(monkeypatch) -> None:
     repo = _FakeRepo(current_user=UNKNOWN_USER_PRINCIPAL, roles={ROLE_VIEWER})
     config = AppConfig("", "", "", use_local_db=False, env="dev", dev_allow_all_access=True)
-    monkeypatch.setattr(services, "get_repo", lambda: repo)
-    monkeypatch.setattr(services, "get_config", lambda: config)
+    monkeypatch.setattr(user_context_service, "get_repo", lambda: repo)
+    monkeypatch.setattr(user_context_service, "get_config", lambda: config)
+    monkeypatch.setattr(identity, "get_config", lambda: config)
     monkeypatch.setenv("TVENDOR_TEST_USER", "dev.user@example.com")
 
-    context = services.get_user_context(_request())
+    context = user_context_service.get_user_context(_request())
 
     assert context.user_principal == "dev.user@example.com"
     assert context.roles == {ROLE_ADMIN}

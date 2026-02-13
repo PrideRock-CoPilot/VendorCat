@@ -5,11 +5,18 @@ from urllib.parse import quote
 import pandas as pd
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
-
 from vendor_catalog_app.defaults import DEFAULT_SOURCE_SYSTEM
 from vendor_catalog_app.repository import GLOBAL_CHANGE_VENDOR_ID
-from vendor_catalog_app.web.flash import add_flash
-from vendor_catalog_app.web.routers.vendors.common import _render_vendor_new_form, _safe_return_to, _write_blocked
+from vendor_catalog_app.web.core.activity import ensure_session_started, log_page_view
+from vendor_catalog_app.web.core.runtime import get_repo
+from vendor_catalog_app.web.core.template_context import base_template_context
+from vendor_catalog_app.web.core.user_context_service import get_user_context
+from vendor_catalog_app.web.http.flash import add_flash
+from vendor_catalog_app.web.routers.vendors.common import (
+    _render_vendor_new_form,
+    _safe_return_to,
+    _write_blocked,
+)
 from vendor_catalog_app.web.routers.vendors.constants import (
     DEFAULT_VENDOR_FIELDS,
     DEFAULT_VENDOR_PAGE_SIZE,
@@ -32,14 +39,6 @@ from vendor_catalog_app.web.routers.vendors.pages import (
     _normalize_vendor_sort,
     _vendor_list_url,
 )
-from vendor_catalog_app.web.services import (
-    base_template_context,
-    ensure_session_started,
-    get_repo,
-    get_user_context,
-    log_page_view,
-)
-
 
 router = APIRouter(prefix="/vendors")
 
@@ -462,6 +461,7 @@ async def vendor_new_submit(request: Request):
             form_error=error_text,
             status_code=400,
         )
+
 
 
 

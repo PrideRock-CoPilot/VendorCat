@@ -14,7 +14,7 @@ if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
 from vendor_catalog_app.web.app import create_app
-from vendor_catalog_app.web.services import get_config, get_repo
+from vendor_catalog_app.web.core.runtime import get_config, get_repo
 
 
 @pytest.fixture()
@@ -138,4 +138,5 @@ def test_reports_email_request(client: TestClient) -> None:
     )
     assert response.status_code == 200
     assert "Email extract request queued." in response.text
+
 

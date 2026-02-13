@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 from fastapi.responses import PlainTextResponse
-
-from vendor_catalog_app.web.bootstrap_diagnostics import (
+from vendor_catalog_app.web.core.identity import resolve_databricks_request_identity
+from vendor_catalog_app.web.core.runtime import get_config, get_repo
+from vendor_catalog_app.web.system.bootstrap_diagnostics import (
     bootstrap_diagnostics_authorized,
     build_bootstrap_diagnostics_payload,
 )
-from vendor_catalog_app.web.services import get_config, get_repo, resolve_databricks_request_identity
-
 
 router = APIRouter()
 
@@ -32,3 +31,4 @@ def bootstrap_diagnostics_page(request: Request):
         context,
         status_code=status_code,
     )
+

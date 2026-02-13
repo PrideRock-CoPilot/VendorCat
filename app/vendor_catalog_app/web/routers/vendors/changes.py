@@ -4,13 +4,25 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
-
-from vendor_catalog_app.security import MAX_APPROVAL_LEVEL, MIN_CHANGE_APPROVAL_LEVEL, required_approval_level
-from vendor_catalog_app.web.flash import add_flash
-from vendor_catalog_app.web.routers.vendors.common import _safe_return_to, _vendor_base_context, _write_blocked
-from vendor_catalog_app.web.routers.vendors.constants import LIFECYCLE_STATES, RISK_TIERS, VENDOR_DEFAULT_RETURN_TO
-from vendor_catalog_app.web.services import base_template_context, get_repo, get_user_context
-
+from vendor_catalog_app.security import (
+    MAX_APPROVAL_LEVEL,
+    MIN_CHANGE_APPROVAL_LEVEL,
+    required_approval_level,
+)
+from vendor_catalog_app.web.core.runtime import get_repo
+from vendor_catalog_app.web.core.template_context import base_template_context
+from vendor_catalog_app.web.core.user_context_service import get_user_context
+from vendor_catalog_app.web.http.flash import add_flash
+from vendor_catalog_app.web.routers.vendors.common import (
+    _safe_return_to,
+    _vendor_base_context,
+    _write_blocked,
+)
+from vendor_catalog_app.web.routers.vendors.constants import (
+    LIFECYCLE_STATES,
+    RISK_TIERS,
+    VENDOR_DEFAULT_RETURN_TO,
+)
 
 router = APIRouter(prefix="/vendors")
 
@@ -185,3 +197,4 @@ async def vendor_change_request(request: Request, vendor_id: str):
     except Exception as exc:
         add_flash(request, f"Could not submit change request: {exc}", "error")
     return RedirectResponse(url=f"/vendors/{vendor_id}/changes?return_to={quote(return_to, safe='')}", status_code=303)
+

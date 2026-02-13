@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-
 from vendor_catalog_app.observability import get_observability_manager
-from vendor_catalog_app.web.bootstrap_diagnostics import (
+from vendor_catalog_app.web.core.identity import resolve_databricks_request_identity
+from vendor_catalog_app.web.core.runtime import get_config, get_repo
+from vendor_catalog_app.web.routers.system.common import _runtime_ready, _utc_now_iso
+from vendor_catalog_app.web.system.bootstrap_diagnostics import (
     bootstrap_diagnostics_authorized,
     build_bootstrap_diagnostics_payload,
     candidate_env_values,
@@ -12,9 +14,6 @@ from vendor_catalog_app.web.bootstrap_diagnostics import (
     path_preview,
     raw_env_key_presence,
 )
-from vendor_catalog_app.web.routers.system.common import _runtime_ready, _utc_now_iso
-from vendor_catalog_app.web.services import get_config, get_repo, resolve_databricks_request_identity
-
 
 router = APIRouter(prefix="/api")
 
@@ -116,3 +115,4 @@ def api_bootstrap_diagnostics(request: Request):
     identity = resolve_databricks_request_identity(request)
     payload, status_code = build_bootstrap_diagnostics_payload(repo, config, identity)
     return JSONResponse(payload, status_code=status_code)
+
