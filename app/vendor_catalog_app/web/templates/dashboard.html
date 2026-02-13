@@ -135,5 +135,34 @@
     </table>
   </section>
 </div>
-{% endblock %}
 
+<div class="grid grid-2">
+  <section class="card">
+    <h2>Recent Contract Cancellations</h2>
+    <table>
+      <thead><tr><th>Contract</th><th>Vendor</th><th>Cancelled At</th><th>Reason</th></tr></thead>
+      <tbody>
+      {% for row in recent_cancellations %}
+      <tr>
+        <td>{{ row.contract_id }}</td>
+        <td>{{ row.vendor_id }}</td>
+        <td>{{ row.cancelled_at }}</td>
+        <td>{{ row.reason_code }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4">No recent cancellations</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  <section class="card">
+    <h2>Operational Shortcuts</h2>
+    <p class="muted">Jump directly to high-frequency workflows.</p>
+    <div class="empty-state-actions">
+      <a class="button-link subtle" href="/contracts">Open Contracts Hub</a>
+      <a class="button-link subtle" href="/vendor-360">Open Vendor 360</a>
+      <a class="button-link subtle" href="/reports">Open Reports</a>
+    </div>
+  </section>
+</div>
+{% endblock %}

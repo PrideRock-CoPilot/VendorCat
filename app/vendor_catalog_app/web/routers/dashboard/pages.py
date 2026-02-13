@@ -3,62 +3,54 @@ from __future__ import annotations
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request
-from fastapi.responses import RedirectResponse
 
-from vendor_catalog_app.web.services import (
-    base_template_context,
-    ensure_session_started,
-    get_repo,
-    get_user_context,
-    log_page_view,
+from vendor_catalog_app.web.routers.dashboard.common import (
+    DEFAULT_DASHBOARD_HORIZON_DAYS,
+    DEFAULT_DASHBOARD_MONTHS,
+    STARTUP_SPLASH_SESSION_KEY,
+    clamp_horizon_days,
+    clamp_months,
+    render_startup_splash,
 )
 
 
 router = APIRouter()
 
 
-def _render_startup_splash(request: Request, redirect_url: str):
-    request.session["startup_splash_seen"] = True
-    return request.app.state.templates.TemplateResponse(
-        request,
-        "startup_splash.html",
-        {
-            "request": request,
-            "title": "Starting Vendor Catalog",
-            "redirect_url": redirect_url,
-            "delay_ms": 1200,
-        },
-    )
+def _dashboard_module():
+    # Resolve through package namespace so tests can monkeypatch dashboard.get_user_context.
+    from vendor_catalog_app.web.routers import dashboard as dashboard_module
 
-
-@router.get("/")
-def home(request: Request):
-    if request.session.get("startup_splash_seen"):
-        return RedirectResponse(url="/dashboard", status_code=302)
-    return _render_startup_splash(request, "/dashboard?splash=1")
+    return dashboard_module
 
 
 @router.get("/dashboard")
-def dashboard(request: Request, org: str = "all", months: int = 12, horizon_days: int = 180):
-    if not request.session.get("startup_splash_seen"):
+def dashboard(
+    request: Request,
+    org: str = "all",
+    months: int = DEFAULT_DASHBOARD_MONTHS,
+    horizon_days: int = DEFAULT_DASHBOARD_HORIZON_DAYS,
+):
+    dashboard_module = _dashboard_module()
+    if not request.session.get(STARTUP_SPLASH_SESSION_KEY):
         # Preserve bootstrap/error behavior before rendering splash.
-        get_user_context(request)
+        dashboard_module.get_user_context(request)
         passthrough_params = dict(request.query_params)
         passthrough_params["splash"] = "1"
         redirect_query = urlencode(passthrough_params, doseq=True)
         redirect_url = f"/dashboard?{redirect_query}" if redirect_query else "/dashboard"
-        return _render_startup_splash(request, redirect_url)
+        return render_startup_splash(request, redirect_url)
 
-    repo = get_repo()
-    user = get_user_context(request)
-    ensure_session_started(request, user)
-    log_page_view(request, user, "Dashboard")
+    repo = dashboard_module.get_repo()
+    user = dashboard_module.get_user_context(request)
+    dashboard_module.ensure_session_started(request, user)
+    dashboard_module.log_page_view(request, user, "Dashboard")
 
     orgs = repo.available_orgs()
     if org not in orgs:
         org = "all"
-    months = max(3, min(months, 24))
-    horizon_days = max(60, min(horizon_days, 365))
+    months = clamp_months(months)
+    horizon_days = clamp_horizon_days(horizon_days)
 
     kpis = repo.dashboard_kpis()
     summary = repo.executive_summary(org_id=org, months=months, horizon_days=horizon_days)
@@ -70,7 +62,7 @@ def dashboard(request: Request, org: str = "all", months: int = 12, horizon_days
     recent_demos = repo.demo_outcomes().head(10)
     recent_cancellations = repo.contract_cancellations().head(10)
 
-    context = base_template_context(
+    context = dashboard_module.base_template_context(
         request=request,
         context=user,
         title="Dashboard",
@@ -92,3 +84,4 @@ def dashboard(request: Request, org: str = "all", months: int = 12, horizon_days
         },
     )
     return request.app.state.templates.TemplateResponse(request, "dashboard.html", context)
+
