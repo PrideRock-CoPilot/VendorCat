@@ -7,7 +7,7 @@ import uuid
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
 
-from vendor_catalog_app.db import (
+from vendor_catalog_app.infrastructure.db import (
     clear_request_perf_context,
     get_request_perf_context,
     start_request_perf_context,

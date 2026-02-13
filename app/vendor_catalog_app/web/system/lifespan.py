@@ -5,7 +5,7 @@ import logging
 
 from fastapi import FastAPI
 
-from vendor_catalog_app.local_db_bootstrap import ensure_local_db_ready
+from vendor_catalog_app.infrastructure.local_db_bootstrap import ensure_local_db_ready
 from vendor_catalog_app.web.core.runtime import get_config, get_repo
 from vendor_catalog_app.web.system.settings import AppRuntimeSettings
 

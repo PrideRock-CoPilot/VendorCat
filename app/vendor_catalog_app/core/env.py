@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Iterable
 
-from vendor_catalog_app.util import as_bool, as_float, as_int
+from vendor_catalog_app.core.util import as_bool, as_float, as_int
 
 # Canonical TVENDOR runtime configuration keys.
 TVENDOR_ENV = "TVENDOR_ENV"

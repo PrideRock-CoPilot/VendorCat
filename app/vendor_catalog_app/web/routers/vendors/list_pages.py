@@ -5,7 +5,7 @@ from urllib.parse import quote
 import pandas as pd
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
-from vendor_catalog_app.defaults import DEFAULT_SOURCE_SYSTEM
+from vendor_catalog_app.core.defaults import DEFAULT_SOURCE_SYSTEM
 from vendor_catalog_app.repository import GLOBAL_CHANGE_VENDOR_ID
 from vendor_catalog_app.web.core.activity import ensure_session_started, log_page_view
 from vendor_catalog_app.web.core.runtime import get_repo

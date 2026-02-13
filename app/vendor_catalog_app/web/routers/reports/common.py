@@ -11,7 +11,7 @@ from urllib.parse import urlencode, urlparse, urlunparse
 import pandas as pd
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse, Response
-from vendor_catalog_app.env import (
+from vendor_catalog_app.core.env import (
     TVENDOR_DATABRICKS_REPORTS_ALLOW_EMBED,
     TVENDOR_DATABRICKS_REPORTS_ALLOWED_HOSTS,
     TVENDOR_DATABRICKS_REPORTS_JSON,

@@ -7,9 +7,9 @@ from typing import Any
 
 from fastapi import Request
 
-from vendor_catalog_app.config import AppConfig
+from vendor_catalog_app.core.config import AppConfig
 from vendor_catalog_app.repository import UNKNOWN_USER_PRINCIPAL, VendorRepository
-from vendor_catalog_app.security import (
+from vendor_catalog_app.core.security import (
     ADMIN_PORTAL_ROLES,
     ROLE_ADMIN,
     ROLE_CHOICES,

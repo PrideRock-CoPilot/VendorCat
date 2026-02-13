@@ -4,7 +4,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
-from vendor_catalog_app.security import (
+from vendor_catalog_app.core.security import (
     MAX_APPROVAL_LEVEL,
     MIN_CHANGE_APPROVAL_LEVEL,
     required_approval_level,

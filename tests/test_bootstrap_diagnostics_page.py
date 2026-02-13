@@ -10,7 +10,7 @@ APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
-from vendor_catalog_app.config import AppConfig
+from vendor_catalog_app.core.config import AppConfig
 from vendor_catalog_app.web.app import create_app
 from vendor_catalog_app.web.routers.system import diagnostics_pages as diagnostics_router
 

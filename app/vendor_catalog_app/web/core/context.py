@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from vendor_catalog_app.config import AppConfig
-from vendor_catalog_app.security import (
+from vendor_catalog_app.core.config import AppConfig
+from vendor_catalog_app.core.security import (
     ADMIN_PORTAL_ROLES,
     ROLE_ADMIN,
     CHANGE_APPROVAL_LEVELS,

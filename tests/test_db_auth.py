@@ -9,9 +9,9 @@ APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
-import vendor_catalog_app.db as db_module
-from vendor_catalog_app.config import AppConfig
-from vendor_catalog_app.db import DatabricksSQLClient
+import vendor_catalog_app.infrastructure.db as db_module
+from vendor_catalog_app.core.config import AppConfig
+from vendor_catalog_app.infrastructure.db import DatabricksSQLClient
 
 
 class _FakeCursor:

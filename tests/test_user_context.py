@@ -9,9 +9,9 @@ APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
-from vendor_catalog_app.config import AppConfig
+from vendor_catalog_app.core.config import AppConfig
 from vendor_catalog_app.repository import UNKNOWN_USER_PRINCIPAL
-from vendor_catalog_app.security import ROLE_ADMIN, ROLE_VIEWER
+from vendor_catalog_app.core.security import ROLE_ADMIN, ROLE_VIEWER
 from vendor_catalog_app.web.core import identity, user_context_service
 
 

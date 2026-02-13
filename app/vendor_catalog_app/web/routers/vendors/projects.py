@@ -4,7 +4,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
-from vendor_catalog_app.defaults import DEFAULT_PROJECT_TYPE
+from vendor_catalog_app.core.defaults import DEFAULT_PROJECT_TYPE
 from vendor_catalog_app.web.core.runtime import get_repo
 from vendor_catalog_app.web.core.template_context import base_template_context
 from vendor_catalog_app.web.core.user_context_service import get_user_context

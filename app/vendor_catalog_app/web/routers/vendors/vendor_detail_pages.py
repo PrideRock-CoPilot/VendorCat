@@ -4,7 +4,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
-from vendor_catalog_app.defaults import (
+from vendor_catalog_app.core.defaults import (
     DEFAULT_PROJECT_STATUS_ACTIVE,
     DEFAULT_VENDOR_SUMMARY_MONTHS,
 )

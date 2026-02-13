@@ -9,10 +9,10 @@ from typing import Any
 
 import pandas as pd
 
-from vendor_catalog_app.db import DataConnectionError, DataExecutionError, DataQueryError
-from vendor_catalog_app.repository_constants import *
-from vendor_catalog_app.repository_errors import SchemaBootstrapRequiredError
-from vendor_catalog_app.security import (
+from vendor_catalog_app.infrastructure.db import DataConnectionError, DataExecutionError, DataQueryError
+from vendor_catalog_app.core.repository_constants import *
+from vendor_catalog_app.core.repository_errors import SchemaBootstrapRequiredError
+from vendor_catalog_app.core.security import (
     CHANGE_APPROVAL_LEVELS,
     ROLE_ADMIN,
     ROLE_APPROVER,

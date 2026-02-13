@@ -5,9 +5,9 @@ import hmac
 
 from fastapi import Request
 
-from vendor_catalog_app.config import AppConfig
-from vendor_catalog_app.defaults import DEFAULT_CSP_POLICY, DEFAULT_SESSION_SECRET
-from vendor_catalog_app.env import (
+from vendor_catalog_app.core.config import AppConfig
+from vendor_catalog_app.core.defaults import DEFAULT_CSP_POLICY, DEFAULT_SESSION_SECRET
+from vendor_catalog_app.core.env import (
     TVENDOR_ALLOW_DEFAULT_SESSION_SECRET,
     TVENDOR_CSP_ENABLED,
     TVENDOR_CSP_POLICY,

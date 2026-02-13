@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from vendor_catalog_app.defaults import (
+from vendor_catalog_app.core.defaults import (
     DEFAULT_ALLOWED_WRITE_VERBS,
     DEFAULT_ALLOWED_WRITE_VERBS_CSV,
     DEFAULT_DEV_CATALOG,
@@ -13,7 +13,7 @@ from vendor_catalog_app.defaults import (
     DEFAULT_LOCAL_DB_PATH,
     DEFAULT_SCHEMA_BOOTSTRAP_SQL_PATH,
 )
-from vendor_catalog_app.env import (
+from vendor_catalog_app.core.env import (
     DATABRICKS_CLIENT_ID,
     DATABRICKS_CLIENT_SECRET,
     DATABRICKS_HTTP_PATH_KEYS,

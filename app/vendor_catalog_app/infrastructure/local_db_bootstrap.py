@@ -4,8 +4,8 @@ from pathlib import Path
 import subprocess
 import sys
 
-from vendor_catalog_app.config import AppConfig
-from vendor_catalog_app.env import (
+from vendor_catalog_app.core.config import AppConfig
+from vendor_catalog_app.core.env import (
     TVENDOR_LOCAL_DB_AUTO_INIT,
     TVENDOR_LOCAL_DB_RESET_ON_START,
     TVENDOR_LOCAL_DB_SEED,
@@ -26,7 +26,7 @@ def ensure_local_db_ready(config: AppConfig) -> None:
     if db_path.exists() and not reset_on_start:
         return
 
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = Path(__file__).resolve().parents[3]
     init_script = (repo_root / "setup" / "local_db" / "init_local_db.py").resolve()
     if not init_script.exists():
         raise RuntimeError(f"Local DB init script not found: {init_script}")

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
-from vendor_catalog_app.security import ROLE_CHOICES
+from vendor_catalog_app.core.security import ROLE_CHOICES
 from vendor_catalog_app.web.core.runtime import get_repo, testing_role_override_enabled
 from vendor_catalog_app.web.core.user_context_service import (
     ADMIN_ROLE_OVERRIDE_SESSION_KEY,

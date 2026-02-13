@@ -6,7 +6,7 @@ import sys
 from datetime import datetime, timezone
 from typing import Any
 
-from vendor_catalog_app.env import (
+from vendor_catalog_app.core.env import (
     TVENDOR_LOG_CAPTURE_ROOT,
     TVENDOR_LOG_JSON,
     TVENDOR_LOG_LEVEL,

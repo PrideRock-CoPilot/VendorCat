@@ -4,7 +4,7 @@ from urllib.parse import urlencode
 
 import pandas as pd
 
-from vendor_catalog_app.defaults import (
+from vendor_catalog_app.core.defaults import (
     DEFAULT_OFFERING_ALERT_THRESHOLD_PCT,
     DEFAULT_OFFERING_INVOICE_WINDOW_MONTHS,
 )

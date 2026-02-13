@@ -9,7 +9,7 @@ from urllib.parse import quote, urlencode
 from fastapi import Request
 from fastapi.responses import RedirectResponse
 from vendor_catalog_app.repository import GLOBAL_CHANGE_VENDOR_ID
-from vendor_catalog_app.security import (
+from vendor_catalog_app.core.security import (
     MAX_APPROVAL_LEVEL,
     MIN_CHANGE_APPROVAL_LEVEL,
     approval_level_label,

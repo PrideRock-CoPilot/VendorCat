@@ -6,8 +6,8 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
-from vendor_catalog_app.logging import setup_app_logging
-from vendor_catalog_app.observability import get_observability_manager
+from vendor_catalog_app.infrastructure.logging import setup_app_logging
+from vendor_catalog_app.infrastructure.observability import get_observability_manager
 from vendor_catalog_app.web.core.runtime import get_config
 from vendor_catalog_app.web.http.exception_handlers import register_exception_handlers
 from vendor_catalog_app.web.http.middleware import (

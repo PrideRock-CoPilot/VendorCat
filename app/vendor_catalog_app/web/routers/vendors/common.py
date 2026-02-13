@@ -3,7 +3,7 @@ from __future__ import annotations
 from urllib.parse import quote
 
 from fastapi import Request
-from vendor_catalog_app.defaults import (
+from vendor_catalog_app.core.defaults import (
     DEFAULT_ALLOWED_RETURN_TO_PREFIXES,
     DEFAULT_RETURN_TO_PATH,
     DEFAULT_SOURCE_SYSTEM,

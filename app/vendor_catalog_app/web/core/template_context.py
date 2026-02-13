@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import Request
 
-from vendor_catalog_app.repository_constants import (
+from vendor_catalog_app.core.repository_constants import (
     DEFAULT_ASSIGNMENT_TYPE_OPTIONS,
     DEFAULT_CONTACT_TYPE_OPTIONS,
     DEFAULT_DOC_SOURCE_OPTIONS,
@@ -24,7 +24,7 @@ from vendor_catalog_app.repository_constants import (
     LOOKUP_TYPE_OWNER_ROLE,
     LOOKUP_TYPE_PROJECT_TYPE,
 )
-from vendor_catalog_app.security import (
+from vendor_catalog_app.core.security import (
     MAX_APPROVAL_LEVEL,
     MIN_APPROVAL_LEVEL,
     MIN_CHANGE_APPROVAL_LEVEL,

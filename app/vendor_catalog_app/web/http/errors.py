@@ -9,9 +9,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from vendor_catalog_app.db import DataConnectionError, DataExecutionError, DataQueryError
-from vendor_catalog_app.env import TVENDOR_ERROR_INCLUDE_DETAILS, get_env_bool
-from vendor_catalog_app.repository_errors import SchemaBootstrapRequiredError
+from vendor_catalog_app.infrastructure.db import DataConnectionError, DataExecutionError, DataQueryError
+from vendor_catalog_app.core.env import TVENDOR_ERROR_INCLUDE_DETAILS, get_env_bool
+from vendor_catalog_app.core.repository_errors import SchemaBootstrapRequiredError
 
 ERROR_CODE_SCHEMA_BOOTSTRAP_REQUIRED = "SCHEMA_BOOTSTRAP_REQUIRED"
 ERROR_CODE_VALIDATION = "VALIDATION_ERROR"

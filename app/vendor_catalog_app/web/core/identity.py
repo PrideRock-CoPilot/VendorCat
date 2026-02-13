@@ -5,7 +5,7 @@ import re
 
 from fastapi import Request
 
-from vendor_catalog_app.env import TVENDOR_FORWARDED_GROUP_HEADERS, get_env
+from vendor_catalog_app.core.env import TVENDOR_FORWARDED_GROUP_HEADERS, get_env
 from vendor_catalog_app.web.core.runtime import get_config, trust_forwarded_identity_headers
 
 

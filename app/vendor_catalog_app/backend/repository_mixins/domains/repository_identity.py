@@ -8,9 +8,9 @@ from typing import Any
 
 import pandas as pd
 
-from .db import DataConnectionError, DataExecutionError, DataQueryError
-from .repository_constants import UNKNOWN_USER_PRINCIPAL
-from .repository_errors import SchemaBootstrapRequiredError
+from vendor_catalog_app.infrastructure.db import DataConnectionError, DataExecutionError, DataQueryError
+from vendor_catalog_app.core.repository_constants import UNKNOWN_USER_PRINCIPAL
+from vendor_catalog_app.core.repository_errors import SchemaBootstrapRequiredError
 
 LOGGER = logging.getLogger(__name__)
 

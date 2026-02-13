@@ -9,8 +9,8 @@ APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
-import vendor_catalog_app.local_db_bootstrap as bootstrap
-from vendor_catalog_app.config import AppConfig
+import vendor_catalog_app.infrastructure.local_db_bootstrap as bootstrap
+from vendor_catalog_app.core.config import AppConfig
 
 
 def _config(db_path: Path, use_local_db: bool = True) -> AppConfig:

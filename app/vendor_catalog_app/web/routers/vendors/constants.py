@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from vendor_catalog_app.defaults import (
+from vendor_catalog_app.core.defaults import (
     DEFAULT_CONTRACT_STATUS,
     DEFAULT_FILTER_OPTION_ALL,
     DEFAULT_GROUP_OPTION_NONE,

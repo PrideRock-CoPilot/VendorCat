@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
-from vendor_catalog_app.env import (
+from vendor_catalog_app.core.env import (
     TVENDOR_ALERTS_ENABLED,
     TVENDOR_ALERT_COOLDOWN_SEC,
     TVENDOR_ALERT_DB_AVG_MS,

@@ -21,9 +21,9 @@ except Exception:  # pragma: no cover - optional until OAuth client credentials 
     DatabricksSDKConfig = None
     oauth_service_principal = None
 
-from vendor_catalog_app.cache import LruTtlCache
-from vendor_catalog_app.config import AppConfig
-from vendor_catalog_app.env import (
+from vendor_catalog_app.infrastructure.cache import LruTtlCache
+from vendor_catalog_app.core.config import AppConfig
+from vendor_catalog_app.core.env import (
     TVENDOR_DB_POOL_ACQUIRE_TIMEOUT_SEC,
     TVENDOR_DB_POOL_ENABLED,
     TVENDOR_DB_POOL_IDLE_TTL_SEC,

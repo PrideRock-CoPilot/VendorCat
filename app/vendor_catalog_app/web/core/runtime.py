@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from vendor_catalog_app.config import AppConfig
-from vendor_catalog_app.env import (
+from vendor_catalog_app.core.config import AppConfig
+from vendor_catalog_app.core.env import (
     TVENDOR_ALLOW_TEST_ROLE_OVERRIDE,
     TVENDOR_TRUST_FORWARDED_IDENTITY_HEADERS,
     get_env_bool,

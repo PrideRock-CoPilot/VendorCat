@@ -22,7 +22,7 @@ from vendor_catalog_app.web.security.controls import (
 
 @pytest.fixture()
 def _clear_app_caches() -> None:
-    from vendor_catalog_app.observability import get_observability_manager
+    from vendor_catalog_app.infrastructure.observability import get_observability_manager
     from vendor_catalog_app.web.core.runtime import get_config, get_repo
 
     get_observability_manager.cache_clear()

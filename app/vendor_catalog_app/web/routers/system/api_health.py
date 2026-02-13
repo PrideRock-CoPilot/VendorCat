@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from vendor_catalog_app.observability import get_observability_manager
+from vendor_catalog_app.infrastructure.observability import get_observability_manager
 from vendor_catalog_app.web.core.identity import resolve_databricks_request_identity
 from vendor_catalog_app.web.core.runtime import get_config, get_repo
 from vendor_catalog_app.web.routers.system.common import _runtime_ready, _utc_now_iso

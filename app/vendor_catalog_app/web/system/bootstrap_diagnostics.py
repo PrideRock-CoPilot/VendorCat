@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import Request
 
-from vendor_catalog_app.env import (
+from vendor_catalog_app.core.env import (
     TVENDOR_BOOTSTRAP_DIAGNOSTICS_ENABLED,
     TVENDOR_BOOTSTRAP_DIAGNOSTICS_TOKEN,
     get_env,
