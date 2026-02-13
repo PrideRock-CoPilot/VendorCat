@@ -3,6 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from vendor_catalog_app.defaults import (
+    DEFAULT_ALLOWED_WRITE_VERBS,
+    DEFAULT_ALLOWED_WRITE_VERBS_CSV,
+    DEFAULT_DEV_CATALOG,
+    DEFAULT_DEV_ENV_NAMES,
+    DEFAULT_DEV_SCHEMA,
+    DEFAULT_ENV_NAME,
+    DEFAULT_LOCAL_DB_PATH,
+    DEFAULT_SCHEMA_BOOTSTRAP_SQL_PATH,
+)
 from vendor_catalog_app.env import (
     DATABRICKS_CLIENT_ID,
     DATABRICKS_CLIENT_SECRET,
@@ -28,7 +38,7 @@ from vendor_catalog_app.env import (
 )
 
 
-DEV_ENV_NAMES = {"dev", "development", "local"}
+DEV_ENV_NAMES = set(DEFAULT_DEV_ENV_NAMES)
 
 
 def _clean_host(raw_host: str) -> str:
@@ -82,8 +92,8 @@ def _resolve_catalog_schema(env_name: str) -> tuple[str, str]:
             )
         return parts[0], parts[1]
 
-    default_catalog = "vendor_dev" if env_name in DEV_ENV_NAMES else ""
-    default_schema = "twvendor" if env_name in DEV_ENV_NAMES else ""
+    default_catalog = DEFAULT_DEV_CATALOG if env_name in DEV_ENV_NAMES else ""
+    default_schema = DEFAULT_DEV_SCHEMA if env_name in DEV_ENV_NAMES else ""
     catalog = get_env(TVENDOR_CATALOG, default_catalog)
     schema = get_env(TVENDOR_SCHEMA, default_schema)
 
@@ -96,14 +106,14 @@ def _resolve_catalog_schema(env_name: str) -> tuple[str, str]:
 
 
 def _resolve_allowed_write_verbs() -> tuple[str, ...]:
-    raw = get_env(TVENDOR_ALLOWED_WRITE_VERBS, "INSERT,UPDATE")
+    raw = get_env(TVENDOR_ALLOWED_WRITE_VERBS, DEFAULT_ALLOWED_WRITE_VERBS_CSV)
     values = [
         token.strip().upper()
         for token in raw.split(",")
         if token.strip()
     ]
     if not values:
-        values = ["INSERT", "UPDATE"]
+        values = list(DEFAULT_ALLOWED_WRITE_VERBS)
     return tuple(dict.fromkeys(values))
 
 
@@ -114,15 +124,15 @@ class AppConfig:
     databricks_token: str
     databricks_client_id: str = ""
     databricks_client_secret: str = ""
-    env: str = "dev"
-    catalog: str = "vendor_dev"
-    schema: str = "twvendor"
+    env: str = DEFAULT_ENV_NAME
+    catalog: str = DEFAULT_DEV_CATALOG
+    schema: str = DEFAULT_DEV_SCHEMA
     use_local_db: bool = False
-    local_db_path: str = "setup/local_db/twvendor_local.db"
+    local_db_path: str = DEFAULT_LOCAL_DB_PATH
     locked_mode: bool = False
     enforce_prod_sql_policy: bool = True
-    allowed_write_verbs: tuple[str, ...] = ("INSERT", "UPDATE")
-    schema_bootstrap_sql_path: str = "setup/databricks/001_create_databricks_schema.sql"
+    allowed_write_verbs: tuple[str, ...] = DEFAULT_ALLOWED_WRITE_VERBS
+    schema_bootstrap_sql_path: str = DEFAULT_SCHEMA_BOOTSTRAP_SQL_PATH
     dev_allow_all_access: bool = False
 
     @property
@@ -135,7 +145,7 @@ class AppConfig:
 
     @staticmethod
     def from_env() -> "AppConfig":
-        env_name = get_env(TVENDOR_ENV, "dev").lower() or "dev"
+        env_name = get_env(TVENDOR_ENV, DEFAULT_ENV_NAME).lower() or DEFAULT_ENV_NAME
         catalog, schema = _resolve_catalog_schema(env_name)
         default_local_db = env_name in DEV_ENV_NAMES
         requested_local_db = get_env_bool(TVENDOR_USE_LOCAL_DB, default=default_local_db)
@@ -156,7 +166,7 @@ class AppConfig:
             schema=schema,
             use_local_db=requested_local_db,
             local_db_path=_resolve_repo_relative_path(
-                get_env(TVENDOR_LOCAL_DB_PATH, "setup/local_db/twvendor_local.db")
+                get_env(TVENDOR_LOCAL_DB_PATH, DEFAULT_LOCAL_DB_PATH)
             ),
             locked_mode=get_env_bool(TVENDOR_LOCKED_MODE, default=False),
             enforce_prod_sql_policy=get_env_bool(
@@ -166,7 +176,7 @@ class AppConfig:
             allowed_write_verbs=_resolve_allowed_write_verbs(),
             schema_bootstrap_sql_path=get_env(
                 TVENDOR_SCHEMA_BOOTSTRAP_SQL,
-                "setup/databricks/001_create_databricks_schema.sql",
+                DEFAULT_SCHEMA_BOOTSTRAP_SQL_PATH,
             ),
             dev_allow_all_access=(
                 env_name in DEV_ENV_NAMES

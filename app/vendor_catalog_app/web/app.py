@@ -16,6 +16,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
+from vendor_catalog_app.defaults import DEFAULT_CSP_POLICY, DEFAULT_SESSION_SECRET
 from vendor_catalog_app.db import (
     clear_request_perf_context,
     get_request_perf_context,
@@ -68,19 +69,6 @@ from vendor_catalog_app.web.services import get_config, get_repo, resolve_databr
 
 LOGGER = logging.getLogger(__name__)
 PERF_LOGGER = logging.getLogger("vendor_catalog_app.perf")
-DEFAULT_CSP_POLICY = (
-    "default-src 'self'; "
-    "base-uri 'self'; "
-    "frame-ancestors 'none'; "
-    "object-src 'none'; "
-    "img-src 'self' data:; "
-    "style-src 'self' 'unsafe-inline'; "
-    "script-src 'self' 'unsafe-inline'; "
-    "connect-src 'self'; "
-    "form-action 'self'"
-)
-
-
 def _normalize_host_value(raw_host: str) -> str:
     host = str(raw_host or "").strip().lower()
     if not host:
@@ -141,11 +129,11 @@ def _request_matches_token(request: Request, *, token: str, header_name: str) ->
 def create_app() -> FastAPI:
     setup_app_logging()
     config = get_config()
-    session_secret = get_env(TVENDOR_SESSION_SECRET, "vendor-catalog-dev-secret")
+    session_secret = get_env(TVENDOR_SESSION_SECRET, DEFAULT_SESSION_SECRET)
     allow_default_session_secret = get_env_bool(TVENDOR_ALLOW_DEFAULT_SESSION_SECRET, default=False)
     if (
         not config.is_dev_env
-        and session_secret == "vendor-catalog-dev-secret"
+        and session_secret == DEFAULT_SESSION_SECRET
         and not allow_default_session_secret
     ):
         raise RuntimeError(

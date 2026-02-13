@@ -38,7 +38,12 @@ TERMINAL_WORKFLOW_STATUSES = {"approved", "rejected"}
 def _safe_return_to(value: str | None) -> str:
     if not value:
         return "/workflows"
-    if value.startswith("/workflows") or value.startswith("/vendors") or value.startswith("/projects"):
+    if (
+        value.startswith("/workflows")
+        or value.startswith("/vendors")
+        or value.startswith("/vendor-360")
+        or value.startswith("/projects")
+    ):
         return value
     return "/workflows"
 

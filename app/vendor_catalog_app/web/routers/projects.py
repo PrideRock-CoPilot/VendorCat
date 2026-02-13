@@ -40,7 +40,7 @@ PROJECT_STATUS_VALUES = [x for x in PROJECT_STATUSES if x != "all"]
 def _safe_return_to(value: str | None) -> str:
     if not value:
         return "/projects"
-    if value.startswith("/projects") or value.startswith("/vendors"):
+    if value.startswith("/projects") or value.startswith("/vendors") or value.startswith("/vendor-360"):
         return value
     return "/projects"
 
