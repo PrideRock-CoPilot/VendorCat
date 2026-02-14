@@ -7,7 +7,11 @@
 </div>
 
 <h1>Demo Review Form</h1>
-<p class="muted">Shared scorecard for multi-reviewer demo grading. Each reviewer submits independently and the app rolls up summary scores.</p>
+<p class="muted">Build reusable weighted questionnaires and collect reviewer scoring consistently across demo sessions.</p>
+<div class="button-group section-divider">
+  <a class="button-link subtle" href="/demos/{{ demo_id }}">Open Demo Workspace</a>
+  <a class="button-link subtle" href="/demos">Back To Demos</a>
+</div>
 
 <section class="card">
   <table>
@@ -20,37 +24,135 @@
       <tr><th>Recorded Overall Score</th><td>{{ demo.overall_score }}</td></tr>
     </tbody>
   </table>
-  {% if is_demo_closed %}
-  <p class="muted"><strong>Demo status:</strong> Closed ({{ demo.selection_outcome }}). Review submissions are summarized below.</p>
+  {% if is_demo_session_open %}
+  <p class="muted"><strong>Session state:</strong> Open. Review owners can submit or update their own answers.</p>
   {% else %}
-  <p class="muted"><strong>Demo status:</strong> Open for review submissions.</p>
+  <p class="muted"><strong>Session state:</strong> Closed. Review answers are locked.</p>
   {% endif %}
 </section>
 
 {% if can_edit %}
 <section class="card">
-  <h2>Review Template Builder</h2>
-  <form method="post" action="/demos/{{ demo_id }}/review-form/template" class="grid grid-3">
-    <label>Template Title
-      <input type="text" name="template_title" value="{{ review_template.title if review_template else 'Demo Scorecard' }}">
-    </label>
-    <label>Max Score Per Criterion
-      <input type="number" name="max_score" min="1" max="100" step="0.5" value="{{ review_template.criteria[0].max_score if review_template and review_template.criteria else 10 }}">
-    </label>
-    <label class="full">Criteria (comma, semicolon, or new line separated)
-      <textarea name="criteria_csv" rows="3" required>{% if review_template and review_template.criteria %}{% for c in review_template.criteria %}{{ c.label }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</textarea>
-    </label>
-    <label class="full">Instructions
-      <textarea name="instructions" rows="2">{% if review_template %}{{ review_template.instructions }}{% endif %}</textarea>
-    </label>
-    <div><button type="submit">Save Review Template</button></div>
+  <h2>Template Library</h2>
+  <p class="muted">Saved templates can be attached to this demo so every reviewer uses the same form.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Template</th><th>Questions</th><th>Created By</th><th>Created At</th><th>Action</th></tr></thead>
+      <tbody>
+        {% for template in library_templates %}
+        <tr>
+          <td>
+            <div><strong>{{ template.title }}</strong></div>
+            <div class="muted">{{ template.instructions or "No instructions." }}</div>
+          </td>
+          <td>{{ template.questions|length }}</td>
+          <td>{{ template.created_by }}</td>
+          <td>{{ template.created_at }}</td>
+          <td>
+            <form method="post" action="/demos/{{ demo_id }}/review-form/template/attach">
+              <input type="hidden" name="library_template_id" value="{{ template.library_note_id }}">
+              <button type="submit">Attach</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5">No saved templates yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Template Designer</h2>
+  <form method="post" action="/demos/{{ demo_id }}/review-form/template">
+    <div class="grid grid-3">
+      <label>Template Title
+        <input type="text" name="template_title" value="{{ review_template.title if review_template else 'Demo Evaluation Form' }}" required>
+      </label>
+      <label class="full">Instructions
+        <textarea name="instructions" rows="2" placeholder="Explain how reviewers should complete this form.">{% if review_template %}{{ review_template.instructions }}{% endif %}</textarea>
+      </label>
+      <label>
+        <input type="checkbox" name="attach_now" value="1" checked>
+        Attach to this demo after save
+      </label>
+    </div>
+
+    <div class="section-divider table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Question</th>
+            <th>Type</th>
+            <th>Weight</th>
+            <th>Scale Min</th>
+            <th>Scale Max</th>
+            <th>Scale Step</th>
+            <th>Option Labels</th>
+            <th>Option Weights</th>
+            <th>Help Text</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="question-builder-body">
+          {% if review_template and review_template.questions %}
+            {% for question in review_template.questions %}
+            <tr>
+              <td><input type="text" name="question_label[]" value="{{ question.label }}" required></td>
+              <td>
+                <select name="question_type[]">
+                  <option value="scale" {% if question.question_type == 'scale' %}selected{% endif %}>Sliding Scale</option>
+                  <option value="boolean" {% if question.question_type == 'boolean' %}selected{% endif %}>Boolean</option>
+                  <option value="multi_choice" {% if question.question_type == 'multi_choice' %}selected{% endif %}>Multi Choice</option>
+                </select>
+              </td>
+              <td><input type="number" name="question_weight[]" min="0.01" step="0.01" value="{{ question.weight }}"></td>
+              <td><input type="number" name="scale_min[]" step="0.1" value="{{ question.scale_min }}"></td>
+              <td><input type="number" name="scale_max[]" step="0.1" value="{{ question.scale_max }}"></td>
+              <td><input type="number" name="scale_step[]" step="0.01" value="{{ question.scale_step }}"></td>
+              <td><input type="text" name="option_labels[]" value="{% if question.options %}{% for option in question.options %}{{ option.label }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}" placeholder="Yes, No"></td>
+              <td><input type="text" name="option_weights[]" value="{% if question.options %}{% for option in question.options %}{{ option.weight }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}" placeholder="1, 0"></td>
+              <td><input type="text" name="question_help_text[]" value="{{ question.help_text }}"></td>
+              <td><button type="button" data-remove-question>Remove</button></td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            {% for _ in range(3) %}
+            <tr>
+              <td><input type="text" name="question_label[]" placeholder="Question text" required></td>
+              <td>
+                <select name="question_type[]">
+                  <option value="scale">Sliding Scale</option>
+                  <option value="boolean">Boolean</option>
+                  <option value="multi_choice">Multi Choice</option>
+                </select>
+              </td>
+              <td><input type="number" name="question_weight[]" min="0.01" step="0.01" value="1"></td>
+              <td><input type="number" name="scale_min[]" step="0.1" value="1"></td>
+              <td><input type="number" name="scale_max[]" step="0.1" value="5"></td>
+              <td><input type="number" name="scale_step[]" step="0.01" value="1"></td>
+              <td><input type="text" name="option_labels[]" placeholder="Only for boolean/multi"></td>
+              <td><input type="text" name="option_weights[]" placeholder="Only for boolean/multi"></td>
+              <td><input type="text" name="question_help_text[]" placeholder="Optional help text"></td>
+              <td><button type="button" data-remove-question>Remove</button></td>
+            </tr>
+            {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="button-group">
+      <button type="button" id="add-question-row">Add Question</button>
+      <button type="submit">Save Template</button>
+    </div>
   </form>
-  <p class="muted">Saving the template updates the shared form for all reviewers.</p>
 </section>
 {% endif %}
 
 <section class="card">
-  <h2>Current Scorecard</h2>
+  <h2>Current Attached Form</h2>
   {% if review_template %}
   <p class="muted"><strong>{{ review_template.title }}</strong></p>
   {% if review_template.instructions %}
@@ -58,37 +160,104 @@
   {% endif %}
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Criterion</th><th>Max Score</th></tr></thead>
+      <thead><tr><th>Question</th><th>Type</th><th>Weight</th><th>Answer Model</th></tr></thead>
       <tbody>
-      {% for row in review_template.criteria %}
-      <tr><td>{{ row.label }}</td><td>{{ row.max_score }}</td></tr>
+      {% for question in review_template.questions %}
+      <tr>
+        <td>{{ question.label }}</td>
+        <td>{{ question.question_type }}</td>
+        <td>{{ question.weight }}</td>
+        <td>
+          {% if question.question_type == "scale" %}
+          {{ question.scale_min }} to {{ question.scale_max }} (step {{ question.scale_step }})
+          {% elif question.options %}
+            {% for option in question.options %}
+            <div>{{ option.label }} (weight {{ option.weight }})</div>
+            {% endfor %}
+          {% else %}
+          --
+          {% endif %}
+        </td>
+      </tr>
       {% endfor %}
       </tbody>
     </table>
   </div>
   {% else %}
-  <p class="muted">No review template is configured yet. Create one above before collecting reviewer scores.</p>
+  <p class="muted">No form is attached yet.</p>
   {% endif %}
 </section>
 
 <section class="card">
-  <h2>Submit Review</h2>
+  <h2>Submit Your Review</h2>
+  {% if my_submission %}
+  <p class="muted">Your latest submission is loaded below. You can update it while the demo session is open.</p>
+  {% endif %}
   {% if review_template and can_submit_review %}
-  <form method="post" action="/demos/{{ demo_id }}/review-form/submit" class="grid grid-3">
-    {% for row in review_template.criteria %}
-    <label>{{ row.label }} (0 - {{ row.max_score }})
-      <input type="number" name="score_{{ row.code }}" min="0" max="{{ row.max_score }}" step="0.1" required>
+  <form method="post" action="/demos/{{ demo_id }}/review-form/submit" class="grid grid-2">
+    {% for question in review_template.questions %}
+    {% set ns = namespace(existing_answer=None) %}
+    {% if my_submission %}
+      {% for answer in my_submission.answers %}
+        {% if answer.code == question.code %}
+          {% set ns.existing_answer = answer %}
+        {% endif %}
+      {% endfor %}
+    {% endif %}
+    <label class="full">
+      {{ question.label }} (weight {{ question.weight }})
+      {% if question.help_text %}
+      <span class="muted">{{ question.help_text }}</span>
+      {% endif %}
+      {% if question.question_type == "scale" %}
+        {% set default_value = ns.existing_answer.response_value if ns.existing_answer else question.scale_min %}
+        <input
+          type="range"
+          name="answer_{{ question.code }}"
+          min="{{ question.scale_min }}"
+          max="{{ question.scale_max }}"
+          step="{{ question.scale_step }}"
+          value="{{ default_value }}"
+          oninput="document.getElementById('range_output_{{ question.code }}').value=this.value"
+          required
+        >
+        <div class="muted">
+          <span>{{ question.scale_min }}</span>
+          <output id="range_output_{{ question.code }}">{{ default_value }}</output>
+          <span>{{ question.scale_max }}</span>
+        </div>
+      {% elif question.question_type == "boolean" %}
+        <div class="button-group">
+          {% for option in question.options %}
+          {% set is_checked = ns.existing_answer and ns.existing_answer.response_value == option.value %}
+          <label>
+            <input type="radio" name="answer_{{ question.code }}" value="{{ option.value }}" {% if is_checked %}checked{% endif %} required>
+            {{ option.label }} ({{ option.weight }})
+          </label>
+          {% endfor %}
+        </div>
+      {% else %}
+        <select name="answer_{{ question.code }}" required>
+          <option value="">Select...</option>
+          {% for option in question.options %}
+          {% set is_selected = ns.existing_answer and ns.existing_answer.response_value == option.value %}
+          <option value="{{ option.value }}" {% if is_selected %}selected{% endif %}>{{ option.label }} (weight {{ option.weight }})</option>
+          {% endfor %}
+        </select>
+      {% endif %}
     </label>
     {% endfor %}
     <label class="full">Reviewer Comment
-      <textarea name="review_comment" rows="2"></textarea>
+      <textarea name="review_comment" rows="3">{% if my_submission %}{{ my_submission.comment }}{% endif %}</textarea>
     </label>
-    <div><button type="submit">Submit Review</button></div>
+    <div><button type="submit">{% if my_submission %}Update My Review{% else %}Submit My Review{% endif %}</button></div>
   </form>
   {% elif not review_template %}
-  <p class="muted">Create a template first to enable review submissions.</p>
+  <p class="muted">Attach a review form template first.</p>
+  {% elif not is_demo_session_open %}
+  <p class="muted">This demo session is closed. Review answers are read-only.</p>
   {% else %}
-  <p class="muted">Review submission requires a valid user identity and unlocked mode.</p>
+  <p class="muted">A valid signed-in identity is required to submit a review.</p>
   {% endif %}
 </section>
 
@@ -101,7 +270,7 @@
   <div class="grid grid-2">
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Criterion</th><th>Average</th><th>Responses</th></tr></thead>
+        <thead><tr><th>Question</th><th>Average</th><th>Responses</th></tr></thead>
         <tbody>
           {% for row in review_summary.criterion_stats %}
           <tr>
@@ -110,7 +279,7 @@
             <td>{{ row.response_count }}</td>
           </tr>
           {% else %}
-          <tr><td colspan="3">No criterion stats yet.</td></tr>
+          <tr><td colspan="3">No question stats yet.</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -124,7 +293,7 @@
             <td>{{ row.reviewer }}</td>
             <td>{{ row.submitted_at }}</td>
             <td>{{ row.overall_score }}</td>
-            <td>{{ row.comment }}</td>
+            <td>{{ row.comment or '--' }}</td>
           </tr>
           {% else %}
           <tr><td colspan="4">No submissions yet.</td></tr>
@@ -134,5 +303,57 @@
     </div>
   </div>
 </section>
-{% endblock %}
 
+<template id="question-row-template">
+  <tr>
+    <td><input type="text" name="question_label[]" placeholder="Question text" required></td>
+    <td>
+      <select name="question_type[]">
+        <option value="scale">Sliding Scale</option>
+        <option value="boolean">Boolean</option>
+        <option value="multi_choice">Multi Choice</option>
+      </select>
+    </td>
+    <td><input type="number" name="question_weight[]" min="0.01" step="0.01" value="1"></td>
+    <td><input type="number" name="scale_min[]" step="0.1" value="1"></td>
+    <td><input type="number" name="scale_max[]" step="0.1" value="5"></td>
+    <td><input type="number" name="scale_step[]" step="0.01" value="1"></td>
+    <td><input type="text" name="option_labels[]" placeholder="Only for boolean/multi"></td>
+    <td><input type="text" name="option_weights[]" placeholder="Only for boolean/multi"></td>
+    <td><input type="text" name="question_help_text[]" placeholder="Optional help text"></td>
+    <td><button type="button" data-remove-question>Remove</button></td>
+  </tr>
+</template>
+
+<script>
+(function () {
+  const body = document.getElementById("question-builder-body");
+  const addButton = document.getElementById("add-question-row");
+  const template = document.getElementById("question-row-template");
+  if (!body || !addButton || !template) {
+    return;
+  }
+  addButton.addEventListener("click", function () {
+    const clone = template.content.cloneNode(true);
+    body.appendChild(clone);
+  });
+  body.addEventListener("click", function (event) {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    if (!target.matches("[data-remove-question]")) {
+      return;
+    }
+    const row = target.closest("tr");
+    if (!row) {
+      return;
+    }
+    if (body.querySelectorAll("tr").length <= 1) {
+      return;
+    }
+    row.remove();
+  });
+})();
+</script>
+{% endblock %}

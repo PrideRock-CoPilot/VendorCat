@@ -38,9 +38,9 @@ def test_vendor_list_empty_state_shows_next_actions(client: TestClient) -> None:
 
 
 def test_vendor_new_requires_edit_permissions(client: TestClient) -> None:
-    response = client.get("/vendors/new?as_user=viewer.only@example.com", follow_redirects=False)
+    response = client.get("/vendors/new?as_user=bob.smith@example.com", follow_redirects=False)
     assert response.status_code == 303
-    assert response.headers["location"].startswith("/vendors")
+    assert response.headers["location"] == "/access/request"
 
 
 def test_create_vendor_and_find_in_list(client: TestClient) -> None:
@@ -354,41 +354,84 @@ def test_contract_and_demo_forms_use_expected_inputs(client: TestClient) -> None
 
 
 def test_demo_review_form_template_and_submission_flow(client: TestClient) -> None:
-    review_page = client.get("/demos/demo-001/review-form")
+    review_page = client.get("/demos/demo-005/review-form")
     assert review_page.status_code == 200
-    assert "Review Template Builder" in review_page.text
+    assert "Template Designer" in review_page.text
 
     template_save = client.post(
-        "/demos/demo-001/review-form/template",
+        "/demos/demo-005/review-form/template",
         data={
             "template_title": "Enterprise Demo Scorecard",
-            "max_score": "10",
-            "criteria_csv": "Business Fit, Security, Supportability",
-            "instructions": "Score each category from 0 to 10.",
+            "instructions": "Use weighted scoring for enterprise review.",
+            "attach_now": "1",
+            "question_label[]": ["Business Fit", "Security Model", "Deployment Readiness"],
+            "question_type[]": ["scale", "boolean", "multi_choice"],
+            "question_weight[]": ["2.0", "1.0", "1.5"],
+            "scale_min[]": ["1", "1", "1"],
+            "scale_max[]": ["5", "5", "5"],
+            "scale_step[]": ["1", "1", "1"],
+            "option_labels[]": ["", "Yes, No", "Cloud Native, Hybrid, On Prem"],
+            "option_weights[]": ["", "1, 0", "1, 0.6, 0.2"],
+            "question_help_text[]": ["Score strategic fit", "Security gate", "Preferred deployment model"],
         },
         follow_redirects=False,
     )
     assert template_save.status_code == 303
 
     review_submit = client.post(
-        "/demos/demo-001/review-form/submit",
+        "/demos/demo-005/review-form/submit",
         data={
-            "score_business_fit": "8.5",
-            "score_security": "9.0",
-            "score_supportability": "7.5",
+            "answer_business_fit": "4",
+            "answer_security_model": "yes",
+            "answer_deployment_readiness": "cloud_native",
             "review_comment": "Strong overall fit with minor support concerns.",
         },
         follow_redirects=False,
     )
     assert review_submit.status_code == 303
 
-    refreshed = client.get("/demos/demo-001/review-form")
+    review_update = client.post(
+        "/demos/demo-005/review-form/submit",
+        data={
+            "answer_business_fit": "5",
+            "answer_security_model": "yes",
+            "answer_deployment_readiness": "hybrid",
+            "review_comment": "Updated after architecture review.",
+        },
+        follow_redirects=False,
+    )
+    assert review_update.status_code == 303
+
+    refreshed = client.get("/demos/demo-005/review-form")
     assert refreshed.status_code == 200
     assert "Enterprise Demo Scorecard" in refreshed.text
     assert "Business Fit" in refreshed.text
-    assert "Security" in refreshed.text
-    assert "Supportability" in refreshed.text
+    assert "Security Model" in refreshed.text
+    assert "Deployment Readiness" in refreshed.text
+    assert "Updated after architecture review." in refreshed.text
     assert "Submissions" in refreshed.text
+
+
+def test_demo_workspace_supports_stage_tracking_and_scorecard_views(client: TestClient) -> None:
+    workspace = client.get("/demos/demo-005")
+    assert workspace.status_code == 200
+    assert "Demo Workspace" in workspace.text
+    assert "Lifecycle Stages" in workspace.text
+    assert "Scoring Cards" in workspace.text
+
+    stage_update = client.post(
+        "/demos/demo-005/stage",
+        data={
+            "stage": "scoring",
+            "notes": "Technical and security scoring session started.",
+        },
+        follow_redirects=False,
+    )
+    assert stage_update.status_code == 303
+
+    refreshed = client.get("/demos/demo-005")
+    assert refreshed.status_code == 200
+    assert "Technical and security scoring session started." in refreshed.text
 
 
 def test_vendor_contracts_page_supports_add_and_cancel(client: TestClient) -> None:
@@ -559,7 +602,7 @@ def test_vendor_ownership_allows_adding_owner_assignment_and_contact(client: Tes
         "/vendors/vnd-002/owners/add",
         data={
             "return_to": "/vendors/vnd-002/ownership",
-            "owner_user_principal": "new.owner@example.com",
+            "owner_user_principal": "owner@example.com",
             "owner_role": "business_owner",
             "reason": "Add current service owner.",
         },
@@ -595,7 +638,7 @@ def test_vendor_ownership_allows_adding_owner_assignment_and_contact(client: Tes
 
     ownership_page = client.get("/vendors/vnd-002/ownership?return_to=%2Fvendors")
     assert ownership_page.status_code == 200
-    assert "new.owner@example.com" in ownership_page.text
+    assert "owner@example.com" in ownership_page.text
     assert "FIN-OPS" in ownership_page.text
     assert "Taylor Ops" in ownership_page.text
 
@@ -605,7 +648,7 @@ def test_offering_ownership_allows_adding_owner_and_contact(client: TestClient) 
         "/vendors/vnd-001/offerings/off-004/owners/add",
         data={
             "return_to": "/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors",
-            "owner_user_principal": "offering.owner@example.com",
+            "owner_user_principal": "pm@example.com",
             "owner_role": "business_owner",
             "reason": "Assign offering owner.",
         },
@@ -619,7 +662,7 @@ def test_offering_ownership_allows_adding_owner_and_contact(client: TestClient) 
             "return_to": "/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors",
             "full_name": "Offering Contact",
             "contact_type": "support",
-            "email": "offering.contact@example.com",
+            "email": "secops@example.com",
             "phone": "555-0119",
             "reason": "Assign offering support contact.",
         },
@@ -629,8 +672,8 @@ def test_offering_ownership_allows_adding_owner_and_contact(client: TestClient) 
 
     ownership_page = client.get("/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors")
     assert ownership_page.status_code == 200
-    assert "offering.owner@example.com" in ownership_page.text
-    assert "Offering Contact" in ownership_page.text
+    assert "pm@example.com" in ownership_page.text
+    assert "Secops User" in ownership_page.text
 
 
 def test_offering_sectioned_page_supports_operational_profile_updates(client: TestClient) -> None:
