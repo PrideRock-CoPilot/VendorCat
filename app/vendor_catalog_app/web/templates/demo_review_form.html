@@ -65,7 +65,8 @@
 
 <section class="card">
   <h2>Template Designer</h2>
-  <form method="post" action="/demos/{{ demo_id }}/review-form/template">
+  <p class="muted">Visual builder for weighted questions. Use scale, boolean, and multi-choice scoring blocks.</p>
+  <form method="post" action="/demos/{{ demo_id }}/review-form/template" id="template-designer-form">
     <div class="grid grid-3">
       <label>Template Title
         <input type="text" name="template_title" value="{{ review_template.title if review_template else 'Demo Evaluation Form' }}" required>
@@ -79,72 +80,76 @@
       </label>
     </div>
 
-    <div class="section-divider table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Question</th>
-            <th>Type</th>
-            <th>Weight</th>
-            <th>Scale Min</th>
-            <th>Scale Max</th>
-            <th>Scale Step</th>
-            <th>Option Labels</th>
-            <th>Option Weights</th>
-            <th>Help Text</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody id="question-builder-body">
-          {% if review_template and review_template.questions %}
-            {% for question in review_template.questions %}
-            <tr>
-              <td><input type="text" name="question_label[]" value="{{ question.label }}" required></td>
-              <td>
-                <select name="question_type[]">
-                  <option value="scale" {% if question.question_type == 'scale' %}selected{% endif %}>Sliding Scale</option>
-                  <option value="boolean" {% if question.question_type == 'boolean' %}selected{% endif %}>Boolean</option>
-                  <option value="multi_choice" {% if question.question_type == 'multi_choice' %}selected{% endif %}>Multi Choice</option>
-                </select>
-              </td>
-              <td><input type="number" name="question_weight[]" min="0.01" step="0.01" value="{{ question.weight }}"></td>
-              <td><input type="number" name="scale_min[]" step="0.1" value="{{ question.scale_min }}"></td>
-              <td><input type="number" name="scale_max[]" step="0.1" value="{{ question.scale_max }}"></td>
-              <td><input type="number" name="scale_step[]" step="0.01" value="{{ question.scale_step }}"></td>
-              <td><input type="text" name="option_labels[]" value="{% if question.options %}{% for option in question.options %}{{ option.label }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}" placeholder="Yes, No"></td>
-              <td><input type="text" name="option_weights[]" value="{% if question.options %}{% for option in question.options %}{{ option.weight }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}" placeholder="1, 0"></td>
-              <td><input type="text" name="question_help_text[]" value="{{ question.help_text }}"></td>
-              <td><button type="button" data-remove-question>Remove</button></td>
-            </tr>
-            {% endfor %}
-          {% else %}
-            {% for _ in range(3) %}
-            <tr>
-              <td><input type="text" name="question_label[]" placeholder="Question text" required></td>
-              <td>
-                <select name="question_type[]">
-                  <option value="scale">Sliding Scale</option>
-                  <option value="boolean">Boolean</option>
-                  <option value="multi_choice">Multi Choice</option>
-                </select>
-              </td>
-              <td><input type="number" name="question_weight[]" min="0.01" step="0.01" value="1"></td>
-              <td><input type="number" name="scale_min[]" step="0.1" value="1"></td>
-              <td><input type="number" name="scale_max[]" step="0.1" value="5"></td>
-              <td><input type="number" name="scale_step[]" step="0.01" value="1"></td>
-              <td><input type="text" name="option_labels[]" placeholder="Only for boolean/multi"></td>
-              <td><input type="text" name="option_weights[]" placeholder="Only for boolean/multi"></td>
-              <td><input type="text" name="question_help_text[]" placeholder="Optional help text"></td>
-              <td><button type="button" data-remove-question>Remove</button></td>
-            </tr>
-            {% endfor %}
-          {% endif %}
-        </tbody>
-      </table>
+    <div class="designer-shell section-divider">
+      <aside class="designer-palette">
+        <h3>Question Blocks</h3>
+        <button class="button-link subtle designer-block-btn" type="button" data-new-type="scale">Sliding Scale</button>
+        <button class="button-link subtle designer-block-btn" type="button" data-new-type="boolean">Yes / No</button>
+        <button class="button-link subtle designer-block-btn" type="button" data-new-type="multi_choice">Multi Choice</button>
+      </aside>
+
+      <div class="designer-canvas-wrap">
+        <div class="designer-toolbar">
+          <button class="button-link subtle" type="button" id="designer-preview-toggle">Preview</button>
+          <span class="muted" id="designer-count-label">0 questions</span>
+        </div>
+        <div id="designer-canvas" class="designer-canvas"></div>
+      </div>
+
+      <aside class="designer-properties">
+        <h3>Properties</h3>
+        <div id="designer-empty-state" class="muted">Select a question to edit properties.</div>
+        <div id="designer-props-panel" class="hidden">
+          <label>Question Label
+            <input type="text" id="prop-label" maxlength="160">
+          </label>
+          <label>Question Type
+            <select id="prop-type">
+              <option value="scale">Sliding Scale</option>
+              <option value="boolean">Yes / No</option>
+              <option value="multi_choice">Multi Choice</option>
+            </select>
+          </label>
+          <label>Weight
+            <input type="number" id="prop-weight" min="0.01" step="0.01">
+          </label>
+          <label>Help Text
+            <textarea id="prop-help" rows="2" maxlength="240"></textarea>
+          </label>
+          <div id="prop-scale-fields">
+            <label>Scale Min
+              <input type="number" id="prop-scale-min" step="0.1">
+            </label>
+            <label>Scale Max
+              <input type="number" id="prop-scale-max" step="0.1">
+            </label>
+            <label>Scale Step
+              <input type="number" id="prop-scale-step" step="0.01">
+            </label>
+          </div>
+          <div id="prop-option-fields">
+            <label>Option Labels (comma separated)
+              <input type="text" id="prop-options" placeholder="Yes, No">
+            </label>
+            <label>Option Weights (comma separated)
+              <input type="text" id="prop-option-weights" placeholder="1, 0">
+            </label>
+          </div>
+          <div class="button-group">
+            <button type="button" id="prop-apply-btn">Apply</button>
+          </div>
+          <div class="button-group section-divider">
+            <button type="button" id="prop-move-up" class="button-link subtle">Move Up</button>
+            <button type="button" id="prop-move-down" class="button-link subtle">Move Down</button>
+            <button type="button" id="prop-duplicate" class="button-link subtle">Duplicate</button>
+            <button type="button" id="prop-delete" class="button-link subtle">Delete</button>
+          </div>
+        </div>
+      </aside>
     </div>
 
-    <div class="button-group">
-      <button type="button" id="add-question-row">Add Question</button>
+    <div id="designer-hidden-inputs"></div>
+    <div class="button-group section-divider">
       <button type="submit">Save Template</button>
     </div>
   </form>
@@ -303,57 +308,274 @@
     </div>
   </div>
 </section>
+{% endblock %}
 
-<template id="question-row-template">
-  <tr>
-    <td><input type="text" name="question_label[]" placeholder="Question text" required></td>
-    <td>
-      <select name="question_type[]">
-        <option value="scale">Sliding Scale</option>
-        <option value="boolean">Boolean</option>
-        <option value="multi_choice">Multi Choice</option>
-      </select>
-    </td>
-    <td><input type="number" name="question_weight[]" min="0.01" step="0.01" value="1"></td>
-    <td><input type="number" name="scale_min[]" step="0.1" value="1"></td>
-    <td><input type="number" name="scale_max[]" step="0.1" value="5"></td>
-    <td><input type="number" name="scale_step[]" step="0.01" value="1"></td>
-    <td><input type="text" name="option_labels[]" placeholder="Only for boolean/multi"></td>
-    <td><input type="text" name="option_weights[]" placeholder="Only for boolean/multi"></td>
-    <td><input type="text" name="question_help_text[]" placeholder="Optional help text"></td>
-    <td><button type="button" data-remove-question>Remove</button></td>
-  </tr>
-</template>
-
+{% block scripts %}
+{{ super() }}
+{% if can_edit %}
 <script>
 (function () {
-  const body = document.getElementById("question-builder-body");
-  const addButton = document.getElementById("add-question-row");
-  const template = document.getElementById("question-row-template");
-  if (!body || !addButton || !template) {
-    return;
+  const form = document.getElementById("template-designer-form");
+  if (!form) return;
+  const canvas = document.getElementById("designer-canvas");
+  const hiddenInputs = document.getElementById("designer-hidden-inputs");
+  const emptyState = document.getElementById("designer-empty-state");
+  const propsPanel = document.getElementById("designer-props-panel");
+  const previewToggle = document.getElementById("designer-preview-toggle");
+  const countLabel = document.getElementById("designer-count-label");
+  const propScaleFields = document.getElementById("prop-scale-fields");
+  const propOptionFields = document.getElementById("prop-option-fields");
+  let previewMode = false;
+  let selectedIndex = -1;
+
+  const initialQuestions = {{ (review_template.questions if review_template else []) | tojson }};
+
+  function defaultOptionsForType(type) {
+    if (type === "boolean") {
+      return [
+        { value: "yes", label: "Yes", weight: 1 },
+        { value: "no", label: "No", weight: 0 }
+      ];
+    }
+    if (type === "multi_choice") {
+      return [
+        { value: "option_1", label: "Option 1", weight: 1 },
+        { value: "option_2", label: "Option 2", weight: 0.5 },
+        { value: "option_3", label: "Option 3", weight: 0 }
+      ];
+    }
+    return [];
   }
-  addButton.addEventListener("click", function () {
-    const clone = template.content.cloneNode(true);
-    body.appendChild(clone);
+
+  function normalizeQuestion(question, index) {
+    const type = (question.question_type || question.type || "scale").toString().trim();
+    const parsedType = ["scale", "boolean", "multi_choice"].includes(type) ? type : "scale";
+    const label = (question.label || `Question ${index + 1}`).toString().trim();
+    const weight = Number(question.weight || 1) > 0 ? Number(question.weight) : 1;
+    const scaleMin = Number(question.scale_min ?? 1);
+    const scaleMax = Number(question.scale_max ?? 5);
+    const scaleStep = Number(question.scale_step ?? 1);
+    let options = Array.isArray(question.options) ? question.options : [];
+    if (!options.length && parsedType !== "scale") {
+      options = defaultOptionsForType(parsedType);
+    }
+    options = options.map((option, optionIndex) => {
+      const labelValue = (option.label || `Option ${optionIndex + 1}`).toString().trim();
+      const valueValue = ((option.value || labelValue.toLowerCase().replace(/[^a-z0-9]+/g, "_")) + "").trim() || `option_${optionIndex + 1}`;
+      const weightValue = Number(option.weight ?? 1);
+      return {
+        value: valueValue,
+        label: labelValue,
+        weight: Number.isFinite(weightValue) ? weightValue : 1
+      };
+    });
+    return {
+      label,
+      question_type: parsedType,
+      weight,
+      help_text: (question.help_text || "").toString(),
+      scale_min: Number.isFinite(scaleMin) ? scaleMin : 1,
+      scale_max: Number.isFinite(scaleMax) && scaleMax > scaleMin ? scaleMax : Math.max(scaleMin + 1, 5),
+      scale_step: Number.isFinite(scaleStep) && scaleStep > 0 ? scaleStep : 1,
+      options
+    };
+  }
+
+  let questions = (initialQuestions || []).map(normalizeQuestion);
+  if (!questions.length) {
+    questions = [normalizeQuestion({ label: "Business Fit", question_type: "scale" }, 0)];
+  }
+
+  function optionSummary(question) {
+    if (question.question_type === "scale") {
+      return `${question.scale_min} to ${question.scale_max} (step ${question.scale_step})`;
+    }
+    return (question.options || []).map((option) => `${option.label} (${option.weight})`).join("  |  ");
+  }
+
+  function renderCanvas() {
+    canvas.innerHTML = "";
+    questions.forEach((question, index) => {
+      const card = document.createElement("article");
+      card.className = `designer-question-card${index === selectedIndex ? " selected" : ""}`;
+      card.dataset.index = String(index);
+      card.innerHTML = `
+        <header>
+          <strong>Q${index + 1}. ${question.label}</strong>
+          <span class="designer-chip">${question.question_type}</span>
+          <span class="designer-chip">weight ${question.weight}</span>
+        </header>
+        <p class="muted">${question.help_text || "No help text"}</p>
+        <p class="designer-option-preview">${optionSummary(question)}</p>
+      `;
+      card.addEventListener("click", function () {
+        if (previewMode) return;
+        selectedIndex = index;
+        renderCanvas();
+        updatePropertyPanel();
+      });
+      canvas.appendChild(card);
+    });
+    countLabel.textContent = `${questions.length} question${questions.length === 1 ? "" : "s"}`;
+  }
+
+  function updatePropertyPanel() {
+    if (selectedIndex < 0 || selectedIndex >= questions.length) {
+      emptyState.classList.remove("hidden");
+      propsPanel.classList.add("hidden");
+      return;
+    }
+    const question = questions[selectedIndex];
+    emptyState.classList.add("hidden");
+    propsPanel.classList.remove("hidden");
+    document.getElementById("prop-label").value = question.label;
+    document.getElementById("prop-type").value = question.question_type;
+    document.getElementById("prop-weight").value = question.weight;
+    document.getElementById("prop-help").value = question.help_text;
+    document.getElementById("prop-scale-min").value = question.scale_min;
+    document.getElementById("prop-scale-max").value = question.scale_max;
+    document.getElementById("prop-scale-step").value = question.scale_step;
+    document.getElementById("prop-options").value = (question.options || []).map((option) => option.label).join(", ");
+    document.getElementById("prop-option-weights").value = (question.options || []).map((option) => option.weight).join(", ");
+    const isScale = question.question_type === "scale";
+    propScaleFields.classList.toggle("hidden", !isScale);
+    propOptionFields.classList.toggle("hidden", isScale);
+  }
+
+  function slugify(value) {
+    return (value || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "option";
+  }
+
+  function applyPropertyChanges() {
+    if (selectedIndex < 0 || selectedIndex >= questions.length) return;
+    const question = questions[selectedIndex];
+    question.label = document.getElementById("prop-label").value.trim() || `Question ${selectedIndex + 1}`;
+    question.question_type = document.getElementById("prop-type").value;
+    const newWeight = Number(document.getElementById("prop-weight").value);
+    question.weight = Number.isFinite(newWeight) && newWeight > 0 ? newWeight : 1;
+    question.help_text = document.getElementById("prop-help").value.trim();
+    question.scale_min = Number(document.getElementById("prop-scale-min").value || 1);
+    question.scale_max = Number(document.getElementById("prop-scale-max").value || 5);
+    question.scale_step = Number(document.getElementById("prop-scale-step").value || 1);
+    if (!(question.scale_max > question.scale_min)) {
+      question.scale_max = question.scale_min + 1;
+    }
+    if (!(question.scale_step > 0)) {
+      question.scale_step = 1;
+    }
+    if (question.question_type !== "scale") {
+      const labels = document.getElementById("prop-options").value.split(",").map((value) => value.trim()).filter(Boolean);
+      const weights = document.getElementById("prop-option-weights").value.split(",").map((value) => value.trim()).filter(Boolean);
+      question.options = labels.map((label, idx) => {
+        const parsed = Number(weights[idx] || (question.question_type === "boolean" ? (idx === 0 ? 1 : 0) : 1));
+        return {
+          value: slugify(label) || `option_${idx + 1}`,
+          label,
+          weight: Number.isFinite(parsed) ? parsed : 1
+        };
+      });
+      if (!question.options.length) {
+        question.options = defaultOptionsForType(question.question_type);
+      }
+    } else {
+      question.options = [];
+    }
+    renderCanvas();
+    updatePropertyPanel();
+  }
+
+  function addQuestion(type) {
+    questions.push(normalizeQuestion({ label: "New Question", question_type: type }, questions.length));
+    selectedIndex = questions.length - 1;
+    renderCanvas();
+    updatePropertyPanel();
+  }
+
+  function moveSelected(delta) {
+    if (selectedIndex < 0) return;
+    const target = selectedIndex + delta;
+    if (target < 0 || target >= questions.length) return;
+    const temp = questions[selectedIndex];
+    questions[selectedIndex] = questions[target];
+    questions[target] = temp;
+    selectedIndex = target;
+    renderCanvas();
+    updatePropertyPanel();
+  }
+
+  function duplicateSelected() {
+    if (selectedIndex < 0 || selectedIndex >= questions.length) return;
+    const clone = JSON.parse(JSON.stringify(questions[selectedIndex]));
+    questions.splice(selectedIndex + 1, 0, clone);
+    selectedIndex += 1;
+    renderCanvas();
+    updatePropertyPanel();
+  }
+
+  function deleteSelected() {
+    if (selectedIndex < 0 || selectedIndex >= questions.length) return;
+    questions.splice(selectedIndex, 1);
+    if (!questions.length) {
+      questions.push(normalizeQuestion({ label: "Business Fit", question_type: "scale" }, 0));
+    }
+    selectedIndex = Math.min(selectedIndex, questions.length - 1);
+    renderCanvas();
+    updatePropertyPanel();
+  }
+
+  function createHidden(name, value) {
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = name;
+    input.value = value;
+    return input;
+  }
+
+  function syncHiddenInputs() {
+    hiddenInputs.innerHTML = "";
+    questions.forEach((question) => {
+      hiddenInputs.appendChild(createHidden("question_label[]", question.label));
+      hiddenInputs.appendChild(createHidden("question_type[]", question.question_type));
+      hiddenInputs.appendChild(createHidden("question_weight[]", String(question.weight)));
+      hiddenInputs.appendChild(createHidden("scale_min[]", String(question.scale_min)));
+      hiddenInputs.appendChild(createHidden("scale_max[]", String(question.scale_max)));
+      hiddenInputs.appendChild(createHidden("scale_step[]", String(question.scale_step)));
+      hiddenInputs.appendChild(createHidden("option_labels[]", (question.options || []).map((option) => option.label).join(", ")));
+      hiddenInputs.appendChild(createHidden("option_weights[]", (question.options || []).map((option) => option.weight).join(", ")));
+      hiddenInputs.appendChild(createHidden("question_help_text[]", question.help_text || ""));
+    });
+  }
+
+  document.querySelectorAll(".designer-block-btn").forEach((button) => {
+    button.addEventListener("click", function () {
+      addQuestion(button.dataset.newType || "scale");
+    });
   });
-  body.addEventListener("click", function (event) {
-    const target = event.target;
-    if (!(target instanceof HTMLElement)) {
-      return;
-    }
-    if (!target.matches("[data-remove-question]")) {
-      return;
-    }
-    const row = target.closest("tr");
-    if (!row) {
-      return;
-    }
-    if (body.querySelectorAll("tr").length <= 1) {
-      return;
-    }
-    row.remove();
+  document.getElementById("prop-apply-btn").addEventListener("click", applyPropertyChanges);
+  document.getElementById("prop-move-up").addEventListener("click", function () { moveSelected(-1); });
+  document.getElementById("prop-move-down").addEventListener("click", function () { moveSelected(1); });
+  document.getElementById("prop-duplicate").addEventListener("click", duplicateSelected);
+  document.getElementById("prop-delete").addEventListener("click", deleteSelected);
+  previewToggle.addEventListener("click", function () {
+    previewMode = !previewMode;
+    previewToggle.textContent = previewMode ? "Back To Edit" : "Preview";
+    canvas.classList.toggle("preview", previewMode);
+    propsPanel.classList.toggle("hidden", previewMode || selectedIndex < 0);
+    emptyState.classList.toggle("hidden", previewMode);
   });
+
+  form.addEventListener("submit", function (event) {
+    if (!questions.length) {
+      event.preventDefault();
+      return;
+    }
+    syncHiddenInputs();
+  });
+
+  selectedIndex = questions.length ? 0 : -1;
+  renderCanvas();
+  updatePropertyPanel();
 })();
 </script>
+{% endif %}
 {% endblock %}
