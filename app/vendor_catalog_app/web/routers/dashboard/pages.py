@@ -3,13 +3,14 @@ from __future__ import annotations
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request
+from fastapi.responses import RedirectResponse
 
 from vendor_catalog_app.web.routers.dashboard.common import (
     DEFAULT_DASHBOARD_HORIZON_DAYS,
     DEFAULT_DASHBOARD_MONTHS,
-    STARTUP_SPLASH_SESSION_KEY,
     clamp_horizon_days,
     clamp_months,
+    has_seen_startup_splash_for_current_run,
     render_startup_splash,
 )
 
@@ -31,18 +32,18 @@ def dashboard(
     months: int = DEFAULT_DASHBOARD_MONTHS,
     horizon_days: int = DEFAULT_DASHBOARD_HORIZON_DAYS,
 ):
-    dashboard_module = _dashboard_module()
-    if not request.session.get(STARTUP_SPLASH_SESSION_KEY):
-        # Preserve bootstrap/error behavior before rendering splash.
-        dashboard_module.get_user_context(request)
+    if not has_seen_startup_splash_for_current_run(request):
         passthrough_params = dict(request.query_params)
         passthrough_params["splash"] = "1"
         redirect_query = urlencode(passthrough_params, doseq=True)
         redirect_url = f"/dashboard?{redirect_query}" if redirect_query else "/dashboard"
         return render_startup_splash(request, redirect_url)
 
+    dashboard_module = _dashboard_module()
     repo = dashboard_module.get_repo()
     user = dashboard_module.get_user_context(request)
+    if not set(getattr(user, "roles", set()) or set()):
+        return RedirectResponse(url="/access/request", status_code=303)
     dashboard_module.ensure_session_started(request, user)
     dashboard_module.log_page_view(request, user, "Dashboard")
 
@@ -84,4 +85,3 @@ def dashboard(
         },
     )
     return request.app.state.templates.TemplateResponse(request, "dashboard.html", context)
-

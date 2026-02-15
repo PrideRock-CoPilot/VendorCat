@@ -4,53 +4,59 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token }}">
-  <title>{{ title }} | Vendor Catalog</title>
+  <title>Vendor Catalog</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link rel="stylesheet" href="/static/css/app.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">Vendor Catalog</div>
-    <div class="user-meta">
-      <span class="pill" title="{{ user_principal }}">{{ user_display_name }}</span>
-      {% for role in roles %}
-      <span class="pill role">{{ role }}</span>
-      {% endfor %}
-      {% if has_admin_rights and testing_role_override_enabled %}
-      <form method="post" action="/admin/testing-role" class="inline-form role-switch-form">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <input type="hidden" name="return_to" value="{{ request.url.path }}">
-        <span class="role-switch-label">role</span>
-        <select name="role_override" aria-label="Testing role override">
-          <option value="" {% if not testing_role_override %}selected{% endif %}>No Override</option>
-          {% for role in testing_role_options %}
-          <option value="{{ role }}" {% if role == testing_role_override %}selected{% endif %}>{{ role }}</option>
-          {% endfor %}
-        </select>
-        <button type="submit">Apply</button>
-      </form>
-      {% endif %}
-    </div>
-  </header>
+  <div class="app-chrome">
+    <header class="topbar">
+      <div class="brand">Vendor Catalog</div>
+      <div class="user-meta">
+        <span class="pill" title="{{ user_principal }}">{{ user_display_name }}</span>
+        {% for role in roles %}
+        <span class="pill role">{{ role }}</span>
+        {% endfor %}
+        {% if has_admin_rights and testing_role_override_enabled %}
+        <form method="post" action="/admin/testing-role" class="inline-form role-switch-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="return_to" value="{{ request.url.path }}">
+          <span class="role-switch-label">role</span>
+          <select name="role_override" aria-label="Testing role override">
+            <option value="" {% if not testing_role_override %}selected{% endif %}>No Override</option>
+            {% for role in testing_role_options %}
+            <option value="{{ role }}" {% if role == testing_role_override %}selected{% endif %}>{{ role }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit">Apply</button>
+        </form>
+        {% endif %}
+      </div>
+    </header>
 
-  <nav class="nav">
-    <a class="{{ 'active' if active_nav == 'dashboard' else '' }}" href="/dashboard">Dashboard</a>
-    <a class="{{ 'active' if active_nav == 'vendors' else '' }}" href="/vendor-360">Vendor 360</a>
-    <a class="{{ 'active' if active_nav == 'projects' else '' }}" href="/projects">Projects</a>
-    <a class="{{ 'active' if active_nav == 'contracts' else '' }}" href="/contracts">Contracts</a>
-    <a class="{{ 'active' if active_nav == 'demos' else '' }}" href="/demos">Demos</a>
-    {% if can_edit %}
-    <a class="{{ 'active' if active_nav == 'imports' else '' }}" href="/imports">Imports</a>
-    {% endif %}
-    {% if can_approve_requests %}
-    <a class="{{ 'active' if active_nav == 'pending_approvals' else '' }}" href="/workflows/pending-approvals">Pending Approvals</a>
-    {% endif %}
-    {% if can_report %}
-    <a class="{{ 'active' if active_nav == 'reports' else '' }}" href="/reports">Reports</a>
-    {% endif %}
-    {% if has_admin_rights %}
-    <a class="{{ 'active' if active_nav == 'admin' else '' }}" href="/admin">Admin</a>
-    {% endif %}
-  </nav>
+    <nav class="nav">
+      <a class="{{ 'active' if active_nav == 'dashboard' else '' }}" href="/dashboard">Dashboard</a>
+      <a class="{{ 'active' if active_nav == 'vendors' else '' }}" href="/vendor-360">Vendor 360</a>
+      <a class="{{ 'active' if active_nav == 'projects' else '' }}" href="/projects">Projects</a>
+      <a class="{{ 'active' if active_nav == 'contracts' else '' }}" href="/contracts">Contracts</a>
+      <a class="{{ 'active' if active_nav == 'demos' else '' }}" href="/demos">Demos</a>
+      {% if can_edit %}
+      <a class="{{ 'active' if active_nav == 'imports' else '' }}" href="/imports">Imports</a>
+      {% endif %}
+      {% if can_submit_requests and not roles %}
+      <a class="{{ 'active' if active_nav == 'request_access' else '' }}" href="/access/request">Request Access</a>
+      {% endif %}
+      {% if can_access_workflows %}
+      <a class="{{ 'active' if active_nav == 'pending_approvals' else '' }}" href="/workflows{% if can_approve_requests %}/pending-approvals{% else %}?queue=my_submissions{% endif %}">{% if can_approve_requests %}Pending Approvals{% else %}Workflows{% endif %}</a>
+      {% endif %}
+      {% if can_report %}
+      <a class="{{ 'active' if active_nav == 'reports' else '' }}" href="/reports">Reports</a>
+      {% endif %}
+      {% if has_admin_rights %}
+      <a class="{{ 'active' if active_nav == 'admin' else '' }}" href="/admin">Admin</a>
+      {% endif %}
+    </nav>
+  </div>
 
   <main class="container">
     {% if flashes %}
@@ -58,9 +64,59 @@
       <div class="flash {{ flash.level }}">{{ flash.message }}</div>
       {% endfor %}
     {% endif %}
+    {% if not roles %}
+    <div class="flash info">No application role is assigned to your account. <a href="/access/request">Request access</a>.</div>
+    {% endif %}
 
     {% block content %}{% endblock %}
   </main>
+
+  <div id="workspace-overlay" class="workspace-overlay" hidden aria-hidden="true">
+    <div class="workspace-overlay-backdrop" data-overlay-close></div>
+    <section
+      id="workspace-overlay-panel"
+      class="workspace-overlay-panel workspace-overlay-panel-drawer"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="workspace-overlay-title"
+      tabindex="-1"
+    >
+      <header class="workspace-overlay-header">
+        <div>
+          <h2 id="workspace-overlay-title" class="workspace-overlay-title">Workspace</h2>
+          <p id="workspace-overlay-subtitle" class="workspace-overlay-subtitle hidden"></p>
+        </div>
+        <div class="workspace-overlay-actions">
+          <button type="button" class="button-link subtle" data-overlay-action="close" data-overlay-close>Close</button>
+        </div>
+      </header>
+      <div id="workspace-overlay-content" class="workspace-overlay-content"></div>
+      <footer id="workspace-overlay-footer" class="workspace-overlay-footer hidden"></footer>
+    </section>
+  </div>
+
+  <div
+    id="loading-overlay"
+    class="loading-overlay"
+    data-min-delay-ms="{{ loading_overlay_min_delay_ms }}"
+    data-max-delay-ms="{{ loading_overlay_max_delay_ms }}"
+    data-show-delay-ms="{{ loading_overlay_show_delay_ms }}"
+    data-slow-status-ms="{{ loading_overlay_slow_status_ms }}"
+    data-safety-ms="{{ loading_overlay_safety_ms }}"
+    aria-live="polite"
+    aria-busy="true"
+  >
+    <div class="loading-overlay-card" role="status">
+      <div class="loading-brand-row">
+        <span class="loading-brand-icon" aria-hidden="true"></span>
+        <span>Vendor Catalog</span>
+      </div>
+      <div class="loading-title">Loading Workspace</div>
+      <div id="loading-overlay-status" class="loading-status">Preparing data and services...</div>
+      <div class="loading-progress" aria-hidden="true"><span></span></div>
+    </div>
+  </div>
+  <noscript><style>#loading-overlay { display: none !important; }</style></noscript>
 
   <script src="/static/js/app.js"></script>
   {% block scripts %}{% endblock %}

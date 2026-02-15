@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>Vendor Catalog</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <style>
+    .ar-body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Aptos", "Segoe UI Variable", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(1200px 700px at 5% 0%, rgba(20, 184, 166, 0.25), transparent 62%),
+        radial-gradient(1000px 600px at 95% 100%, rgba(14, 116, 144, 0.25), transparent 58%),
+        linear-gradient(160deg, #f5fbff 0%, #eef6ff 45%, #f8fbff 100%);
+      color: #0f172a;
+    }
+
+    .ar-wrap {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 34px 20px;
+    }
+
+    .ar-shell {
+      width: min(1100px, 100%);
+      display: grid;
+      grid-template-columns: 1.05fr 1fr;
+      border-radius: 22px;
+      overflow: hidden;
+      border: 1px solid rgba(148, 163, 184, 0.32);
+      box-shadow: 0 28px 65px rgba(15, 23, 42, 0.2);
+      background: #fff;
+    }
+
+    .ar-hero {
+      position: relative;
+      padding: 38px 34px;
+      background:
+        linear-gradient(175deg, rgba(13, 148, 136, 0.95) 0%, rgba(7, 89, 133, 0.95) 60%, rgba(30, 64, 175, 0.95) 100%),
+        radial-gradient(700px 320px at 5% 0%, rgba(255, 255, 255, 0.2), transparent 60%);
+      color: #f8fafc;
+    }
+
+    .ar-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      color: rgba(248, 250, 252, 0.92);
+      user-select: none;
+      cursor: default;
+    }
+
+    .ar-brand-icon {
+      width: 22px;
+      height: 22px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      border-radius: 999px;
+      background: rgba(236, 253, 245, 0.14);
+    }
+
+    .ar-brand-icon svg {
+      width: 20px;
+      height: 20px;
+      stroke: rgba(236, 253, 245, 0.95);
+      stroke-width: 1.8;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .ar-hero h1 {
+      margin: 0;
+      font-size: 42px;
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      color: #fff;
+    }
+
+    .ar-subtitle {
+      margin: 16px 0 0;
+      font-size: 16px;
+      line-height: 1.5;
+      color: rgba(248, 250, 252, 0.95);
+      max-width: 44ch;
+    }
+
+    .ar-points {
+      margin: 20px 0 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 10px;
+      font-size: 14px;
+      color: rgba(241, 245, 249, 0.95);
+    }
+
+    .ar-points li {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .ar-points li::before {
+      content: "\2022";
+      color: #ccfbf1;
+      font-size: 20px;
+      line-height: 1;
+      margin-top: -1px;
+    }
+
+    .ar-form-card {
+      padding: 34px 30px;
+      background: #ffffff;
+    }
+
+    .ar-form-title {
+      margin: 0;
+      font-size: 28px;
+      letter-spacing: -0.01em;
+      color: #0f172a;
+    }
+
+    .ar-form-note {
+      margin: 8px 0 14px;
+      color: #475467;
+      font-size: 14px;
+    }
+
+    .ar-identity {
+      margin: 0 0 14px;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      background: #f8fafc;
+      padding: 12px 14px;
+    }
+
+    .ar-identity-invalid {
+      border-color: #fecaca;
+      background: #fff1f2;
+    }
+
+    .ar-identity-label {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: #334155;
+      text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+
+    .ar-identity-primary {
+      font-size: 14px;
+      font-weight: 700;
+      color: #0f172a;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .ar-identity-secondary {
+      margin-top: 6px;
+      font-size: 13px;
+      color: #334155;
+      display: grid;
+      gap: 3px;
+    }
+
+    .ar-identity-note {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #475467;
+      line-height: 1.4;
+    }
+
+    .ar-form {
+      display: grid;
+      gap: 14px;
+      margin-top: 10px;
+    }
+
+    .ar-form label {
+      display: grid;
+      gap: 6px;
+      font-weight: 600;
+      font-size: 13px;
+      color: #1d2939;
+    }
+
+    .ar-form select,
+    .ar-form textarea {
+      border-radius: 12px;
+      border: 1px solid #cbd5e1;
+      padding: 11px 12px;
+      font-size: 14px;
+      color: #0f172a;
+      background: #fff;
+      transition: border-color 120ms ease, box-shadow 120ms ease;
+    }
+
+    .ar-form select:focus,
+    .ar-form textarea:focus {
+      outline: none;
+      border-color: #0ea5a4;
+      box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.18);
+    }
+
+    .ar-form textarea {
+      min-height: 160px;
+      resize: vertical;
+    }
+
+    .ar-submit {
+      margin-top: 4px;
+      border: 0;
+      border-radius: 12px;
+      min-height: 44px;
+      padding: 11px 16px;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      color: #fff;
+      cursor: pointer;
+      background: linear-gradient(90deg, #0f766e 0%, #0e7490 100%);
+      box-shadow: 0 8px 16px rgba(14, 116, 144, 0.25);
+    }
+
+    .ar-submit:hover {
+      filter: brightness(1.04);
+    }
+
+    .ar-submit:active {
+      transform: translateY(1px);
+    }
+
+    .ar-submit:disabled {
+      cursor: not-allowed;
+      filter: grayscale(0.2);
+      opacity: 0.65;
+      box-shadow: none;
+    }
+
+    @media (max-width: 980px) {
+      .ar-shell {
+        grid-template-columns: 1fr;
+      }
+
+      .ar-hero,
+      .ar-form-card {
+        padding: 26px 22px;
+      }
+
+      .ar-hero h1 {
+        font-size: 34px;
+      }
+    }
+  </style>
+</head>
+<body class="ar-body">
+  <main class="ar-wrap">
+    <section class="ar-shell">
+      <aside class="ar-hero">
+        <span class="ar-brand">
+          <span class="ar-brand-icon" aria-hidden="true">
+            <svg viewBox="0 0 16 16">
+              <path d="M5.7 7.1 7.9 9.3a1.1 1.1 0 0 0 1.6 0l1.1-1.1"></path>
+              <path d="M10.6 5.3 9.4 4.1a1.4 1.4 0 0 0-2 0l-1.2 1.2"></path>
+              <path d="M2.4 6.4 4.9 4a1.2 1.2 0 0 1 1.7 0l1.1 1.1"></path>
+              <path d="m13.6 6.4-2.5-2.4a1.2 1.2 0 0 0-1.7 0L8.3 5.1"></path>
+              <path d="M2.2 7.1h2.6"></path>
+              <path d="M11.2 7.1h2.6"></path>
+            </svg>
+          </span>
+          <span>Vendor Catalog</span>
+        </span>
+        <h1>Access Request</h1>
+        <p class="ar-subtitle">
+          You do not currently have an application role. Submit a request and an approver will review it.
+        </p>
+        <ul class="ar-points">
+          <li>Choose the role that matches your job function.</li>
+          <li>Provide business context for your team, use case, and scope.</li>
+          <li>Requests are routed to approvers and tracked to completion.</li>
+        </ul>
+      </aside>
+
+      <section class="ar-form-card">
+        <h2 class="ar-form-title">Request Form</h2>
+        <p class="ar-form-note">Select one role and provide business context for approver review.</p>
+        <div class="ar-identity {{ '' if identity_is_valid else 'ar-identity-invalid' }}">
+          <div class="ar-identity-label">Detected Identity</div>
+          <div class="ar-identity-primary">
+            <span>{{ user_display_name }}</span>
+            <span>({{ user_principal }})</span>
+          </div>
+          {% if identity_email or identity_network_id %}
+          <div class="ar-identity-secondary">
+            {% if identity_email %}<div>Email: {{ identity_email }}</div>{% endif %}
+            {% if identity_network_id %}<div>Network ID: {{ identity_network_id }}</div>{% endif %}
+          </div>
+          {% endif %}
+          <div class="ar-identity-note">{{ identity_note }}</div>
+        </div>
+        {% if flashes %}
+          {% for flash in flashes %}
+          <div class="flash {{ flash.level }}">{{ flash.message }}</div>
+          {% endfor %}
+        {% endif %}
+        <form method="post" action="/access/request" class="ar-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label for="requested_role">Requested Role
+            <select id="requested_role" name="requested_role" required>
+              {% for role in requested_role_options %}
+              <option value="{{ role }}" {% if role == selected_role %}selected{% endif %}>{{ role }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label for="justification">Justification
+            <textarea id="justification" name="justification" rows="6" required placeholder="Explain business need and scope."></textarea>
+          </label>
+          <button
+            type="submit"
+            class="ar-submit"
+            {% if not identity_is_valid %}disabled title="Valid user identity required before submitting."{% endif %}
+          >Submit Access Request</button>
+        </form>
+      </section>
+    </section>
+  </main>
+
+  <div
+    id="loading-overlay"
+    class="loading-overlay"
+    data-min-delay-ms="{{ loading_overlay_min_delay_ms }}"
+    data-max-delay-ms="{{ loading_overlay_max_delay_ms }}"
+    data-show-delay-ms="{{ loading_overlay_show_delay_ms }}"
+    data-slow-status-ms="{{ loading_overlay_slow_status_ms }}"
+    data-safety-ms="{{ loading_overlay_safety_ms }}"
+    aria-live="polite"
+    aria-busy="true"
+  >
+    <div class="loading-overlay-card" role="status">
+      <div class="loading-brand-row">
+        <span class="loading-brand-icon" aria-hidden="true"></span>
+        <span>Vendor Catalog</span>
+      </div>
+      <div class="loading-title">Loading Workspace</div>
+      <div id="loading-overlay-status" class="loading-status">Preparing data and services...</div>
+      <div class="loading-progress" aria-hidden="true"><span></span></div>
+    </div>
+  </div>
+  <noscript><style>#loading-overlay { display: none !important; }</style></noscript>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

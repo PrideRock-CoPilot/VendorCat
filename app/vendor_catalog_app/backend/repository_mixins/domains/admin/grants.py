@@ -72,6 +72,18 @@ class RepositoryAdminGrantMixin:
             sec_user_role_map=self._table("sec_user_role_map"),
         )
 
+    def _revoke_all_user_role_grants(
+        self,
+        *,
+        target_user_ref: str,
+        revoked_at,
+    ) -> None:
+        self._execute_file(
+            "updates/revoke_all_user_role_grants.sql",
+            params=(False, revoked_at, target_user_ref),
+            sec_user_role_map=self._table("sec_user_role_map"),
+        )
+
     def _insert_group_role_grant(
         self,
         *,
@@ -100,6 +112,8 @@ class RepositoryAdminGrantMixin:
             raise ValueError("Target user and grant actor must resolve to directory users.")
         role_key = str(role_code or "").strip().lower()
         now = self._now()
+        # Enforce one active direct role per user.
+        self._revoke_all_user_role_grants(target_user_ref=target_ref, revoked_at=now)
         self._insert_role_grant(
             target_user_ref=target_ref,
             role_code=role_key,
@@ -135,11 +149,8 @@ class RepositoryAdminGrantMixin:
             return
 
         now = self._now()
-        self._execute_file(
-            "updates/revoke_role_grant.sql",
-            params=(False, now, target_ref, current_role),
-            sec_user_role_map=self._table("sec_user_role_map"),
-        )
+        # Enforce one active direct role per user.
+        self._revoke_all_user_role_grants(target_user_ref=target_ref, revoked_at=now)
         self._insert_role_grant(
             target_user_ref=target_ref,
             role_code=new_role,
@@ -364,4 +375,3 @@ class RepositoryAdminGrantMixin:
             ),
             audit_access_event=self._table("audit_access_event"),
         )
-

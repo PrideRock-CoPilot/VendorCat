@@ -33,9 +33,9 @@ def test_reports_page_loads_for_authorized_user(client: TestClient) -> None:
 
 
 def test_reports_access_denied_for_viewer(client: TestClient) -> None:
-    response = client.get("/reports?as_user=viewer@example.com", follow_redirects=False)
+    response = client.get("/reports?as_user=bob.smith@example.com", follow_redirects=False)
     assert response.status_code == 303
-    assert response.headers["location"] == "/dashboard"
+    assert response.headers["location"] == "/access/request"
 
 
 def test_reports_run_owner_coverage_and_download_csv(client: TestClient) -> None:

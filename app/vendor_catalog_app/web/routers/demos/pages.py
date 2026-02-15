@@ -16,6 +16,7 @@ from vendor_catalog_app.web.routers.demos.common import (
     DEMO_STAGE_NOTE_TYPE,
     DEMO_STAGE_ORDER,
     DEMO_SELECTION_OUTCOMES,
+    build_template_library_index,
     DEMO_REVIEW_TEMPLATE_LIBRARY_ENTITY,
     DEMO_REVIEW_TEMPLATE_LIBRARY_NOTE_TYPE,
     DEMO_REVIEW_TEMPLATE_NOTE_TYPES,
@@ -77,6 +78,16 @@ def _demos_url(*, q: str, outcome: str, page: int, page_size: int) -> str:
         "page_size": str(page_size),
     }
     return f"/demos?{urlencode(query)}"
+
+
+def _demos_forms_url(*, q: str, include_inactive: bool, template_key: str = "") -> str:
+    query = {
+        "q": q,
+        "include_inactive": "1" if include_inactive else "0",
+    }
+    if template_key:
+        query["template_key"] = template_key
+    return f"/demos/forms?{urlencode(query)}"
 
 
 @router.get("")
@@ -169,9 +180,109 @@ def demos(
             "prev_page_url": _demos_url(q=q, outcome=outcome, page=prev_page, page_size=page_size),
             "next_page_url": _demos_url(q=q, outcome=outcome, page=next_page, page_size=page_size),
             "today": today_iso(),
+            "demo_tab": "outcomes",
         },
     )
     return request.app.state.templates.TemplateResponse(request, "demos.html", context)
+
+
+@router.get("/forms")
+def demo_forms(
+    request: Request,
+    q: str = "",
+    include_inactive: int = 0,
+    template_key: str = "",
+    designer: int = 0,
+):
+    repo = get_repo()
+    user = get_user_context(request)
+    ensure_session_started(request, user)
+    log_page_view(request, user, "Demo Forms Library")
+
+    show_inactive = bool(int(str(include_inactive or 0).strip() or 0))
+    library_rows = repo.list_app_notes_by_entity_and_type(
+        entity_name=DEMO_REVIEW_TEMPLATE_LIBRARY_ENTITY,
+        note_type=DEMO_REVIEW_TEMPLATE_LIBRARY_NOTE_TYPE,
+        limit=2000,
+    ).to_dict("records")
+    catalog = build_template_library_index(library_rows, include_inactive=show_inactive)
+
+    if q.strip():
+        needle = q.strip().lower()
+        filtered: list[dict] = []
+        for item in catalog:
+            if needle in str(item.get("title") or "").lower() or needle in str(item.get("template_key") or "").lower():
+                filtered.append(item)
+        catalog = filtered
+
+    selected_entry = None
+    if template_key.strip():
+        target_key = template_key.strip()
+        for item in catalog:
+            if str(item.get("template_key") or "").strip() == target_key:
+                selected_entry = item
+                break
+
+    selected_template = selected_entry.get("latest_template") if selected_entry else None
+    selected_versions = selected_entry.get("versions") if selected_entry else []
+
+    context = base_template_context(
+        request=request,
+        context=user,
+        title="Demo Forms",
+        active_nav="demos",
+        extra={
+            "demo_tab": "forms",
+            "forms_filters": {
+                "q": q,
+                "include_inactive": show_inactive,
+                "designer": bool(int(str(designer or 0).strip() or 0)),
+            },
+            "forms_query_url": _demos_forms_url(q=q, include_inactive=show_inactive),
+            "forms_catalog": catalog,
+            "selected_template_entry": selected_entry,
+            "selected_template": selected_template,
+            "selected_versions": selected_versions,
+            "selected_template_key": str(selected_entry.get("template_key") or "") if selected_entry else "",
+        },
+    )
+    return request.app.state.templates.TemplateResponse(request, "demo_forms.html", context)
+
+
+@router.get("/forms/{template_key}/preview")
+def demo_form_preview(request: Request, template_key: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    ensure_session_started(request, user)
+    log_page_view(request, user, "Demo Form Preview")
+
+    library_rows = repo.list_app_notes_by_entity_and_type(
+        entity_name=DEMO_REVIEW_TEMPLATE_LIBRARY_ENTITY,
+        note_type=DEMO_REVIEW_TEMPLATE_LIBRARY_NOTE_TYPE,
+        limit=2000,
+    ).to_dict("records")
+    catalog = build_template_library_index(library_rows, include_inactive=True)
+    selected_entry = None
+    for item in catalog:
+        if str(item.get("template_key") or "").strip() == str(template_key or "").strip():
+            selected_entry = item
+            break
+    if selected_entry is None:
+        add_flash(request, "Form template was not found.", "error")
+        return RedirectResponse(url="/demos/forms", status_code=303)
+
+    context = base_template_context(
+        request=request,
+        context=user,
+        title=f"Demo Form Preview - {template_key}",
+        active_nav="demos",
+        extra={
+            "demo_tab": "forms",
+            "template_entry": selected_entry,
+            "template": selected_entry.get("latest_template"),
+        },
+    )
+    return request.app.state.templates.TemplateResponse(request, "demo_form_preview.html", context)
 
 
 @router.get("/{demo_id}")
@@ -232,6 +343,7 @@ def demo_workspace(request: Request, demo_id: str):
                 and str(user.user_principal or "").strip() not in {"", UNKNOWN_USER_PRINCIPAL}
                 and is_session_open
             ),
+            "demo_tab": "outcomes",
         },
     )
     return request.app.state.templates.TemplateResponse(request, "demo_detail.html", context)
@@ -306,6 +418,7 @@ def demo_review_form(request: Request, demo_id: str):
             "is_demo_session_open": is_session_open,
             "can_submit_review": can_submit_review,
             "my_submission": my_submission,
+            "demo_tab": "outcomes",
         },
     )
     return request.app.state.templates.TemplateResponse(request, "demo_review_form.html", context)

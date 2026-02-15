@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vendor Catalog</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <div class="app-chrome">
+    <header class="topbar">
+      <div class="brand">Vendor Catalog</div>
+      <div class="user-meta">
+        <span class="pill">Page Not Found</span>
+      </div>
+    </header>
+    <nav class="nav">
+      <a href="/dashboard">Dashboard</a>
+      <a href="/vendor-360">Vendor 360</a>
+      <a href="/projects">Projects</a>
+      <a href="/contracts">Contracts</a>
+      <a href="/demos">Demos</a>
+      <a href="/reports">Reports</a>
+    </nav>
+  </div>
+
+  <main class="container">
+    <section class="not-found-page">
+      <div class="not-found-shell">
+        <div class="not-found-hero">
+          <span class="not-found-tag">Jurassic Routing Event</span>
+          <p class="not-found-code">404</p>
+          <h1 class="not-found-title">This page went extinct.</h1>
+          <p class="not-found-lead">
+            A roaming T-Rex knocked this route off the map. The app is fine, this URL is not.
+          </p>
+          <pre class="not-found-dino">            __
+           / _)
+    .-^^^-/ /
+ __/       /
+&lt;__.|_|-|_|</pre>
+        </div>
+        <div class="not-found-body">
+          <h2>Route Not Found</h2>
+          <p>We could not find the page you requested. Check the URL or jump back to a known area.</p>
+          <p class="not-found-path">{{ missing_path }}</p>
+          <div class="not-found-actions">
+            <a class="button-link" href="/dashboard">Back to Dashboard</a>
+            <a class="button-link subtle" href="/vendor-360">Open Vendor 360</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

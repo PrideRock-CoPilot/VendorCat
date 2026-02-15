@@ -10,6 +10,7 @@
 <p class="muted">Build reusable weighted questionnaires and collect reviewer scoring consistently across demo sessions.</p>
 <div class="button-group section-divider">
   <a class="button-link subtle" href="/demos/{{ demo_id }}">Open Demo Workspace</a>
+  <a class="button-link subtle" href="/demos/forms">Forms Library</a>
   <a class="button-link subtle" href="/demos">Back To Demos</a>
 </div>
 
@@ -37,7 +38,7 @@
   <p class="muted">Saved templates can be attached to this demo so every reviewer uses the same form.</p>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Template</th><th>Questions</th><th>Created By</th><th>Created At</th><th>Action</th></tr></thead>
+      <thead><tr><th>Template</th><th>Version</th><th>Questions</th><th>Created By</th><th>Created At</th><th>Action</th></tr></thead>
       <tbody>
         {% for template in library_templates %}
         <tr>
@@ -45,6 +46,7 @@
             <div><strong>{{ template.title }}</strong></div>
             <div class="muted">{{ template.instructions or "No instructions." }}</div>
           </td>
+          <td>v{{ template.template_version }}</td>
           <td>{{ template.questions|length }}</td>
           <td>{{ template.created_by }}</td>
           <td>{{ template.created_at }}</td>
@@ -53,10 +55,11 @@
               <input type="hidden" name="library_template_id" value="{{ template.library_note_id }}">
               <button type="submit">Attach</button>
             </form>
+            <div class="muted"><a href="/demos/forms?template_key={{ template.template_key }}">Edit in Forms</a></div>
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="5">No saved templates yet.</td></tr>
+        <tr><td colspan="6">No saved templates yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -65,8 +68,9 @@
 
 <section class="card">
   <h2>Template Designer</h2>
-  <p class="muted">Visual builder for weighted questions. Use scale, boolean, and multi-choice scoring blocks.</p>
+  <p class="muted">Visual builder for weighted questions, scored options, and reviewer text prompts.</p>
   <form method="post" action="/demos/{{ demo_id }}/review-form/template" id="template-designer-form">
+    <input type="hidden" name="template_key" value="{{ review_template.template_key if review_template else '' }}">
     <div class="grid grid-3">
       <label>Template Title
         <input type="text" name="template_title" value="{{ review_template.title if review_template else 'Demo Evaluation Form' }}" required>
@@ -83,9 +87,15 @@
     <div class="designer-shell section-divider">
       <aside class="designer-palette">
         <h3>Question Blocks</h3>
-        <button class="button-link subtle designer-block-btn" type="button" data-new-type="scale">Sliding Scale</button>
+        <button class="button-link subtle designer-block-btn" type="button" data-new-type="scale">Slider / Scale</button>
         <button class="button-link subtle designer-block-btn" type="button" data-new-type="boolean">Yes / No</button>
         <button class="button-link subtle designer-block-btn" type="button" data-new-type="multi_choice">Multi Choice</button>
+        <button class="button-link subtle designer-block-btn" type="button" data-new-type="star_rating">Star Rating (1-5)</button>
+        <button class="button-link subtle designer-block-btn" type="button" data-new-type="likert_scale">Likert Scale</button>
+        <button class="button-link subtle designer-block-btn" type="button" data-new-type="dropdown_select">Dropdown Select</button>
+        <button class="button-link subtle designer-block-btn" type="button" data-new-type="short_text">Short Text</button>
+        <button class="button-link subtle designer-block-btn" type="button" data-new-type="long_text">Long Comment</button>
+        <button class="button-link subtle designer-block-btn" type="button" data-new-type="section_header">Section Header</button>
       </aside>
 
       <div class="designer-canvas-wrap">
@@ -105,9 +115,15 @@
           </label>
           <label>Question Type
             <select id="prop-type">
-              <option value="scale">Sliding Scale</option>
+              <option value="scale">Slider / Scale</option>
               <option value="boolean">Yes / No</option>
               <option value="multi_choice">Multi Choice</option>
+              <option value="star_rating">Star Rating (1-5)</option>
+              <option value="likert_scale">Likert Scale</option>
+              <option value="dropdown_select">Dropdown Select</option>
+              <option value="short_text">Short Text</option>
+              <option value="long_text">Long Comment</option>
+              <option value="section_header">Section Header</option>
             </select>
           </label>
           <label>Weight
@@ -115,6 +131,28 @@
           </label>
           <label>Help Text
             <textarea id="prop-help" rows="2" maxlength="240"></textarea>
+          </label>
+          <label>Required
+            <select id="prop-required">
+              <option value="true">Required</option>
+              <option value="false">Optional</option>
+            </select>
+          </label>
+          <label>Layout
+            <select id="prop-layout">
+              <option value="vertical">Vertical</option>
+              <option value="horizontal">Horizontal</option>
+              <option value="dropdown">Dropdown</option>
+            </select>
+          </label>
+          <label>Placeholder
+            <input type="text" id="prop-placeholder" maxlength="120">
+          </label>
+          <label id="prop-allow-multiple-wrap">Allow Multiple Selections
+            <select id="prop-allow-multiple">
+              <option value="false">No</option>
+              <option value="true">Yes</option>
+            </select>
           </label>
           <div id="prop-scale-fields">
             <label>Scale Min
@@ -173,8 +211,12 @@
         <td>{{ question.question_type }}</td>
         <td>{{ question.weight }}</td>
         <td>
-          {% if question.question_type == "scale" %}
+          {% if question.question_type in ["scale", "star_rating"] %}
           {{ question.scale_min }} to {{ question.scale_max }} (step {{ question.scale_step }})
+          {% elif question.question_type == "section_header" %}
+          Section heading (non-scored)
+          {% elif question.question_type in ["short_text", "long_text"] %}
+          Free-form text{% if question.required %} (required){% else %} (optional){% endif %}
           {% elif question.options %}
             {% for option in question.options %}
             <div>{{ option.label }} (weight {{ option.weight }})</div>
@@ -209,13 +251,33 @@
         {% endif %}
       {% endfor %}
     {% endif %}
+    {% set existing_value = ns.existing_answer.response_value if ns.existing_answer else None %}
+    {% set existing_list = existing_value if existing_value is iterable and existing_value is not string else ([existing_value] if existing_value is not none and existing_value != "" else []) %}
+    {% if question.question_type == "section_header" %}
+    <div class="full">
+      <h3>{{ question.label }}</h3>
+      {% if question.help_text %}
+      <p class="muted">{{ question.help_text }}</p>
+      {% endif %}
+    </div>
+    {% else %}
     <label class="full">
       {{ question.label }} (weight {{ question.weight }})
       {% if question.help_text %}
       <span class="muted">{{ question.help_text }}</span>
       {% endif %}
-      {% if question.question_type == "scale" %}
-        {% set default_value = ns.existing_answer.response_value if ns.existing_answer else question.scale_min %}
+      {% if question.question_type in ["scale", "star_rating"] %}
+        {% set default_value = existing_value if existing_value is not none and existing_value != "" else question.scale_min %}
+        {% if question.question_type == "star_rating" %}
+        <div class="button-group">
+          {% for score in [1, 2, 3, 4, 5] %}
+          <label>
+            <input type="radio" name="answer_{{ question.code }}" value="{{ score }}" {% if default_value|string == score|string %}checked{% endif %} {% if question.required %}required{% endif %}>
+            {{ score }}★
+          </label>
+          {% endfor %}
+        </div>
+        {% else %}
         <input
           type="range"
           name="answer_{{ question.code }}"
@@ -224,33 +286,49 @@
           step="{{ question.scale_step }}"
           value="{{ default_value }}"
           oninput="document.getElementById('range_output_{{ question.code }}').value=this.value"
-          required
+          {% if question.required %}required{% endif %}
         >
         <div class="muted">
           <span>{{ question.scale_min }}</span>
           <output id="range_output_{{ question.code }}">{{ default_value }}</output>
           <span>{{ question.scale_max }}</span>
         </div>
+        {% endif %}
       {% elif question.question_type == "boolean" %}
         <div class="button-group">
           {% for option in question.options %}
-          {% set is_checked = ns.existing_answer and ns.existing_answer.response_value == option.value %}
+          {% set is_checked = existing_value is not none and existing_value|string == option.value|string %}
           <label>
-            <input type="radio" name="answer_{{ question.code }}" value="{{ option.value }}" {% if is_checked %}checked{% endif %} required>
+            <input type="radio" name="answer_{{ question.code }}" value="{{ option.value }}" {% if is_checked %}checked{% endif %} {% if question.required %}required{% endif %}>
             {{ option.label }} ({{ option.weight }})
           </label>
           {% endfor %}
         </div>
+      {% elif question.question_type == "short_text" %}
+        <input type="text" name="answer_{{ question.code }}" value="{{ existing_value if existing_value is not none else '' }}" placeholder="{{ question.placeholder or 'Enter response' }}" {% if question.required %}required{% endif %}>
+      {% elif question.question_type == "long_text" %}
+        <textarea name="answer_{{ question.code }}" rows="4" placeholder="{{ question.placeholder or 'Enter response' }}" {% if question.required %}required{% endif %}>{{ existing_value if existing_value is not none else '' }}</textarea>
+      {% elif question.layout == "dropdown" or question.question_type == "dropdown_select" %}
+        <select name="answer_{{ question.code }}" {% if question.allow_multiple %}multiple{% endif %} {% if question.required %}required{% endif %}>
+          {% if not question.allow_multiple %}
+          <option value="">Select...</option>
+          {% endif %}
+          {% for option in question.options %}
+          {% set is_selected = option.value in existing_list or option.value|string in existing_list %}
+          <option value="{{ option.value }}" {% if is_selected %}selected{% endif %}>{{ option.label }} (weight {{ option.weight }})</option>
+          {% endfor %}
+        </select>
       {% else %}
-        <select name="answer_{{ question.code }}" required>
+        <select name="answer_{{ question.code }}" {% if question.required %}required{% endif %}>
           <option value="">Select...</option>
           {% for option in question.options %}
-          {% set is_selected = ns.existing_answer and ns.existing_answer.response_value == option.value %}
+          {% set is_selected = existing_value is not none and existing_value|string == option.value|string %}
           <option value="{{ option.value }}" {% if is_selected %}selected{% endif %}>{{ option.label }} (weight {{ option.weight }})</option>
           {% endfor %}
         </select>
       {% endif %}
     </label>
+    {% endif %}
     {% endfor %}
     <label class="full">Reviewer Comment
       <textarea name="review_comment" rows="3">{% if my_submission %}{{ my_submission.comment }}{% endif %}</textarea>
@@ -325,8 +403,23 @@
   const countLabel = document.getElementById("designer-count-label");
   const propScaleFields = document.getElementById("prop-scale-fields");
   const propOptionFields = document.getElementById("prop-option-fields");
+  const propAllowMultipleWrap = document.getElementById("prop-allow-multiple-wrap");
   let previewMode = false;
   let selectedIndex = -1;
+  const SCALE_TYPES = new Set(["scale", "star_rating"]);
+  const OPTION_TYPES = new Set(["boolean", "multi_choice", "likert_scale", "dropdown_select"]);
+  const NON_SCORED_TYPES = new Set(["short_text", "long_text", "section_header"]);
+  const ALLOWED_TYPES = new Set([
+    "scale",
+    "boolean",
+    "multi_choice",
+    "star_rating",
+    "likert_scale",
+    "dropdown_select",
+    "short_text",
+    "long_text",
+    "section_header",
+  ]);
 
   const initialQuestions = {{ (review_template.questions if review_template else []) | tojson }};
 
@@ -344,19 +437,54 @@
         { value: "option_3", label: "Option 3", weight: 0 }
       ];
     }
+    if (type === "likert_scale") {
+      return [
+        { value: "strongly_disagree", label: "Strongly Disagree", weight: 1 },
+        { value: "disagree", label: "Disagree", weight: 2 },
+        { value: "neutral", label: "Neutral", weight: 3 },
+        { value: "agree", label: "Agree", weight: 4 },
+        { value: "strongly_agree", label: "Strongly Agree", weight: 5 }
+      ];
+    }
+    if (type === "dropdown_select") {
+      return [
+        { value: "option_1", label: "Option 1", weight: 1 },
+        { value: "option_2", label: "Option 2", weight: 0 }
+      ];
+    }
     return [];
   }
 
+  function defaultLabelForType(type) {
+    if (type === "section_header") return "Section Header";
+    if (type === "short_text") return "Short Answer";
+    if (type === "long_text") return "Long Comment";
+    if (type === "star_rating") return "Overall Star Rating";
+    if (type === "likert_scale") return "I found the demo valuable";
+    if (type === "dropdown_select") return "Choose one option";
+    if (type === "boolean") return "Was the objective met?";
+    if (type === "multi_choice") return "Select applicable options";
+    return "Business Fit";
+  }
+
   function normalizeQuestion(question, index) {
-    const type = (question.question_type || question.type || "scale").toString().trim();
-    const parsedType = ["scale", "boolean", "multi_choice"].includes(type) ? type : "scale";
-    const label = (question.label || `Question ${index + 1}`).toString().trim();
-    const weight = Number(question.weight || 1) > 0 ? Number(question.weight) : 1;
+    const type = (question.question_type || question.type || "scale").toString().trim().toLowerCase();
+    const parsedType = ALLOWED_TYPES.has(type) ? type : "scale";
+    const label = (question.label || defaultLabelForType(parsedType) || `Question ${index + 1}`).toString().trim();
+    const weightFloor = NON_SCORED_TYPES.has(parsedType) ? 0 : 0.01;
+    const parsedWeight = Number(question.weight ?? 1);
+    const weight = Number.isFinite(parsedWeight) && parsedWeight >= weightFloor ? parsedWeight : 1;
+    const requiredRaw = String(question.required ?? "true").toLowerCase() !== "false";
+    const required = parsedType === "section_header" ? false : requiredRaw;
+    const layoutRaw = (question.layout || "vertical").toString().trim().toLowerCase();
+    const layout = ["vertical", "horizontal", "dropdown"].includes(layoutRaw) ? layoutRaw : "vertical";
+    const placeholder = (question.placeholder || "").toString();
+    const allowMultipleRaw = String(question.allow_multiple || question.allowMultiple || "false").toLowerCase() === "true";
     const scaleMin = Number(question.scale_min ?? 1);
     const scaleMax = Number(question.scale_max ?? 5);
     const scaleStep = Number(question.scale_step ?? 1);
     let options = Array.isArray(question.options) ? question.options : [];
-    if (!options.length && parsedType !== "scale") {
+    if (!options.length && OPTION_TYPES.has(parsedType)) {
       options = defaultOptionsForType(parsedType);
     }
     options = options.map((option, optionIndex) => {
@@ -369,14 +497,30 @@
         weight: Number.isFinite(weightValue) ? weightValue : 1
       };
     });
+    let normalizedScaleMin = Number.isFinite(scaleMin) ? scaleMin : 1;
+    let normalizedScaleMax = Number.isFinite(scaleMax) && scaleMax > normalizedScaleMin ? scaleMax : Math.max(normalizedScaleMin + 1, 5);
+    let normalizedScaleStep = Number.isFinite(scaleStep) && scaleStep > 0 ? scaleStep : 1;
+    if (parsedType === "star_rating") {
+      normalizedScaleMin = 1;
+      normalizedScaleMax = 5;
+      normalizedScaleStep = 1;
+    }
+    let normalizedLayout = layout;
+    if (parsedType === "dropdown_select") normalizedLayout = "dropdown";
+    if (parsedType === "boolean" || parsedType === "likert_scale") normalizedLayout = "horizontal";
+    const allowMultiple = parsedType === "multi_choice" ? allowMultipleRaw : false;
     return {
       label,
       question_type: parsedType,
       weight,
+      required,
+      layout: normalizedLayout,
+      placeholder,
+      allow_multiple: allowMultiple,
       help_text: (question.help_text || "").toString(),
-      scale_min: Number.isFinite(scaleMin) ? scaleMin : 1,
-      scale_max: Number.isFinite(scaleMax) && scaleMax > scaleMin ? scaleMax : Math.max(scaleMin + 1, 5),
-      scale_step: Number.isFinite(scaleStep) && scaleStep > 0 ? scaleStep : 1,
+      scale_min: normalizedScaleMin,
+      scale_max: normalizedScaleMax,
+      scale_step: normalizedScaleStep,
       options
     };
   }
@@ -387,8 +531,20 @@
   }
 
   function optionSummary(question) {
-    if (question.question_type === "scale") {
+    if (question.question_type === "section_header") {
+      return "Visual divider with optional instructions.";
+    }
+    if (question.question_type === "short_text") {
+      return `Short text response${question.required ? " (required)" : " (optional)"}`;
+    }
+    if (question.question_type === "long_text") {
+      return `Long comment response${question.required ? " (required)" : " (optional)"}`;
+    }
+    if (SCALE_TYPES.has(question.question_type)) {
       return `${question.scale_min} to ${question.scale_max} (step ${question.scale_step})`;
+    }
+    if (question.layout === "dropdown") {
+      return `Dropdown: ${(question.options || []).map((option) => option.label).join(", ")}`;
     }
     return (question.options || []).map((option) => `${option.label} (${option.weight})`).join("  |  ");
   }
@@ -404,6 +560,7 @@
           <strong>Q${index + 1}. ${question.label}</strong>
           <span class="designer-chip">${question.question_type}</span>
           <span class="designer-chip">weight ${question.weight}</span>
+          <span class="designer-chip">${question.layout}</span>
         </header>
         <p class="muted">${question.help_text || "No help text"}</p>
         <p class="designer-option-preview">${optionSummary(question)}</p>
@@ -432,14 +589,20 @@
     document.getElementById("prop-type").value = question.question_type;
     document.getElementById("prop-weight").value = question.weight;
     document.getElementById("prop-help").value = question.help_text;
+    document.getElementById("prop-required").value = question.required ? "true" : "false";
+    document.getElementById("prop-layout").value = question.layout || "vertical";
+    document.getElementById("prop-placeholder").value = question.placeholder || "";
+    document.getElementById("prop-allow-multiple").value = question.allow_multiple ? "true" : "false";
     document.getElementById("prop-scale-min").value = question.scale_min;
     document.getElementById("prop-scale-max").value = question.scale_max;
     document.getElementById("prop-scale-step").value = question.scale_step;
     document.getElementById("prop-options").value = (question.options || []).map((option) => option.label).join(", ");
     document.getElementById("prop-option-weights").value = (question.options || []).map((option) => option.weight).join(", ");
-    const isScale = question.question_type === "scale";
-    propScaleFields.classList.toggle("hidden", !isScale);
-    propOptionFields.classList.toggle("hidden", isScale);
+    const isScaleType = SCALE_TYPES.has(question.question_type);
+    const isOptionType = OPTION_TYPES.has(question.question_type);
+    propScaleFields.classList.toggle("hidden", !isScaleType);
+    propOptionFields.classList.toggle("hidden", !isOptionType);
+    propAllowMultipleWrap.classList.toggle("hidden", question.question_type !== "multi_choice");
   }
 
   function slugify(value) {
@@ -452,18 +615,34 @@
     question.label = document.getElementById("prop-label").value.trim() || `Question ${selectedIndex + 1}`;
     question.question_type = document.getElementById("prop-type").value;
     const newWeight = Number(document.getElementById("prop-weight").value);
-    question.weight = Number.isFinite(newWeight) && newWeight > 0 ? newWeight : 1;
+    const minWeight = NON_SCORED_TYPES.has(question.question_type) ? 0 : 0.01;
+    question.weight = Number.isFinite(newWeight) && newWeight >= minWeight ? newWeight : 1;
     question.help_text = document.getElementById("prop-help").value.trim();
+    question.required = question.question_type === "section_header"
+      ? false
+      : document.getElementById("prop-required").value === "true";
+    question.layout = document.getElementById("prop-layout").value;
+    if (question.question_type === "dropdown_select") question.layout = "dropdown";
+    if (question.question_type === "boolean" || question.question_type === "likert_scale") question.layout = "horizontal";
+    question.placeholder = document.getElementById("prop-placeholder").value.trim();
+    question.allow_multiple = question.question_type === "multi_choice"
+      ? (document.getElementById("prop-allow-multiple").value === "true")
+      : false;
     question.scale_min = Number(document.getElementById("prop-scale-min").value || 1);
     question.scale_max = Number(document.getElementById("prop-scale-max").value || 5);
     question.scale_step = Number(document.getElementById("prop-scale-step").value || 1);
-    if (!(question.scale_max > question.scale_min)) {
+    if (!(question.scale_max > question.scale_min) && SCALE_TYPES.has(question.question_type)) {
       question.scale_max = question.scale_min + 1;
     }
     if (!(question.scale_step > 0)) {
       question.scale_step = 1;
     }
-    if (question.question_type !== "scale") {
+    if (question.question_type === "star_rating") {
+      question.scale_min = 1;
+      question.scale_max = 5;
+      question.scale_step = 1;
+    }
+    if (OPTION_TYPES.has(question.question_type)) {
       const labels = document.getElementById("prop-options").value.split(",").map((value) => value.trim()).filter(Boolean);
       const weights = document.getElementById("prop-option-weights").value.split(",").map((value) => value.trim()).filter(Boolean);
       question.options = labels.map((label, idx) => {
@@ -485,7 +664,7 @@
   }
 
   function addQuestion(type) {
-    questions.push(normalizeQuestion({ label: "New Question", question_type: type }, questions.length));
+    questions.push(normalizeQuestion({ label: defaultLabelForType(type), question_type: type }, questions.length));
     selectedIndex = questions.length - 1;
     renderCanvas();
     updatePropertyPanel();
@@ -537,6 +716,10 @@
       hiddenInputs.appendChild(createHidden("question_label[]", question.label));
       hiddenInputs.appendChild(createHidden("question_type[]", question.question_type));
       hiddenInputs.appendChild(createHidden("question_weight[]", String(question.weight)));
+      hiddenInputs.appendChild(createHidden("question_required[]", question.required ? "true" : "false"));
+      hiddenInputs.appendChild(createHidden("question_layout[]", question.layout || "vertical"));
+      hiddenInputs.appendChild(createHidden("question_placeholder[]", question.placeholder || ""));
+      hiddenInputs.appendChild(createHidden("allow_multiple[]", question.allow_multiple ? "true" : "false"));
       hiddenInputs.appendChild(createHidden("scale_min[]", String(question.scale_min)));
       hiddenInputs.appendChild(createHidden("scale_max[]", String(question.scale_max)));
       hiddenInputs.appendChild(createHidden("scale_step[]", String(question.scale_step)));

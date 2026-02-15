@@ -36,9 +36,14 @@
       </select>
     </label>
     <label>
-      Max Rows
-      <input type="number" name="limit" min="25" max="5000" step="25" value="{{ selected_limit }}">
+      Page Size
+      <select name="page_size">
+        {% for size in page_sizes %}
+        <option value="{{ size }}" {% if size == selected_page_size %}selected{% endif %}>{{ size }}</option>
+        {% endfor %}
+      </select>
     </label>
+    <input type="hidden" name="page" value="1">
     <div class="form-actions button-group">
       <button type="submit">Apply</button>
       <a class="button-link subtle" href="/contracts?tab={{ active_tab }}">Reset</a>
@@ -202,6 +207,14 @@
         {% endfor %}
       </tbody>
     </table>
+  </div>
+  <div class="section-header" style="margin-top:10px;">
+    <p>Showing {{ selected_show_from }}-{{ selected_show_to }} of {{ selected_total_rows }} contracts.</p>
+    <div class="button-group">
+      <a class="button-link subtle {% if selected_page <= 1 %}disabled{% endif %}" href="{{ prev_page_url }}">Previous</a>
+      <span class="pill pagination-pill">Page {{ selected_page }} of {{ selected_page_count }}</span>
+      <a class="button-link subtle {% if selected_page >= selected_page_count %}disabled{% endif %}" href="{{ next_page_url }}">Next</a>
+    </div>
   </div>
 </section>
 

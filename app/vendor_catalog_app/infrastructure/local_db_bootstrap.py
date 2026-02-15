@@ -9,6 +9,8 @@ from vendor_catalog_app.core.env import (
     TVENDOR_LOCAL_DB_AUTO_INIT,
     TVENDOR_LOCAL_DB_RESET_ON_START,
     TVENDOR_LOCAL_DB_SEED,
+    TVENDOR_LOCAL_DB_SEED_PROFILE,
+    get_env,
     get_env_bool,
 )
 
@@ -42,6 +44,11 @@ def ensure_local_db_ready(config: AppConfig) -> None:
         cmd.append("--reset")
     if not seed_on_init:
         cmd.append("--skip-seed")
+    else:
+        seed_profile = str(get_env(TVENDOR_LOCAL_DB_SEED_PROFILE, "baseline") or "baseline").strip().lower()
+        if seed_profile not in {"baseline", "full"}:
+            seed_profile = "baseline"
+        cmd.extend(["--seed-profile", seed_profile])
 
     result = subprocess.run(
         cmd,

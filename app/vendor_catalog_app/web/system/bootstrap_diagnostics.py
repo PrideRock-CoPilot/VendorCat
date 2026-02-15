@@ -21,6 +21,9 @@ RUNTIME_REQUIRED_TABLES = (
     "app_user_directory",
     "app_lookup_option",
 )
+RUNTIME_REQUIRED_VIEWS = (
+    "vw_employee_directory",
+)
 
 
 def bootstrap_diagnostics_enabled(config) -> bool:
@@ -210,6 +213,22 @@ def build_bootstrap_diagnostics_payload(repo, config, identity: dict[str, str]) 
                     "name": f"table_probe:{resolved_table_name}",
                     "status": "pass" if ok else "fail",
                     "details": ["table accessible"] if ok else errors,
+                }
+            )
+        for view_name in RUNTIME_REQUIRED_VIEWS:
+            resolved_view_name = repo._table(view_name)
+            ok, errors = probe(
+                repo,
+                "health/select_runtime_employee_directory_probe.sql",
+                employee_directory_view=resolved_view_name,
+            )
+            if not ok:
+                object_probe_failures.append(resolved_view_name)
+            checks.append(
+                {
+                    "name": f"view_probe:{resolved_view_name}",
+                    "status": "pass" if ok else "fail",
+                    "details": ["view accessible"] if ok else errors,
                 }
             )
 

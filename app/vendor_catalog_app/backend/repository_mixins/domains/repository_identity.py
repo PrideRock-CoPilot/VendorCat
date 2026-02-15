@@ -77,6 +77,13 @@ class RepositoryIdentityMixin:
             missing_or_blocked.append(f"{self._table('app_lookup_option')}.valid_to_ts")
             missing_or_blocked.append(f"{self._table('app_lookup_option')}.is_current")
             missing_or_blocked.append(f"{self._table('app_lookup_option')}.deleted_flag")
+        try:
+            self._probe_file(
+                "health/select_runtime_employee_directory_probe.sql",
+                employee_directory_view=self._employee_directory_view(),
+            )
+        except (DataQueryError, DataConnectionError):
+            missing_or_blocked.append(self._employee_directory_view())
 
         if missing_or_blocked:
             raise SchemaBootstrapRequiredError(
@@ -92,10 +99,7 @@ class RepositoryIdentityMixin:
     def bootstrap_user_access(self, user_principal: str, group_principals: set[str] | None = None) -> set[str]:
         self._ensure_user_directory_entry(user_principal)
         roles = self.get_user_roles(user_principal, group_principals=group_principals)
-        if roles:
-            return roles
-        self.ensure_user_record(user_principal)
-        return self.get_user_roles(user_principal, group_principals=group_principals)
+        return roles
 
     def ensure_user_record(self, user_principal: str) -> None:
         user_ref = self.resolve_user_id(user_principal, allow_create=True)
@@ -292,7 +296,7 @@ class RepositoryIdentityMixin:
         cleaned_q = (q or "").strip()
         like_pattern = f"%{cleaned_q.lower()}%" if cleaned_q else ""
         df = self._query_file(
-            "ingestion/select_user_directory_search.sql",
+            "ingestion/select_employee_directory_search.sql",
             params=(
                 cleaned_q.lower(),
                 like_pattern,
@@ -300,16 +304,37 @@ class RepositoryIdentityMixin:
                 like_pattern,
                 like_pattern,
                 like_pattern,
+                like_pattern,
+                like_pattern,
+                like_pattern,
             ),
-            columns=["user_id", "login_identifier", "display_name", "email", "first_name", "last_name"],
-            app_user_directory=self._table("app_user_directory"),
+            columns=[
+                "login_identifier",
+                "display_name",
+                "email",
+                "network_id",
+                "employee_id",
+                "manager_id",
+                "first_name",
+                "last_name",
+            ],
+            employee_directory_view=self._employee_directory_view(),
             limit=normalized_limit,
         )
 
         if df.empty:
             return pd.DataFrame(columns=columns)
 
-        for field in ("user_id", "login_identifier", "display_name", "email", "first_name", "last_name"):
+        for field in (
+            "login_identifier",
+            "display_name",
+            "email",
+            "network_id",
+            "employee_id",
+            "manager_id",
+            "first_name",
+            "last_name",
+        ):
             if field not in df.columns:
                 df[field] = ""
             df[field] = df[field].fillna("").astype(str).str.strip()
@@ -320,6 +345,7 @@ class RepositoryIdentityMixin:
 
         df = df.sort_values(["display_name", "login_identifier"], ascending=[True, True])
         df = df.drop_duplicates(subset=["login_identifier"], keep="first")
+        df["user_id"] = ""
         df = df.head(normalized_limit).copy()
         df["label"] = df.apply(
             lambda row: (
@@ -331,10 +357,67 @@ class RepositoryIdentityMixin:
         )
         return df[columns]
 
+    def get_employee_directory_status_map(self, principals: list[str]) -> dict[str, dict[str, Any]]:
+        status_map: dict[str, dict[str, Any]] = {}
+        seen: set[str] = set()
+        for raw_principal in principals or []:
+            principal = str(raw_principal or "").strip()
+            if not principal:
+                continue
+            normalized = principal.lower()
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            status_map[normalized] = {
+                "principal": principal,
+                "status": "missing",
+                "active": False,
+                "login_identifier": None,
+                "display_name": None,
+            }
+            try:
+                df = self._query_file(
+                    "ingestion/select_employee_directory_status_by_identity.sql",
+                    params=(principal, principal, principal, principal),
+                    columns=[
+                        "login_identifier",
+                        "email",
+                        "network_id",
+                        "employee_id",
+                        "manager_id",
+                        "first_name",
+                        "last_name",
+                        "display_name",
+                        "active_flag",
+                    ],
+                    employee_directory_view=self._employee_directory_view(),
+                )
+            except Exception:
+                continue
+            if df.empty:
+                continue
+            row = df.iloc[0].to_dict()
+            login_identifier = str(row.get("login_identifier") or "").strip() or None
+            display_name = str(row.get("display_name") or "").strip() or None
+            active_text = str(row.get("active_flag", "")).strip().lower()
+            active = active_text not in {"0", "false", "no", "n"}
+            status_map[normalized] = {
+                "principal": principal,
+                "status": "active" if active else "inactive",
+                "active": active,
+                "login_identifier": login_identifier,
+                "display_name": display_name,
+            }
+        return status_map
+
     def resolve_user_login_identifier(self, user_value: str) -> str | None:
         cleaned = str(user_value or "").strip()
         if not cleaned:
             return None
+
+        employee_match = self._lookup_employee_directory_identity(cleaned)
+        if employee_match is not None:
+            return str(employee_match.get("login_identifier") or "").strip() or None
 
         exact = self._query_file(
             "ingestion/select_user_directory_by_login.sql",
@@ -360,6 +443,52 @@ class RepositoryIdentityMixin:
                 return str(row.get("login_identifier") or "").strip() or None
         return None
 
+    def get_user_directory_profile(self, user_value: str | None) -> dict[str, Any] | None:
+        cleaned = str(user_value or "").strip()
+        if not cleaned:
+            return None
+        if cleaned.lower().startswith("usr-"):
+            df = self._query_file(
+                "ingestion/select_user_directory_by_user_id.sql",
+                params=(cleaned,),
+                columns=[
+                    "user_id",
+                    "login_identifier",
+                    "email",
+                    "network_id",
+                    "employee_id",
+                    "manager_id",
+                    "first_name",
+                    "last_name",
+                    "display_name",
+                    "active_flag",
+                    "last_seen_at",
+                ],
+                app_user_directory=self._table("app_user_directory"),
+            )
+        else:
+            df = self._query_file(
+                "ingestion/select_user_directory_by_login.sql",
+                params=(cleaned,),
+                columns=[
+                    "user_id",
+                    "login_identifier",
+                    "email",
+                    "network_id",
+                    "employee_id",
+                    "manager_id",
+                    "first_name",
+                    "last_name",
+                    "display_name",
+                    "active_flag",
+                    "last_seen_at",
+                ],
+                app_user_directory=self._table("app_user_directory"),
+            )
+        if df.empty:
+            return None
+        return df.iloc[0].to_dict()
+
     def resolve_user_id(self, user_value: str | None, *, allow_create: bool = False) -> str | None:
         cleaned = str(user_value or "").strip()
         if not cleaned:
@@ -376,9 +505,14 @@ class RepositoryIdentityMixin:
         if not exact.empty:
             return str(exact.iloc[0]["user_id"]).strip()
 
-        resolved_login = self.resolve_user_login_identifier(cleaned)
+        employee_match = self._lookup_employee_directory_identity(cleaned)
+        resolved_login = (
+            str(employee_match.get("login_identifier") or "").strip()
+            if employee_match is not None
+            else self.resolve_user_login_identifier(cleaned)
+        )
         if resolved_login:
-            if allow_create:
+            if allow_create or employee_match is not None:
                 return self._ensure_user_directory_entry(resolved_login)
             resolved = self._query_file(
                 "ingestion/select_user_directory_by_login.sql",

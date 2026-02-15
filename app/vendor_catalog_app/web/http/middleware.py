@@ -6,6 +6,7 @@ import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse
+from fastapi.responses import RedirectResponse
 
 from vendor_catalog_app.infrastructure.db import (
     clear_request_perf_context,
@@ -25,6 +26,18 @@ from vendor_catalog_app.web.system.settings import AppRuntimeSettings
 
 LOGGER = logging.getLogger(__name__)
 PERF_LOGGER = logging.getLogger("vendor_catalog_app.perf")
+PROTECTED_UI_PATH_PREFIXES = (
+    "/vendor-360",
+    "/vendors",
+    "/projects",
+    "/contracts",
+    "/demos",
+    "/imports",
+    "/reports",
+    "/admin",
+    "/workflows",
+    "/pending-approvals",
+)
 
 
 def _route_path_label(request: Request) -> str:
@@ -33,6 +46,13 @@ def _route_path_label(request: Request) -> str:
     if route_path:
         return route_path
     return str(request.url.path or "/")
+
+
+def _is_protected_ui_path(path: str) -> bool:
+    cleaned = str(path or "").strip() or "/"
+    if cleaned in {"/", "/access/request"}:
+        return False
+    return any(cleaned.startswith(prefix) for prefix in PROTECTED_UI_PATH_PREFIXES)
 
 
 def register_security_headers_middleware(app: FastAPI, settings: AppRuntimeSettings) -> None:
@@ -68,6 +88,17 @@ def register_request_perf_middleware(app: FastAPI, settings: AppRuntimeSettings,
         response = None
         status_code = 500
         try:
+            path = str(request.url.path or "/")
+            if _is_protected_ui_path(path):
+                from vendor_catalog_app.web.core.user_context_service import get_user_context
+
+                user = get_user_context(request)
+                user_roles = set(getattr(user, "roles", set()) or set())
+                if not user_roles:
+                    response = RedirectResponse(url="/access/request", status_code=303)
+                    status_code = response.status_code
+                    return response
+
             csrf_token = ensure_csrf_token(request)
             request.state.csrf_token = csrf_token
             if settings.csrf_enabled and request_requires_write_protection(request.method):

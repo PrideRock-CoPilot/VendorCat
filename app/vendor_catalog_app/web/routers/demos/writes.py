@@ -21,6 +21,7 @@ from vendor_catalog_app.web.routers.demos.common import (
     DEMO_REVIEW_TEMPLATE_V2_NOTE_TYPE,
     DEMO_STAGE_NOTE_TYPE,
     DEMO_STAGE_ORDER,
+    build_template_library_index,
     build_submission_from_form,
     is_demo_session_open,
     normalize_demo_stage,
@@ -44,6 +45,29 @@ def _list_template_rows(repo, demo_id: str) -> list[dict]:
         )
     rows.sort(key=lambda row: str(row.get("created_at") or ""), reverse=True)
     return rows
+
+
+def _load_template_catalog(repo, *, include_inactive: bool = True) -> list[dict]:
+    rows = repo.list_app_notes_by_entity_and_type(
+        entity_name=DEMO_REVIEW_TEMPLATE_LIBRARY_ENTITY,
+        note_type=DEMO_REVIEW_TEMPLATE_LIBRARY_NOTE_TYPE,
+        limit=2000,
+    ).to_dict("records")
+    return build_template_library_index(rows, include_inactive=include_inactive)
+
+
+def _next_template_version(catalog: list[dict], template_key: str) -> int:
+    key = str(template_key or "").strip()
+    if not key:
+        return 1
+    for entry in catalog:
+        if str(entry.get("template_key") or "").strip() == key:
+            return int(entry.get("current_version") or 0) + 1
+    return 1
+
+
+def _new_template_key() -> str:
+    return f"frm-{str(uuid.uuid4())[:8]}"
 
 
 @router.post("")
@@ -175,6 +199,168 @@ async def update_demo_stage(request: Request, demo_id: str):
     return RedirectResponse(url=f"/demos/{demo_id}", status_code=303)
 
 
+@router.post("/forms/save")
+async def save_demo_form_template(request: Request):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+
+    if user.config.locked_mode:
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url="/demos/forms", status_code=303)
+    if not user.can_edit:
+        add_flash(request, "Edit permission is required to manage forms.", "error")
+        return RedirectResponse(url="/demos/forms", status_code=303)
+
+    title = str(form.get("template_title", "Demo Review Form")).strip() or "Demo Review Form"
+    instructions = str(form.get("instructions", "")).strip()
+    template_key = str(form.get("template_key", "")).strip()
+    try:
+        questions = parse_template_questions_from_form(form)
+    except ValueError as exc:
+        add_flash(request, str(exc), "error")
+        redirect_url = f"/demos/forms?template_key={template_key}" if template_key else "/demos/forms"
+        return RedirectResponse(url=redirect_url, status_code=303)
+
+    catalog = _load_template_catalog(repo, include_inactive=True)
+    if not template_key:
+        template_key = _new_template_key()
+    template_version = _next_template_version(catalog, template_key)
+    payload = {
+        "version": "v2",
+        "template_key": template_key,
+        "template_version": template_version,
+        "template_status": "active",
+        "title": title,
+        "instructions": instructions,
+        "questions": questions,
+    }
+
+    try:
+        template_note_id = repo.create_app_note(
+            entity_name=DEMO_REVIEW_TEMPLATE_LIBRARY_ENTITY,
+            entity_id=template_key,
+            note_type=DEMO_REVIEW_TEMPLATE_LIBRARY_NOTE_TYPE,
+            note_text=json.dumps(payload),
+            actor_user_principal=user.user_principal,
+        )
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="demos_forms",
+            event_type="save_demo_form_template",
+            payload={
+                "template_note_id": template_note_id,
+                "template_key": template_key,
+                "template_version": template_version,
+                "question_count": len(questions),
+            },
+        )
+        add_flash(request, f"Form template saved as version {template_version}.", "success")
+    except Exception as exc:
+        add_flash(request, f"Could not save form template: {exc}", "error")
+    return RedirectResponse(url=f"/demos/forms?template_key={template_key}", status_code=303)
+
+
+@router.post("/forms/{template_key}/copy")
+async def copy_demo_form_template(request: Request, template_key: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    if user.config.locked_mode:
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url="/demos/forms", status_code=303)
+    if not user.can_edit:
+        add_flash(request, "Edit permission is required to copy forms.", "error")
+        return RedirectResponse(url="/demos/forms", status_code=303)
+
+    catalog = _load_template_catalog(repo, include_inactive=True)
+    source_entry = None
+    for entry in catalog:
+        if str(entry.get("template_key") or "").strip() == str(template_key or "").strip():
+            source_entry = entry
+            break
+    if source_entry is None:
+        add_flash(request, "Form template not found.", "error")
+        return RedirectResponse(url="/demos/forms", status_code=303)
+
+    source_template = source_entry.get("latest_template") or {}
+    new_key = _new_template_key()
+    payload = {
+        "version": "v2",
+        "template_key": new_key,
+        "template_version": 1,
+        "template_status": "active",
+        "title": f"Copy of {str(source_template.get('title') or 'Demo Review Form')}".strip()[:140],
+        "instructions": str(source_template.get("instructions") or "").strip(),
+        "questions": source_template.get("questions") or [],
+        "copied_from_template_key": str(source_entry.get("template_key") or "").strip(),
+        "copied_from_template_version": int(source_entry.get("current_version") or 1),
+    }
+
+    try:
+        repo.create_app_note(
+            entity_name=DEMO_REVIEW_TEMPLATE_LIBRARY_ENTITY,
+            entity_id=new_key,
+            note_type=DEMO_REVIEW_TEMPLATE_LIBRARY_NOTE_TYPE,
+            note_text=json.dumps(payload),
+            actor_user_principal=user.user_principal,
+        )
+        add_flash(request, "Form template copied.", "success")
+    except Exception as exc:
+        add_flash(request, f"Could not copy form template: {exc}", "error")
+        return RedirectResponse(url="/demos/forms", status_code=303)
+    return RedirectResponse(url=f"/demos/forms?template_key={new_key}", status_code=303)
+
+
+@router.post("/forms/{template_key}/delete")
+async def delete_demo_form_template(request: Request, template_key: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    if user.config.locked_mode:
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url="/demos/forms", status_code=303)
+    if not user.can_edit:
+        add_flash(request, "Edit permission is required to delete forms.", "error")
+        return RedirectResponse(url="/demos/forms", status_code=303)
+
+    catalog = _load_template_catalog(repo, include_inactive=True)
+    target_entry = None
+    for entry in catalog:
+        if str(entry.get("template_key") or "").strip() == str(template_key or "").strip():
+            target_entry = entry
+            break
+    if target_entry is None:
+        add_flash(request, "Form template not found.", "error")
+        return RedirectResponse(url="/demos/forms", status_code=303)
+
+    latest_template = target_entry.get("latest_template") or {}
+    latest_status = str(target_entry.get("status") or "").strip().lower()
+    if latest_status == "deleted":
+        add_flash(request, "Form template is already deleted.", "info")
+        return RedirectResponse(url="/demos/forms", status_code=303)
+
+    payload = {
+        "version": "v2",
+        "template_key": str(target_entry.get("template_key") or "").strip(),
+        "template_version": int(target_entry.get("current_version") or 1) + 1,
+        "template_status": "deleted",
+        "title": str(latest_template.get("title") or "Deleted Form").strip() or "Deleted Form",
+        "instructions": str(latest_template.get("instructions") or "").strip(),
+        "questions": latest_template.get("questions") or [],
+    }
+    try:
+        repo.create_app_note(
+            entity_name=DEMO_REVIEW_TEMPLATE_LIBRARY_ENTITY,
+            entity_id=str(target_entry.get("template_key") or "").strip(),
+            note_type=DEMO_REVIEW_TEMPLATE_LIBRARY_NOTE_TYPE,
+            note_text=json.dumps(payload),
+            actor_user_principal=user.user_principal,
+        )
+        add_flash(request, "Form template deleted. Existing demo usages are preserved.", "success")
+    except Exception as exc:
+        add_flash(request, f"Could not delete form template: {exc}", "error")
+    return RedirectResponse(url="/demos/forms", status_code=303)
+
+
 @router.post("/{demo_id}/review-form/template")
 async def save_demo_review_template(request: Request, demo_id: str):
     repo = get_repo()
@@ -201,8 +387,16 @@ async def save_demo_review_template(request: Request, demo_id: str):
         add_flash(request, str(exc), "error")
         return RedirectResponse(url=f"/demos/{demo_id}/review-form", status_code=303)
 
+    template_key = str(form.get("template_key", "")).strip()
+    catalog = _load_template_catalog(repo, include_inactive=True)
+    if not template_key:
+        template_key = _new_template_key()
+    template_version = _next_template_version(catalog, template_key)
     payload = {
         "version": "v2",
+        "template_key": template_key,
+        "template_version": template_version,
+        "template_status": "active",
         "title": title,
         "instructions": instructions,
         "questions": questions,
@@ -212,7 +406,7 @@ async def save_demo_review_template(request: Request, demo_id: str):
     try:
         library_note_id = repo.create_app_note(
             entity_name=DEMO_REVIEW_TEMPLATE_LIBRARY_ENTITY,
-            entity_id=str(uuid.uuid4()),
+            entity_id=template_key,
             note_type=DEMO_REVIEW_TEMPLATE_LIBRARY_NOTE_TYPE,
             note_text=payload_text,
             actor_user_principal=user.user_principal,
@@ -223,6 +417,8 @@ async def save_demo_review_template(request: Request, demo_id: str):
         if attach_now:
             attach_payload = dict(payload)
             attach_payload["source_template_note_id"] = library_note_id
+            attach_payload["source_template_key"] = template_key
+            attach_payload["source_template_version"] = template_version
             attached_note_id = repo.create_demo_note(
                 demo_id=demo_id,
                 note_type=DEMO_REVIEW_TEMPLATE_V2_NOTE_TYPE,
@@ -237,13 +433,19 @@ async def save_demo_review_template(request: Request, demo_id: str):
                 "demo_id": demo_id,
                 "library_note_id": library_note_id,
                 "attached_note_id": attached_note_id,
+                "template_key": template_key,
+                "template_version": template_version,
                 "question_count": len(questions),
             },
         )
         if attached_note_id:
-            add_flash(request, "Template saved to library and attached to this demo.", "success")
+            add_flash(
+                request,
+                f"Template saved (v{template_version}) and attached to this demo.",
+                "success",
+            )
         else:
-            add_flash(request, "Template saved to library.", "success")
+            add_flash(request, f"Template saved to library as version {template_version}.", "success")
     except Exception as exc:
         add_flash(request, f"Could not save review template: {exc}", "error")
     return RedirectResponse(url=f"/demos/{demo_id}/review-form", status_code=303)
@@ -294,6 +496,8 @@ async def attach_demo_review_template(request: Request, demo_id: str):
         "instructions": template_payload.get("instructions"),
         "questions": template_payload.get("questions") or [],
         "source_template_note_id": library_template_id,
+        "source_template_key": template_payload.get("template_key"),
+        "source_template_version": template_payload.get("template_version"),
     }
     try:
         attached_note_id = repo.create_demo_note(

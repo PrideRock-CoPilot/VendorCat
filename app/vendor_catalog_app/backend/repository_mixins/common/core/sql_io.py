@@ -13,6 +13,9 @@ class RepositoryCoreSqlMixin:
             return name
         return f"{self.config.fq_schema}.{name}"
 
+    def _employee_directory_view(self) -> str:
+        return self._table("vw_employee_directory")
+
     @staticmethod
     def _sql_root() -> Path:
         return Path(__file__).resolve().parents[4] / "sql"

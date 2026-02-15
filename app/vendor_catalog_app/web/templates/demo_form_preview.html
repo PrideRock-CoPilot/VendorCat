@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="breadcrumbs">
+  <a href="/demos">Demos</a>
+  <span class="breadcrumb-sep">/</span>
+  <a href="/demos/forms">Forms</a>
+  <span class="breadcrumb-sep">/</span>
+  <span aria-current="page">Preview</span>
+</div>
+
+<h1>Form Preview</h1>
+<p class="muted">Read-only preview of the active template version.</p>
+<div class="button-group section-divider">
+  <a class="button-link subtle" href="/demos/forms?template_key={{ template_entry.template_key }}">Back To Forms</a>
+  <a class="button-link subtle" href="/demos">Demos</a>
+</div>
+
+<section class="card">
+  <h2>{{ template.title }}</h2>
+  <p class="muted">{{ template.instructions or "No instructions." }}</p>
+  <div class="grid grid-4 section-divider">
+    <div class="metric"><span>Template Key</span><strong>{{ template_entry.template_key }}</strong></div>
+    <div class="metric"><span>Version</span><strong>v{{ template_entry.current_version }}</strong></div>
+    <div class="metric"><span>Status</span><strong>{{ template_entry.status }}</strong></div>
+    <div class="metric"><span>Questions</span><strong>{{ template.questions|length }}</strong></div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Questions</h2>
+  {% for question in template.questions %}
+  <div class="designer-question-card section-divider">
+    <header>
+      <strong>Q{{ loop.index }}. {{ question.label }}</strong>
+      <span class="designer-chip">{{ question.question_type }}</span>
+      <span class="designer-chip">weight {{ question.weight }}</span>
+      <span class="designer-chip">{{ question.layout or "vertical" }}</span>
+    </header>
+    {% if question.help_text %}
+    <p class="muted">{{ question.help_text }}</p>
+    {% endif %}
+    {% if question.question_type in ["scale", "star_rating"] %}
+    <div class="muted">{{ question.scale_min }} to {{ question.scale_max }} (step {{ question.scale_step }})</div>
+    {% elif question.question_type == "section_header" %}
+    <div class="muted">Section header (non-scored divider)</div>
+    {% elif question.question_type in ["short_text", "long_text"] %}
+    <div class="muted">Free-form text response{% if question.required %} (required){% else %} (optional){% endif %}</div>
+    {% else %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Option</th><th>Weight</th></tr></thead>
+        <tbody>
+          {% for option in question.options %}
+          <tr><td>{{ option.label }}</td><td>{{ option.weight }}</td></tr>
+          {% else %}
+          <tr><td colspan="2">No options</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="muted">No questions configured.</p>
+  {% endfor %}
+</section>
+{% endblock %}

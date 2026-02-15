@@ -328,6 +328,8 @@ CREATE TABLE IF NOT EXISTS {fq_schema}.app_user_directory (
   login_identifier STRING NOT NULL,
   email STRING,
   network_id STRING,
+  employee_id STRING,
+  manager_id STRING,
   first_name STRING,
   last_name STRING,
   display_name STRING NOT NULL,
@@ -336,6 +338,19 @@ CREATE TABLE IF NOT EXISTS {fq_schema}.app_user_directory (
   updated_at TIMESTAMP NOT NULL,
   last_seen_at TIMESTAMP NOT NULL
 ) USING DELTA;
+
+CREATE VIEW IF NOT EXISTS {fq_schema}.vw_employee_directory AS
+SELECT
+  login_identifier,
+  email,
+  network_id,
+  employee_id,
+  manager_id,
+  first_name,
+  last_name,
+  display_name,
+  active_flag
+FROM {fq_schema}.app_user_directory;
 
 CREATE TABLE IF NOT EXISTS {fq_schema}.app_user_settings (
   setting_id STRING NOT NULL,

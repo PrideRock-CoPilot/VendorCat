@@ -25,6 +25,8 @@ CONTRACT_TABS = [
 CONTRACT_SCOPE_OPTIONS = ["all", "vendor", "offering"]
 CONTRACT_STATUS_FILTER_OPTIONS = ["all", *CONTRACT_STATUS_OPTIONS, "cancelled"]
 CONTRACT_EXPIRING_WINDOW_DAYS = 90
+CONTRACT_PAGE_SIZES = [25, 50, 100, 250]
+DEFAULT_CONTRACT_PAGE_SIZE = 50
 
 
 def normalize_tab(raw_value: str | None) -> str:
@@ -51,18 +53,43 @@ def normalize_limit(raw_value: str | None) -> int:
     return max(25, min(value, 5000))
 
 
+def normalize_page_size(raw_value: str | None) -> int:
+    try:
+        value = int(str(raw_value or "").strip() or str(DEFAULT_CONTRACT_PAGE_SIZE))
+    except Exception:
+        return DEFAULT_CONTRACT_PAGE_SIZE
+    return max(1, min(value, 250))
+
+
+def normalize_page(raw_value: str | None) -> int:
+    try:
+        value = int(str(raw_value or "").strip() or "1")
+    except Exception:
+        return 1
+    return max(1, value)
+
+
 def to_bool_series(series: pd.Series) -> pd.Series:
     normalized = series.astype(str).str.strip().str.lower()
     return normalized.isin({"1", "true", "t", "yes", "y"})
 
 
-def contracts_url(*, tab: str, q: str, status: str, scope: str, limit: int) -> str:
+def contracts_url(
+    *,
+    tab: str,
+    q: str,
+    status: str,
+    scope: str,
+    page: int,
+    page_size: int,
+) -> str:
     query = {
         "tab": tab,
         "q": q,
         "status": status,
         "scope": scope,
-        "limit": str(limit),
+        "page": str(page),
+        "page_size": str(page_size),
     }
     return f"/contracts?{urlencode(query)}"
 
@@ -89,4 +116,3 @@ def contracts_rows_to_dict(rows: pd.DataFrame) -> list[dict[str, object]]:
         )
     )
     return out.to_dict("records")
-

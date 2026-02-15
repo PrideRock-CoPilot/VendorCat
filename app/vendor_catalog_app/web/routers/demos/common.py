@@ -25,7 +25,56 @@ DEMO_REVIEW_SUBMISSION_NOTE_TYPES = [
 QUESTION_TYPE_SCALE = "scale"
 QUESTION_TYPE_BOOLEAN = "boolean"
 QUESTION_TYPE_MULTI = "multi_choice"
-ALLOWED_QUESTION_TYPES = {QUESTION_TYPE_SCALE, QUESTION_TYPE_BOOLEAN, QUESTION_TYPE_MULTI}
+QUESTION_TYPE_STAR = "star_rating"
+QUESTION_TYPE_LIKERT = "likert_scale"
+QUESTION_TYPE_DROPDOWN = "dropdown_select"
+QUESTION_TYPE_SHORT_TEXT = "short_text"
+QUESTION_TYPE_LONG_TEXT = "long_text"
+QUESTION_TYPE_SECTION = "section_header"
+ALLOWED_QUESTION_TYPES = {
+    QUESTION_TYPE_SCALE,
+    QUESTION_TYPE_BOOLEAN,
+    QUESTION_TYPE_MULTI,
+    QUESTION_TYPE_STAR,
+    QUESTION_TYPE_LIKERT,
+    QUESTION_TYPE_DROPDOWN,
+    QUESTION_TYPE_SHORT_TEXT,
+    QUESTION_TYPE_LONG_TEXT,
+    QUESTION_TYPE_SECTION,
+}
+SCORE_SCALE_QUESTION_TYPES = {QUESTION_TYPE_SCALE, QUESTION_TYPE_STAR}
+SCORE_OPTION_QUESTION_TYPES = {
+    QUESTION_TYPE_BOOLEAN,
+    QUESTION_TYPE_MULTI,
+    QUESTION_TYPE_LIKERT,
+    QUESTION_TYPE_DROPDOWN,
+}
+TEXT_QUESTION_TYPES = {QUESTION_TYPE_SHORT_TEXT, QUESTION_TYPE_LONG_TEXT}
+NON_SCORED_QUESTION_TYPES = TEXT_QUESTION_TYPES | {QUESTION_TYPE_SECTION}
+QUESTION_LAYOUT_OPTIONS = {"vertical", "horizontal", "dropdown"}
+VISIBILITY_OPERATORS = {
+    "equals",
+    "not_equals",
+    "includes_any",
+    "greater_or_equal",
+    "less_or_equal",
+    "answered",
+    "not_answered",
+}
+VISIBILITY_LOGIC_OPTIONS = {"all", "any"}
+
+SCORING_METHOD_WEIGHTED_AVERAGE = "weighted_average"
+SCORING_METHOD_WEIGHTED_SUM = "weighted_sum"
+ALLOWED_SCORING_METHODS = {
+    SCORING_METHOD_WEIGHTED_AVERAGE,
+    SCORING_METHOD_WEIGHTED_SUM,
+}
+ASSIGNMENT_MODE_ALL = "all"
+ASSIGNMENT_MODE_ALLOWLIST = "allowlist"
+ALLOWED_ASSIGNMENT_MODES = {
+    ASSIGNMENT_MODE_ALL,
+    ASSIGNMENT_MODE_ALLOWLIST,
+}
 
 DEMO_STAGE_NOTE_TYPE = "demo_stage_v1"
 DEMO_CLOSED_OUTCOMES = {"selected", "not_selected"}
@@ -39,6 +88,7 @@ DEMO_STAGE_LABELS = {
     "decision": "Decision",
     "closed": "Closed",
 }
+DEFAULT_ALLOWED_REVIEW_STAGES = ["scheduled", "in_progress", "scoring", "decision"]
 
 
 def today_iso() -> str:
@@ -109,6 +159,44 @@ def _safe_bool(raw_value: Any, *, default: bool = False) -> bool:
     return text in {"1", "true", "yes", "y", "on"}
 
 
+def _safe_int(raw_value: Any, *, default: int, minimum: int | None = None) -> int:
+    try:
+        value = int(str(raw_value).strip())
+    except Exception:
+        value = int(default)
+    if minimum is not None:
+        value = max(minimum, value)
+    return value
+
+
+def _default_options_for_question_type(question_type: str) -> list[dict[str, Any]]:
+    if question_type == QUESTION_TYPE_BOOLEAN:
+        return [
+            {"value": "yes", "label": "Yes", "weight": 1.0},
+            {"value": "no", "label": "No", "weight": 0.0},
+        ]
+    if question_type == QUESTION_TYPE_MULTI:
+        return [
+            {"value": "option_1", "label": "Option 1", "weight": 1.0},
+            {"value": "option_2", "label": "Option 2", "weight": 0.5},
+            {"value": "option_3", "label": "Option 3", "weight": 0.0},
+        ]
+    if question_type == QUESTION_TYPE_LIKERT:
+        return [
+            {"value": "strongly_disagree", "label": "Strongly Disagree", "weight": 1.0},
+            {"value": "disagree", "label": "Disagree", "weight": 2.0},
+            {"value": "neutral", "label": "Neutral", "weight": 3.0},
+            {"value": "agree", "label": "Agree", "weight": 4.0},
+            {"value": "strongly_agree", "label": "Strongly Agree", "weight": 5.0},
+        ]
+    if question_type == QUESTION_TYPE_DROPDOWN:
+        return [
+            {"value": "option_1", "label": "Option 1", "weight": 1.0},
+            {"value": "option_2", "label": "Option 2", "weight": 0.0},
+        ]
+    return []
+
+
 def _note_id_from_row(row: dict[str, Any]) -> str:
     return str(row.get("demo_note_id") or row.get("note_id") or "").strip()
 
@@ -116,6 +204,9 @@ def _note_id_from_row(row: dict[str, Any]) -> str:
 def _criteria_alias_from_questions(questions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     aliases: list[dict[str, Any]] = []
     for question in questions:
+        question_type = str(question.get("question_type") or QUESTION_TYPE_SCALE).strip().lower()
+        if question_type in NON_SCORED_QUESTION_TYPES:
+            continue
         aliases.append(
             {
                 "code": question.get("code"),
@@ -182,6 +273,9 @@ def _parse_template_v1(payload: dict[str, Any], row: dict[str, Any]) -> dict[str
         return None
     return {
         "template_note_id": _note_id_from_row(row),
+        "template_key": str(row.get("entity_id") or _note_id_from_row(row)),
+        "template_version": 1,
+        "template_status": "active",
         "title": str(payload.get("title") or "Demo Scorecard").strip() or "Demo Scorecard",
         "instructions": str(payload.get("instructions") or "").strip(),
         "version": "v1",
@@ -214,13 +308,30 @@ def _parse_template_v2(payload: dict[str, Any], row: dict[str, Any]) -> dict[str
             question_type = QUESTION_TYPE_SCALE
         weight = _safe_float(item.get("weight"), default=1.0, minimum=0.01, maximum=100.0)
         required = _safe_bool(item.get("required"), default=True)
+        if question_type == QUESTION_TYPE_SECTION:
+            required = False
         help_text = str(item.get("help_text") or "").strip()
+        layout = str(item.get("layout") or item.get("display_layout") or "vertical").strip().lower()
+        if layout not in QUESTION_LAYOUT_OPTIONS:
+            layout = "vertical"
+        if question_type in {QUESTION_TYPE_BOOLEAN, QUESTION_TYPE_LIKERT}:
+            layout = "horizontal"
+        if question_type == QUESTION_TYPE_DROPDOWN:
+            layout = "dropdown"
+        placeholder = str(item.get("placeholder") or "").strip()
+        allow_multiple = _safe_bool(item.get("allow_multiple"), default=False)
+        if question_type != QUESTION_TYPE_MULTI:
+            allow_multiple = False
 
         scale_min = _safe_float(item.get("scale_min"), default=1.0, minimum=0.0, maximum=1000.0)
         scale_max = _safe_float(item.get("scale_max"), default=5.0, minimum=0.01, maximum=1000.0)
         if scale_max <= scale_min:
             scale_max = scale_min + 1.0
         scale_step = _safe_float(item.get("scale_step"), default=1.0, minimum=0.01, maximum=100.0)
+        if question_type == QUESTION_TYPE_STAR:
+            scale_min = 1.0
+            scale_max = 5.0
+            scale_step = 1.0
 
         options_raw = item.get("options") if isinstance(item.get("options"), list) else []
         options: list[dict[str, Any]] = []
@@ -242,17 +353,16 @@ def _parse_template_v2(payload: dict[str, Any], row: dict[str, Any]) -> dict[str
                 }
             )
 
-        if question_type == QUESTION_TYPE_BOOLEAN and not options:
-            options = [
-                {"value": "yes", "label": "Yes", "weight": 1.0},
-                {"value": "no", "label": "No", "weight": 0.0},
-            ]
-        if question_type == QUESTION_TYPE_MULTI and len(options) < 2:
+        if question_type in SCORE_OPTION_QUESTION_TYPES and not options:
+            options = _default_options_for_question_type(question_type)
+        if question_type in {QUESTION_TYPE_MULTI, QUESTION_TYPE_DROPDOWN, QUESTION_TYPE_LIKERT} and len(options) < 2:
             continue
         max_answer_weight = 1.0
-        if question_type in {QUESTION_TYPE_BOOLEAN, QUESTION_TYPE_MULTI} and options:
+        if question_type in SCORE_OPTION_QUESTION_TYPES and options:
             max_answer_weight = max(float(option.get("weight") or 0.0) for option in options)
             max_answer_weight = max(max_answer_weight, 0.01)
+        elif question_type in NON_SCORED_QUESTION_TYPES:
+            max_answer_weight = 0.0
 
         questions.append(
             {
@@ -262,6 +372,9 @@ def _parse_template_v2(payload: dict[str, Any], row: dict[str, Any]) -> dict[str
                 "weight": weight,
                 "required": required,
                 "help_text": help_text,
+                "layout": layout,
+                "placeholder": placeholder,
+                "allow_multiple": allow_multiple,
                 "scale_min": scale_min,
                 "scale_max": scale_max,
                 "scale_step": scale_step,
@@ -271,8 +384,19 @@ def _parse_template_v2(payload: dict[str, Any], row: dict[str, Any]) -> dict[str
         )
     if not questions:
         return None
+    template_key = str(
+        payload.get("template_key")
+        or payload.get("source_template_key")
+        or row.get("entity_id")
+        or ""
+    ).strip() or _note_id_from_row(row)
+    template_version = _safe_int(payload.get("template_version") or payload.get("source_template_version"), default=1, minimum=1)
+    template_status = str(payload.get("template_status") or "active").strip().lower() or "active"
     return {
         "template_note_id": _note_id_from_row(row),
+        "template_key": template_key,
+        "template_version": template_version,
+        "template_status": template_status,
         "title": str(payload.get("title") or "Demo Review Form").strip() or "Demo Review Form",
         "instructions": str(payload.get("instructions") or "").strip(),
         "version": "v2",
@@ -300,19 +424,60 @@ def parse_template_note(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
 
 
 def parse_template_library_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    parsed: list[dict[str, Any]] = []
-    seen: set[str] = set()
+    return [entry["latest_template"] for entry in build_template_library_index(rows)]
+
+
+def build_template_library_index(rows: list[dict[str, Any]], *, include_inactive: bool = False) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
-        note_id = _note_id_from_row(row)
-        if not note_id or note_id in seen:
+        parsed = parse_template_note([row])
+        if not parsed:
             continue
-        template = parse_template_note([row])
-        if not template:
+        template_key = str(parsed.get("template_key") or "").strip()
+        note_id = str(parsed.get("template_note_id") or "").strip()
+        if not template_key or not note_id:
             continue
-        seen.add(note_id)
-        template["library_note_id"] = note_id
-        parsed.append(template)
-    return parsed
+        parsed["library_note_id"] = note_id
+        grouped.setdefault(template_key, []).append(parsed)
+
+    catalog: list[dict[str, Any]] = []
+    for template_key, versions in grouped.items():
+        sorted_versions = sorted(
+            versions,
+            key=lambda item: (
+                _safe_int(item.get("template_version"), default=1, minimum=1),
+                str(item.get("created_at") or ""),
+            ),
+            reverse=True,
+        )
+        latest_template = sorted_versions[0]
+        status = str(latest_template.get("template_status") or "active").strip().lower() or "active"
+        is_active = status == "active"
+        if not include_inactive and not is_active:
+            continue
+        catalog.append(
+            {
+                "template_key": template_key,
+                "title": str(latest_template.get("title") or "").strip() or "Untitled Form",
+                "current_version": _safe_int(latest_template.get("template_version"), default=1, minimum=1),
+                "status": status,
+                "is_active": is_active,
+                "question_count": len(latest_template.get("questions") or []),
+                "created_at": latest_template.get("created_at"),
+                "created_by": str(latest_template.get("created_by") or "").strip(),
+                "latest_note_id": str(latest_template.get("library_note_id") or "").strip(),
+                "latest_template": latest_template,
+                "versions": sorted_versions,
+            }
+        )
+
+    catalog.sort(
+        key=lambda item: (
+            str(item.get("title") or "").lower(),
+            str(item.get("template_key") or ""),
+        )
+    )
+    return catalog
 
 
 def parse_submission_note(row: dict[str, Any]) -> dict[str, Any] | None:
@@ -334,7 +499,7 @@ def parse_submission_note(row: dict[str, Any]) -> dict[str, Any] | None:
             weighted_score = _safe_float(item.get("weighted_score"), default=0.0, minimum=0.0)
             weighted_max = _safe_float(item.get("weighted_max"), default=0.0, minimum=0.0)
             if weighted_max <= 0:
-                score_10 = 0.0
+                score_10 = None
             else:
                 score_10 = round((weighted_score / weighted_max) * 10.0, 2)
             answers.append(
@@ -344,7 +509,7 @@ def parse_submission_note(row: dict[str, Any]) -> dict[str, Any] | None:
                     "question_type": str(item.get("question_type") or "").strip().lower(),
                     "response_value": item.get("response_value"),
                     "response_label": str(item.get("response_label") or "").strip(),
-                    "question_weight": _safe_float(item.get("question_weight"), default=1.0, minimum=0.01),
+                    "question_weight": _safe_float(item.get("question_weight"), default=1.0, minimum=0.0),
                     "answer_weight": _safe_float(item.get("answer_weight"), default=0.0, minimum=0.0),
                     "weighted_score": round(weighted_score, 4),
                     "weighted_max": round(weighted_max, 4),
@@ -456,13 +621,19 @@ def build_review_summary(
     questions = list((template or {}).get("questions") or [])
     criterion_stats: list[dict[str, Any]] = []
     for question in questions:
+        question_type = str(question.get("question_type") or QUESTION_TYPE_SCALE).strip().lower()
+        if question_type in NON_SCORED_QUESTION_TYPES:
+            continue
         code = str(question.get("code") or "").strip().lower()
         values: list[float] = []
         for submission in parsed_submissions:
             for answer_row in submission.get("answers") or []:
                 if str(answer_row.get("code") or "").strip().lower() != code:
                     continue
-                values.append(_safe_float(answer_row.get("score_10"), default=0.0, minimum=0.0, maximum=10.0))
+                raw_score = answer_row.get("score_10")
+                if raw_score is None:
+                    continue
+                values.append(_safe_float(raw_score, default=0.0, minimum=0.0, maximum=10.0))
         if not values:
             criterion_stats.append(
                 {
@@ -588,6 +759,10 @@ def parse_template_questions_from_form(form_data: Any) -> list[dict[str, Any]]:
     option_labels_rows = [str(value or "").strip() for value in form_data.getlist("option_labels[]")]
     option_weights_rows = [str(value or "").strip() for value in form_data.getlist("option_weights[]")]
     help_text_rows = [str(value or "").strip() for value in form_data.getlist("question_help_text[]")]
+    required_rows = [str(value or "").strip().lower() for value in form_data.getlist("question_required[]")]
+    layout_rows = [str(value or "").strip().lower() for value in form_data.getlist("question_layout[]")]
+    placeholder_rows = [str(value or "").strip() for value in form_data.getlist("question_placeholder[]")]
+    allow_multiple_rows = [str(value or "").strip().lower() for value in form_data.getlist("allow_multiple[]")]
 
     def _value(values: list[str], index: int, default: str = "") -> str:
         if index < len(values):
@@ -605,6 +780,20 @@ def parse_template_questions_from_form(form_data: Any) -> list[dict[str, Any]]:
 
         question_weight = _safe_float(_value(weights, idx, "1"), default=1.0, minimum=0.01, maximum=100.0)
         help_text = _value(help_text_rows, idx, "")
+        required = _safe_bool(_value(required_rows, idx, "true"), default=True)
+        if question_type == QUESTION_TYPE_SECTION:
+            required = False
+        layout = _value(layout_rows, idx, "vertical")
+        if layout not in QUESTION_LAYOUT_OPTIONS:
+            layout = "vertical"
+        if question_type in {QUESTION_TYPE_BOOLEAN, QUESTION_TYPE_LIKERT}:
+            layout = "horizontal"
+        if question_type == QUESTION_TYPE_DROPDOWN:
+            layout = "dropdown"
+        placeholder = _value(placeholder_rows, idx, "")
+        allow_multiple = _safe_bool(_value(allow_multiple_rows, idx, "false"), default=False)
+        if question_type != QUESTION_TYPE_MULTI:
+            allow_multiple = False
 
         code = _slugify_label(label) or f"question_{idx + 1}"
         if code in used_codes:
@@ -613,20 +802,25 @@ def parse_template_questions_from_form(form_data: Any) -> list[dict[str, Any]]:
 
         scale_min = _safe_float(_value(scale_mins, idx, "1"), default=1.0, minimum=0.0, maximum=1000.0)
         scale_max = _safe_float(_value(scale_maxes, idx, "5"), default=5.0, minimum=0.01, maximum=1000.0)
-        if scale_max <= scale_min:
+        if scale_max <= scale_min and question_type in SCORE_SCALE_QUESTION_TYPES:
             raise ValueError(f"Scale max must be greater than min for '{label}'.")
         scale_step = _safe_float(_value(scale_steps, idx, "1"), default=1.0, minimum=0.01, maximum=100.0)
+        if question_type == QUESTION_TYPE_STAR:
+            scale_min = 1.0
+            scale_max = 5.0
+            scale_step = 1.0
 
         options: list[dict[str, Any]] = []
         max_answer_weight = 1.0
-        if question_type in {QUESTION_TYPE_BOOLEAN, QUESTION_TYPE_MULTI}:
+        if question_type in SCORE_OPTION_QUESTION_TYPES:
             option_labels = _split_tokens(_value(option_labels_rows, idx, ""))
             option_weights = _split_tokens(_value(option_weights_rows, idx, ""))
 
-            if question_type == QUESTION_TYPE_BOOLEAN and not option_labels:
-                option_labels = ["Yes", "No"]
-                option_weights = ["1", "0"]
-            if question_type == QUESTION_TYPE_MULTI and len(option_labels) < 2:
+            if not option_labels:
+                defaults = _default_options_for_question_type(question_type)
+                option_labels = [str(row.get("label") or "") for row in defaults]
+                option_weights = [str(row.get("weight") or "0") for row in defaults]
+            if question_type in {QUESTION_TYPE_MULTI, QUESTION_TYPE_DROPDOWN, QUESTION_TYPE_LIKERT} and len(option_labels) < 2:
                 raise ValueError(f"Provide at least two options for '{label}'.")
 
             if option_weights and len(option_weights) != len(option_labels):
@@ -647,6 +841,8 @@ def parse_template_questions_from_form(form_data: Any) -> list[dict[str, Any]]:
 
             max_answer_weight = max(float(option.get("weight") or 0.0) for option in options)
             max_answer_weight = max(max_answer_weight, 0.01)
+        elif question_type in NON_SCORED_QUESTION_TYPES:
+            max_answer_weight = 0.0
 
         parsed_questions.append(
             {
@@ -654,8 +850,11 @@ def parse_template_questions_from_form(form_data: Any) -> list[dict[str, Any]]:
                 "label": label[:160],
                 "question_type": question_type,
                 "weight": question_weight,
-                "required": True,
+                "required": required,
                 "help_text": help_text[:240],
+                "layout": layout,
+                "placeholder": placeholder[:120],
+                "allow_multiple": allow_multiple,
                 "scale_min": scale_min,
                 "scale_max": scale_max,
                 "scale_step": scale_step,
@@ -678,24 +877,46 @@ def build_submission_from_form(*, template: dict[str, Any], form_data: Any) -> d
         label = str(question.get("label") or code)
         question_type = str(question.get("question_type") or QUESTION_TYPE_SCALE).strip().lower()
         question_weight = _safe_float(question.get("weight"), default=1.0, minimum=0.01, maximum=100.0)
+        if question_type in NON_SCORED_QUESTION_TYPES:
+            question_weight = _safe_float(question.get("weight"), default=1.0, minimum=0.0, maximum=100.0)
+        is_required = _safe_bool(question.get("required"), default=True)
+        if question_type == QUESTION_TYPE_SECTION:
+            is_required = False
         answer_key = f"answer_{code}"
-        raw_value = str(form_data.get(answer_key, "")).strip()
-        if not raw_value:
+        raw_values = [str(value or "").strip() for value in form_data.getlist(answer_key)]
+        raw_values = [value for value in raw_values if value]
+        raw_value = raw_values[0] if raw_values else str(form_data.get(answer_key, "")).strip()
+        if raw_value and not raw_values:
+            raw_values = [raw_value]
+
+        if question_type == QUESTION_TYPE_SECTION:
+            continue
+        if not raw_values and is_required:
             raise ValueError(f"Answer is required for '{label}'.")
+        if not raw_values and not is_required:
+            continue
 
         answer_weight = 0.0
-        response_value: str | float = raw_value
+        response_value: Any = raw_value
         response_label = raw_value
+        weighted_max = 0.0
 
-        if question_type == QUESTION_TYPE_SCALE:
+        if question_type in SCORE_SCALE_QUESTION_TYPES:
             scale_min = _safe_float(question.get("scale_min"), default=1.0, minimum=0.0)
             scale_max = _safe_float(question.get("scale_max"), default=5.0, minimum=0.01)
+            scale_step = _safe_float(question.get("scale_step"), default=1.0, minimum=0.01)
+            if question_type == QUESTION_TYPE_STAR:
+                scale_min = 1.0
+                scale_max = 5.0
+                scale_step = 1.0
             if scale_max <= scale_min:
                 scale_max = scale_min + 1.0
             try:
-                numeric = float(raw_value)
+                numeric = float(raw_values[0])
             except Exception as exc:
                 raise ValueError(f"Answer for '{label}' must be numeric.") from exc
+            if scale_step > 0:
+                numeric = round(round((numeric - scale_min) / scale_step) * scale_step + scale_min, 6)
             if numeric < scale_min or numeric > scale_max:
                 raise ValueError(f"Answer for '{label}' must be between {scale_min:g} and {scale_max:g}.")
             normalized = (numeric - scale_min) / (scale_max - scale_min)
@@ -703,23 +924,47 @@ def build_submission_from_form(*, template: dict[str, Any], form_data: Any) -> d
             response_value = numeric
             response_label = f"{numeric:g}"
             weighted_max = question_weight * 1.0
-        else:
+        elif question_type in SCORE_OPTION_QUESTION_TYPES:
             options = [option for option in question.get("options") or [] if isinstance(option, dict)]
-            selected_option = None
-            for option in options:
-                if str(option.get("value") or "").strip().lower() == raw_value.lower():
-                    selected_option = option
-                    break
-            if selected_option is None:
-                raise ValueError(f"Invalid answer for '{label}'.")
-            answer_weight = _safe_float(selected_option.get("weight"), default=0.0, minimum=0.0, maximum=100.0)
-            response_value = str(selected_option.get("value") or "").strip()
-            response_label = str(selected_option.get("label") or response_value).strip()
+            if not options:
+                raise ValueError(f"Question '{label}' is missing options.")
+            allow_multiple = _safe_bool(question.get("allow_multiple"), default=False)
+            selected_values = raw_values if (allow_multiple and question_type == QUESTION_TYPE_MULTI) else raw_values[:1]
+            matched_options: list[dict[str, Any]] = []
+            for selected_value in selected_values:
+                selected_option = None
+                for option in options:
+                    if str(option.get("value") or "").strip().lower() == selected_value.lower():
+                        selected_option = option
+                        break
+                if selected_option is None:
+                    raise ValueError(f"Invalid answer for '{label}'.")
+                matched_options.append(selected_option)
+
+            if not matched_options:
+                raise ValueError(f"Answer is required for '{label}'.")
+            weights = [
+                _safe_float(option.get("weight"), default=0.0, minimum=0.0, maximum=100.0)
+                for option in matched_options
+            ]
+            answer_weight = sum(weights) / len(weights)
+            if len(matched_options) == 1:
+                response_value = str(matched_options[0].get("value") or "").strip()
+                response_label = str(matched_options[0].get("label") or response_value).strip()
+            else:
+                response_value = [str(option.get("value") or "").strip() for option in matched_options]
+                response_label = ", ".join(str(option.get("label") or "").strip() for option in matched_options)
             max_answer_weight = _safe_float(question.get("max_answer_weight"), default=1.0, minimum=0.01)
             weighted_max = question_weight * max_answer_weight
+        else:
+            text_value = raw_values[0]
+            response_value = text_value
+            response_label = text_value
+            answer_weight = 0.0
+            weighted_max = 0.0
 
         weighted_score = question_weight * answer_weight
-        score_10 = round((weighted_score / weighted_max) * 10.0, 2) if weighted_max > 0 else 0.0
+        score_10 = round((weighted_score / weighted_max) * 10.0, 2) if weighted_max > 0 else None
         weighted_score_total += weighted_score
         weighted_max_total += weighted_max
         answers.append(

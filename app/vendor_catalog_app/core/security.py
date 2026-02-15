@@ -25,6 +25,7 @@ MIN_CHANGE_APPROVAL_LEVEL = 1
 DEFAULT_APPROVAL_LEVEL = 6
 
 CHANGE_APPROVAL_LEVELS = {
+    "request_access": 3,
     "create_vendor_profile": 9,
     "update_vendor_profile": 6,
     "update_offering": 6,
@@ -63,6 +64,11 @@ CHANGE_APPROVAL_LEVELS = {
     "grant_scope": 9,
 }
 CHANGE_ACTION_CHOICES = tuple(sorted(CHANGE_APPROVAL_LEVELS.keys()))
+ACCESS_REQUEST_ALLOWED_ROLES = (
+    ROLE_VIEWER,
+    ROLE_EDITOR,
+    ROLE_AUDITOR,
+)
 
 ROLE_DEFAULT_DEFINITIONS = {
     ROLE_SYSTEM_ADMIN: {

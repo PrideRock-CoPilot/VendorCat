@@ -4,6 +4,8 @@ INSERT INTO {app_user_directory}
     login_identifier,
     email,
     network_id,
+    employee_id,
+    manager_id,
     first_name,
     last_name,
     display_name,
@@ -13,4 +15,4 @@ INSERT INTO {app_user_directory}
     last_seen_at
   )
 VALUES
-  (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+  (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)

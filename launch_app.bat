@@ -30,6 +30,7 @@ if "%TVENDOR_LOCKED_MODE%"=="" set "TVENDOR_LOCKED_MODE=false"
 if "%TVENDOR_OPEN_BROWSER%"=="" set "TVENDOR_OPEN_BROWSER=true"
 if "%TVENDOR_LOCAL_DB_AUTO_RESET%"=="" set "TVENDOR_LOCAL_DB_AUTO_RESET=true"
 if "%TVENDOR_LOCAL_DB_SEED%"=="" set "TVENDOR_LOCAL_DB_SEED=false"
+if "%TVENDOR_LOCAL_DB_SEED_PROFILE%"=="" set "TVENDOR_LOCAL_DB_SEED_PROFILE=baseline"
 if "%TVENDOR_LOCAL_DB_REBUILD_MODE%"=="" set "TVENDOR_LOCAL_DB_REBUILD_MODE=always"
 if "%PORT%"=="" set "PORT=8000"
 
@@ -56,14 +57,21 @@ echo TVENDOR_LOCKED_MODE=%TVENDOR_LOCKED_MODE%
 echo TVENDOR_OPEN_BROWSER=%TVENDOR_OPEN_BROWSER%
 echo TVENDOR_LOCAL_DB_AUTO_RESET=%TVENDOR_LOCAL_DB_AUTO_RESET%
 echo TVENDOR_LOCAL_DB_SEED=%TVENDOR_LOCAL_DB_SEED%
+echo TVENDOR_LOCAL_DB_SEED_PROFILE=%TVENDOR_LOCAL_DB_SEED_PROFILE%
 echo TVENDOR_LOCAL_DB_REBUILD_MODE=%TVENDOR_LOCAL_DB_REBUILD_MODE%
 echo PORT=%PORT%
 echo URL=http://localhost:%PORT%/dashboard
 echo.
 
 if /I "%TVENDOR_USE_LOCAL_DB%"=="true" (
+  if /I not "%TVENDOR_LOCAL_DB_SEED_PROFILE%"=="baseline" if /I not "%TVENDOR_LOCAL_DB_SEED_PROFILE%"=="full" (
+    echo WARNING: Unknown TVENDOR_LOCAL_DB_SEED_PROFILE=%TVENDOR_LOCAL_DB_SEED_PROFILE%
+    echo Falling back to TVENDOR_LOCAL_DB_SEED_PROFILE=baseline
+    set "TVENDOR_LOCAL_DB_SEED_PROFILE=baseline"
+  )
+
   set "LOCAL_DB_APPLY_ARGS=--skip-seed"
-  if /I "%TVENDOR_LOCAL_DB_SEED%"=="true" set "LOCAL_DB_APPLY_ARGS="
+  if /I "%TVENDOR_LOCAL_DB_SEED%"=="true" set "LOCAL_DB_APPLY_ARGS=--seed-profile %TVENDOR_LOCAL_DB_SEED_PROFILE%"
   set "LOCAL_DB_RESET_ARGS=--reset !LOCAL_DB_APPLY_ARGS!"
 
   set "LOCAL_DB_REBUILD_MODE=%TVENDOR_LOCAL_DB_REBUILD_MODE%"
@@ -93,7 +101,7 @@ if /I "%TVENDOR_USE_LOCAL_DB%"=="true" (
 
   if /I "!LOCAL_DB_ACTION!"=="clean" (
     echo Rebuilding local DB - clean reset...
-    %PYTHON_EXE% setup\local_db\init_local_db.py !LOCAL_DB_RESET_ARGS!
+    %PYTHON_EXE% setup\local_db\init_local_db.py --db-path "%TVENDOR_LOCAL_DB_PATH%" !LOCAL_DB_RESET_ARGS!
     if errorlevel 1 (
       echo.
       echo Failed to rebuild local database.
@@ -103,11 +111,11 @@ if /I "%TVENDOR_USE_LOCAL_DB%"=="true" (
     echo.
   ) else (
     echo Applying local DB schema updates while keeping existing data...
-    %PYTHON_EXE% setup\local_db\init_local_db.py !LOCAL_DB_APPLY_ARGS!
+    %PYTHON_EXE% setup\local_db\init_local_db.py --db-path "%TVENDOR_LOCAL_DB_PATH%" !LOCAL_DB_APPLY_ARGS!
     if errorlevel 1 (
       if /I "%TVENDOR_LOCAL_DB_AUTO_RESET%"=="true" (
         echo Local DB schema update failed. Rebuilding local DB from scratch...
-        %PYTHON_EXE% setup\local_db\init_local_db.py !LOCAL_DB_RESET_ARGS!
+        %PYTHON_EXE% setup\local_db\init_local_db.py --db-path "%TVENDOR_LOCAL_DB_PATH%" !LOCAL_DB_RESET_ARGS!
         if errorlevel 1 (
           echo.
           echo Failed to rebuild local database.

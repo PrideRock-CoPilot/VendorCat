@@ -110,15 +110,15 @@
 {% set contact_type_values = contact_type_options|default(["business", "account_manager", "support", "escalation", "security_specialist", "customer_success", "product_manager"], true) %}
 <form method="post" action="{{ post_url }}" class="grid grid-2 form-grid">
   <input type="hidden" name="return_to" value="{{ return_to }}">
-  <label>Full Name <span class="field-error">*</span>
-    <input type="text" name="full_name" placeholder="Jane Doe" required>
+  <label>Employee Directory Lookup <span class="field-error">*</span>
+    <input type="text" name="full_name" placeholder="Email or display name" required>
   </label>
   {{ select_input("contact_type", "Type", contact_type_values, "business", true) }}
-  <label>Email
+  <label>Employee Email (optional override)
     <input type="email" name="email" placeholder="jane.doe@example.com">
   </label>
   <label>Phone
-    <input type="text" name="phone" placeholder="555-0100">
+    <input type="text" name="phone" placeholder="Auto-managed from directory" disabled>
   </label>
   <label class="full">Reason
     <input type="text" name="reason" placeholder="Optional">

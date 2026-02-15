@@ -68,8 +68,9 @@ def _resolve_http_path() -> str:
 
 
 def _repo_root() -> Path:
-    # app/vendor_catalog_app/config.py -> repo root is two levels up from app/
-    return Path(__file__).resolve().parents[2]
+    # app/vendor_catalog_app/core/config.py -> repo root
+    # parents[0]=core, [1]=vendor_catalog_app, [2]=app, [3]=repo root
+    return Path(__file__).resolve().parents[3]
 
 
 def _resolve_repo_relative_path(raw_path: str) -> str:
