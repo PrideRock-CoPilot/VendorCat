@@ -44,6 +44,8 @@ class RepositoryCoreIdentityMixin:
                 "login_identifier": "",
                 "email": None,
                 "network_id": None,
+                "employee_id": None,
+                "manager_id": None,
                 "first_name": None,
                 "last_name": None,
                 "display_name": "Unknown User",
@@ -70,6 +72,8 @@ class RepositoryCoreIdentityMixin:
             "login_identifier": login_identifier,
             "email": email,
             "network_id": network_id,
+            "employee_id": None,
+            "manager_id": None,
             "first_name": first_name,
             "last_name": last_name,
             "display_name": display_name,
@@ -83,7 +87,15 @@ class RepositoryCoreIdentityMixin:
         if not overrides:
             return base
         merged = dict(base)
-        for key in ("email", "network_id", "first_name", "last_name", "display_name"):
+        for key in (
+            "email",
+            "network_id",
+            "employee_id",
+            "manager_id",
+            "first_name",
+            "last_name",
+            "display_name",
+        ):
             if key not in overrides:
                 continue
             raw = overrides.get(key)
@@ -92,12 +104,77 @@ class RepositoryCoreIdentityMixin:
                 merged[key] = value
         return merged
 
+    @staticmethod
+    def _is_system_login_identifier(login_identifier: str) -> bool:
+        normalized = str(login_identifier or "").strip().lower()
+        return (
+            not normalized
+            or normalized == UNKNOWN_USER_PRINCIPAL.lower()
+            or normalized.startswith("system:")
+        )
+
+    def _lookup_employee_directory_identity(self, user_value: str) -> dict[str, str | None] | None:
+        cleaned = str(user_value or "").strip()
+        if not cleaned:
+            return None
+        try:
+            directory = self._query_file(
+                "ingestion/select_employee_directory_by_identity.sql",
+                params=(cleaned, cleaned, cleaned, cleaned),
+                columns=[
+                    "login_identifier",
+                    "email",
+                    "network_id",
+                    "employee_id",
+                    "manager_id",
+                    "first_name",
+                    "last_name",
+                    "display_name",
+                    "active_flag",
+                ],
+                employee_directory_view=self._employee_directory_view(),
+            )
+        except (DataExecutionError, DataConnectionError):
+            LOGGER.warning(
+                "Failed employee directory lookup for '%s'.",
+                cleaned,
+                exc_info=True,
+            )
+            return None
+        if directory.empty:
+            return None
+
+        row = directory.iloc[0].to_dict()
+        login_identifier = str(row.get("login_identifier") or "").strip()
+        if not login_identifier:
+            return None
+        active_flag = str(row.get("active_flag", "")).strip().lower()
+        if active_flag in {"0", "false", "no", "n"}:
+            return None
+
+        display_name = (
+            str(row.get("display_name") or "").strip()
+            or self._principal_to_display_name(login_identifier)
+        )
+        return {
+            "login_identifier": login_identifier,
+            "email": str(row.get("email") or "").strip() or None,
+            "network_id": str(row.get("network_id") or "").strip() or None,
+            "employee_id": str(row.get("employee_id") or "").strip() or None,
+            "manager_id": str(row.get("manager_id") or "").strip() or None,
+            "first_name": str(row.get("first_name") or "").strip() or None,
+            "last_name": str(row.get("last_name") or "").strip() or None,
+            "display_name": display_name,
+        }
+
     def sync_user_directory_identity(
         self,
         *,
         login_identifier: str,
         email: str | None = None,
         network_id: str | None = None,
+        employee_id: str | None = None,
+        manager_id: str | None = None,
         first_name: str | None = None,
         last_name: str | None = None,
         display_name: str | None = None,
@@ -107,6 +184,8 @@ class RepositoryCoreIdentityMixin:
             identity_overrides={
                 "email": email,
                 "network_id": network_id,
+                "employee_id": employee_id,
+                "manager_id": manager_id,
                 "first_name": first_name,
                 "last_name": last_name,
                 "display_name": display_name,
@@ -124,7 +203,23 @@ class RepositoryCoreIdentityMixin:
             return UNKNOWN_USER_PRINCIPAL
 
         identity = self._merge_user_identity(self._parse_user_identity(login_identifier), identity_overrides)
-        lookup_key = login_identifier.lower()
+        directory_identity = self._lookup_employee_directory_identity(login_identifier)
+        if directory_identity is not None:
+            login_identifier = str(directory_identity.get("login_identifier") or "").strip() or login_identifier
+            identity = self._merge_user_identity(identity, directory_identity)
+        require_employee_directory = not self._is_system_login_identifier(login_identifier)
+        if (
+            require_employee_directory
+            and getattr(self.config, "use_local_db", False)
+            and getattr(self.config, "is_dev_env", False)
+            and getattr(self.config, "dev_allow_all_access", False)
+        ):
+            # Dev launcher convenience mode: local-only runs can bootstrap ad-hoc users.
+            require_employee_directory = False
+        if require_employee_directory and directory_identity is None:
+            raise ValueError(
+                "User must exist in vw_employee_directory before being used in the application."
+            )
 
         now = self._now()
         existing = self._query_file(
@@ -135,9 +230,12 @@ class RepositoryCoreIdentityMixin:
                 "login_identifier",
                 "email",
                 "network_id",
+                "employee_id",
+                "manager_id",
                 "first_name",
                 "last_name",
                 "display_name",
+                "active_flag",
                 "last_seen_at",
             ],
             app_user_directory=self._table("app_user_directory"),
@@ -152,6 +250,12 @@ class RepositoryCoreIdentityMixin:
                 "network_id": str(identity.get("network_id") or "").strip()
                 or str(existing_row.get("network_id") or "").strip()
                 or None,
+                "employee_id": str(identity.get("employee_id") or "").strip()
+                or str(existing_row.get("employee_id") or "").strip()
+                or None,
+                "manager_id": str(identity.get("manager_id") or "").strip()
+                or str(existing_row.get("manager_id") or "").strip()
+                or None,
                 "first_name": str(identity.get("first_name") or "").strip()
                 or str(existing_row.get("first_name") or "").strip()
                 or None,
@@ -164,7 +268,15 @@ class RepositoryCoreIdentityMixin:
             }
             field_changed = any(
                 str(merged_identity.get(field) or "").strip() != str(existing_row.get(field) or "").strip()
-                for field in ("email", "network_id", "first_name", "last_name", "display_name")
+                for field in (
+                    "email",
+                    "network_id",
+                    "employee_id",
+                    "manager_id",
+                    "first_name",
+                    "last_name",
+                    "display_name",
+                )
             )
             raw_touch_ttl = get_env(TVENDOR_USER_DIRECTORY_TOUCH_TTL_SEC, "300")
             try:
@@ -184,6 +296,8 @@ class RepositoryCoreIdentityMixin:
                     params=(
                         merged_identity["email"],
                         merged_identity["network_id"],
+                        merged_identity["employee_id"],
+                        merged_identity["manager_id"],
                         merged_identity["first_name"],
                         merged_identity["last_name"],
                         merged_identity["display_name"],
@@ -193,8 +307,10 @@ class RepositoryCoreIdentityMixin:
                     ),
                     app_user_directory=self._table("app_user_directory"),
                 )
-            except (DataExecutionError, DataConnectionError):
+            except (DataExecutionError, DataConnectionError) as exc:
                 LOGGER.warning("Failed to update user directory profile for '%s'.", login_identifier, exc_info=True)
+                if require_employee_directory:
+                    raise RuntimeError("Could not update app user directory profile.") from exc
             return user_id
 
         user_id = f"usr-{uuid.uuid4().hex[:20]}"
@@ -206,6 +322,8 @@ class RepositoryCoreIdentityMixin:
                     login_identifier,
                     identity["email"],
                     identity["network_id"],
+                    identity["employee_id"],
+                    identity["manager_id"],
                     identity["first_name"],
                     identity["last_name"],
                     str(identity.get("display_name") or self._principal_to_display_name(login_identifier)),
@@ -217,8 +335,10 @@ class RepositoryCoreIdentityMixin:
                 app_user_directory=self._table("app_user_directory"),
             )
             return user_id
-        except (DataExecutionError, DataConnectionError):
+        except (DataExecutionError, DataConnectionError) as exc:
             LOGGER.warning("Failed to create user directory record for '%s'.", login_identifier, exc_info=True)
+            if require_employee_directory:
+                raise RuntimeError("Could not create app user directory record.") from exc
             return login_identifier
 
     def _actor_ref(self, user_principal: str) -> str:

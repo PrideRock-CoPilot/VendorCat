@@ -15,6 +15,41 @@ LOGGER = logging.getLogger(__name__)
 
 
 class RepositoryWorkflowRequestMixin:
+    def create_access_request(
+        self,
+        *,
+        requestor_user_principal: str,
+        requested_role: str,
+        justification: str,
+    ) -> str:
+        requestor_raw = str(requestor_user_principal or "").strip()
+        role_code = str(requested_role or "").strip().lower()
+        if not requestor_raw:
+            raise ValueError("Requester principal is required.")
+        if not role_code:
+            raise ValueError("Requested role is required.")
+        justification_text = str(justification or "").strip()
+        if not justification_text:
+            raise ValueError("Justification is required.")
+        profile = self.get_user_directory_profile(requestor_raw) or {}
+        payload = {
+            "requested_role": role_code,
+            "reason": justification_text,
+            "requestor_login_identifier": str(profile.get("login_identifier") or requestor_raw).strip(),
+            "requestor_email": str(profile.get("email") or "").strip() or None,
+            "requestor_network_id": str(profile.get("network_id") or "").strip() or None,
+            "requestor_first_name": str(profile.get("first_name") or "").strip() or None,
+            "requestor_last_name": str(profile.get("last_name") or "").strip() or None,
+            "requestor_employee_id": str(profile.get("employee_id") or "").strip() or None,
+            "requestor_manager_id": str(profile.get("manager_id") or "").strip() or None,
+        }
+        return self.create_vendor_change_request(
+            vendor_id=GLOBAL_CHANGE_VENDOR_ID,
+            requestor_user_principal=requestor_raw,
+            change_type="request_access",
+            payload=payload,
+        )
+
     def create_vendor_change_request(
         self, vendor_id: str, requestor_user_principal: str, change_type: str, payload: dict
     ) -> str:
@@ -204,4 +239,3 @@ class RepositoryWorkflowRequestMixin:
             LOGGER.warning("Failed to write vendor audit record for '%s'.", vendor_id, exc_info=True)
 
         return {"request_id": request_id, "change_event_id": change_event_id}
-

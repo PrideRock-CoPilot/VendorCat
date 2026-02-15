@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from typing import Any
 
 import pandas as pd
+from vendor_catalog_app.core.security import ACCESS_REQUEST_ALLOWED_ROLES
 from vendor_catalog_app.core.repository_constants import *
 from vendor_catalog_app.infrastructure.db import (
     DataConnectionError,
@@ -461,6 +463,39 @@ class RepositoryReportingVendorsMixin:
         except (DataExecutionError, DataConnectionError):
             LOGGER.debug("Failed to write create_workflow_event for '%s'.", request_id, exc_info=True)
 
+        if target_status == "approved" and str(current.get("change_type") or "").strip().lower() == "request_access":
+            requested_payload = str(current.get("requested_payload_json") or "").strip()
+            try:
+                payload = json.loads(requested_payload) if requested_payload else {}
+            except Exception:
+                payload = {}
+            requested_role = str((payload or {}).get("requested_role") or "").strip().lower()
+            requestor_ref = str(
+                current.get("requestor_user_principal_raw")
+                or current.get("requestor_user_principal")
+                or ""
+            ).strip()
+            if requestor_ref and requested_role in set(ACCESS_REQUEST_ALLOWED_ROLES):
+                try:
+                    self.grant_role(
+                        target_user_principal=requestor_ref,
+                        role_code=requested_role,
+                        granted_by=actor_user_principal,
+                    )
+                except Exception:
+                    LOGGER.warning(
+                        "Approved access request could not be auto-granted for '%s' role '%s'.",
+                        requestor_ref,
+                        requested_role,
+                        exc_info=True,
+                    )
+            elif requestor_ref and requested_role:
+                LOGGER.warning(
+                    "Approved access request requested disallowed role '%s' for '%s'.",
+                    requested_role,
+                    requestor_ref,
+                )
+
         updated_row = self.get_change_request_by_id(request_id)
         return updated_row or {"change_request_id": request_id, "status": target_status}
 
@@ -585,4 +620,3 @@ class RepositoryReportingVendorsMixin:
             "active_service_type_values": active_service_type_values,
             "total_spend_window": float(spend["total_spend"].sum()) if "total_spend" in spend else 0.0,
         }
-

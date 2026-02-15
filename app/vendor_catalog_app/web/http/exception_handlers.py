@@ -88,6 +88,16 @@ def register_exception_handlers(app: FastAPI, templates: Jinja2Templates) -> Non
     @app.exception_handler(StarletteHTTPException)
     async def _http_error_handler(request: Request, exc: StarletteHTTPException):
         if not is_api_request(request):
+            if int(getattr(exc, "status_code", 500) or 500) == 404:
+                return templates.TemplateResponse(
+                    request,
+                    "404.html",
+                    {
+                        "request": request,
+                        "missing_path": str(request.url.path or "/"),
+                    },
+                    status_code=404,
+                )
             return await http_exception_handler(request, exc)
         spec = normalize_exception(exc)
         return api_error_response(

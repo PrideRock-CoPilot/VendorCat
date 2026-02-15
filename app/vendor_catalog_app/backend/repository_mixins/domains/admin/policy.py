@@ -183,6 +183,17 @@ class RepositoryAdminPolicyMixin:
     def resolve_role_policy(self, user_roles: set[str]) -> dict[str, Any]:
         """Resolve effective capabilities for the supplied role set."""
         active_roles = {str(role).strip() for role in (user_roles or set()) if str(role).strip()}
+        if not active_roles:
+            return {
+                "roles": [],
+                "can_edit": False,
+                "can_report": False,
+                "can_submit_requests": True,
+                "can_approve_requests": False,
+                "can_direct_apply": False,
+                "approval_level": 0,
+                "allowed_change_actions": ["request_access"],
+            }
         definitions = self.list_role_definitions()
         def_by_role: dict[str, dict[str, Any]] = {}
         for row in definitions.to_dict("records"):
@@ -346,4 +357,3 @@ class RepositoryAdminPolicyMixin:
                 sec_role_permission=self._table("sec_role_permission"),
             )
         self.bump_security_policy_version(updated_by=updated_by)
-

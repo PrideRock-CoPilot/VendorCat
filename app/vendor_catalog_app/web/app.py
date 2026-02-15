@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import uuid
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -27,6 +28,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(title="Vendor Catalog", lifespan=create_app_lifespan(settings))
     observability = get_observability_manager()
+    app.state.startup_splash_run_id = uuid.uuid4().hex
 
     base_dir = Path(__file__).resolve().parent
     templates = Jinja2Templates(directory=str(base_dir / "templates"))

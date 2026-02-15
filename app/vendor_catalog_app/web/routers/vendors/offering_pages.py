@@ -358,6 +358,31 @@ def offering_detail_page(
         )
     show_data_feed_editor = bool(section_key == "dataflow" and (selected_data_flow or new_data_feed))
 
+    offering_owner_rows = owners_df[owners_df["offering_id"].astype(str) == str(offering_id)].to_dict("records")
+    owner_principals = [str(row.get("owner_user_principal") or "").strip() for row in offering_owner_rows]
+    owner_status_map = repo.get_employee_directory_status_map(owner_principals)
+    owner_integrity_warning_count = 0
+    for row in offering_owner_rows:
+        principal = str(row.get("owner_user_principal") or "").strip()
+        normalized = principal.lower()
+        status_row = owner_status_map.get(
+            normalized,
+            {
+                "status": "missing",
+                "active": False,
+                "login_identifier": None,
+                "display_name": None,
+            },
+        )
+        owner_status = str(status_row.get("status") or "missing").strip().lower()
+        active_assignment = str(row.get("active_flag") or "").strip().lower() not in {"0", "false", "no", "n"}
+        row["owner_identity_status"] = owner_status
+        row["owner_identity_active"] = bool(status_row.get("active"))
+        row["owner_identity_display_name"] = str(status_row.get("display_name") or "").strip()
+        row["owner_identity_warning"] = bool(active_assignment and owner_status != "active")
+        if row["owner_identity_warning"]:
+            owner_integrity_warning_count += 1
+
     context = base_template_context(
         request=request,
         context=base["user"],
@@ -372,7 +397,8 @@ def offering_detail_page(
             "offering_options": offering_options,
             "return_to": base["return_to"],
             "portfolio_back": f"/vendors/{vendor_id}/offerings?return_to={quote(base['return_to'], safe='')}",
-            "offering_owners": owners_df[owners_df["offering_id"].astype(str) == str(offering_id)].to_dict("records"),
+            "offering_owners": offering_owner_rows,
+            "owner_integrity_warning_count": owner_integrity_warning_count,
             "offering_contacts": contacts_df[contacts_df["offering_id"].astype(str) == str(offering_id)].to_dict("records"),
             "offering_contracts": current_contracts,
             "offering_demos": current_demos,

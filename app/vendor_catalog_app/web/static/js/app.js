@@ -1,4 +1,389 @@
 document.addEventListener("DOMContentLoaded", () => {
+  const loadingOverlay = document.getElementById("loading-overlay");
+  const loadingOverlayStatus = document.getElementById("loading-overlay-status");
+  let loadingTimer = null;
+  let loadingSafetyTimer = null;
+  let loadingStatusTimer = null;
+
+  const parseDelayMs = (rawValue, fallback) => {
+    const parsed = Number.parseInt(String(rawValue || "").trim(), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+    return parsed;
+  };
+
+  const overlayMinDelayMs = parseDelayMs(loadingOverlay?.dataset?.minDelayMs, 2000);
+  const overlayMaxDelayMs = parseDelayMs(loadingOverlay?.dataset?.maxDelayMs, 5000);
+  const maxDelayMs = Math.max(overlayMinDelayMs, overlayMaxDelayMs);
+  const overlayShowDelayMs = parseDelayMs(loadingOverlay?.dataset?.showDelayMs, 220);
+  const overlaySlowStatusMs = parseDelayMs(loadingOverlay?.dataset?.slowStatusMs, 5000);
+  const overlaySafetyMs = parseDelayMs(
+    loadingOverlay?.dataset?.safetyMs,
+    Math.max(8000, maxDelayMs + 3000),
+  );
+
+  const setLoadingStatus = (message) => {
+    if (!(loadingOverlayStatus instanceof HTMLElement)) return;
+    const text = String(message || "").trim();
+    if (!text) return;
+    loadingOverlayStatus.textContent = text;
+  };
+
+  const showLoadingOverlay = (delayMs = 120, message = "Loading...") => {
+    if (!(loadingOverlay instanceof HTMLElement)) return;
+    if (loadingTimer) window.clearTimeout(loadingTimer);
+    if (loadingSafetyTimer) {
+      window.clearTimeout(loadingSafetyTimer);
+      loadingSafetyTimer = null;
+    }
+    if (loadingStatusTimer) {
+      window.clearTimeout(loadingStatusTimer);
+      loadingStatusTimer = null;
+    }
+    loadingTimer = window.setTimeout(() => {
+      setLoadingStatus(message);
+      loadingOverlay.classList.add("visible");
+      loadingSafetyTimer = window.setTimeout(() => {
+        hideLoadingOverlay(true);
+      }, overlaySafetyMs);
+      loadingStatusTimer = window.setTimeout(() => {
+        setLoadingStatus("Still loading. Waiting on database response...");
+      }, overlaySlowStatusMs);
+    }, delayMs);
+  };
+
+  const hideLoadingOverlay = (_force = false) => {
+    if (!(loadingOverlay instanceof HTMLElement)) return;
+    if (loadingTimer) {
+      window.clearTimeout(loadingTimer);
+      loadingTimer = null;
+    }
+    if (loadingSafetyTimer) {
+      window.clearTimeout(loadingSafetyTimer);
+      loadingSafetyTimer = null;
+    }
+    if (loadingStatusTimer) {
+      window.clearTimeout(loadingStatusTimer);
+      loadingStatusTimer = null;
+    }
+    loadingOverlay.classList.remove("visible");
+  };
+
+  const workspaceOverlay = document.getElementById("workspace-overlay");
+  const workspaceOverlayPanel = document.getElementById("workspace-overlay-panel");
+  const workspaceOverlayTitle = document.getElementById("workspace-overlay-title");
+  const workspaceOverlaySubtitle = document.getElementById("workspace-overlay-subtitle");
+  const workspaceOverlayContent = document.getElementById("workspace-overlay-content");
+  const workspaceOverlayFooter = document.getElementById("workspace-overlay-footer");
+  const workspaceOverlayCloseButtons = workspaceOverlay
+    ? Array.from(workspaceOverlay.querySelectorAll("[data-overlay-close]"))
+    : [];
+  const workspaceOverlayState = {
+    open: false,
+    dirty: false,
+    dirtyGuardEnabled: true,
+    restoreFocusElement: null,
+  };
+
+  const getFocusableElements = (root) => {
+    if (!(root instanceof HTMLElement)) return [];
+    const selector = [
+      "a[href]",
+      "button:not([disabled])",
+      "input:not([disabled])",
+      "select:not([disabled])",
+      "textarea:not([disabled])",
+      "[tabindex]:not([tabindex='-1'])",
+    ].join(", ");
+    return Array.from(root.querySelectorAll(selector)).filter((el) => {
+      if (!(el instanceof HTMLElement)) return false;
+      return !el.hasAttribute("hidden") && el.offsetParent !== null;
+    });
+  };
+
+  const setWorkspaceDirty = (dirty = true) => {
+    workspaceOverlayState.dirty = Boolean(dirty);
+  };
+
+  const closeWorkspaceOverlay = (force = false) => {
+    if (!(workspaceOverlay instanceof HTMLElement) || !(workspaceOverlayPanel instanceof HTMLElement)) return true;
+    if (!workspaceOverlayState.open) return true;
+    if (!force && workspaceOverlayState.dirtyGuardEnabled && workspaceOverlayState.dirty) {
+      const shouldDiscard = window.confirm("You have unsaved changes. Close this workspace?");
+      if (!shouldDiscard) return false;
+    }
+    workspaceOverlay.classList.remove("open");
+    workspaceOverlay.setAttribute("aria-hidden", "true");
+    window.setTimeout(() => {
+      workspaceOverlay.setAttribute("hidden", "hidden");
+      workspaceOverlayContent.innerHTML = "";
+      workspaceOverlayFooter.innerHTML = "";
+      workspaceOverlayFooter.classList.add("hidden");
+      workspaceOverlayPanel.classList.remove("workspace-overlay-panel-drawer", "workspace-overlay-panel-fullscreen");
+      document.body.classList.remove("workspace-overlay-body-lock");
+      workspaceOverlayState.open = false;
+      workspaceOverlayState.dirty = false;
+      workspaceOverlayState.restoreFocusElement?.focus?.();
+      workspaceOverlayState.restoreFocusElement = null;
+    }, 190);
+    return true;
+  };
+
+  const applyWorkspaceActions = (actions) => {
+    if (!(workspaceOverlayFooter instanceof HTMLElement)) return;
+    workspaceOverlayFooter.innerHTML = "";
+    if (!Array.isArray(actions) || !actions.length) {
+      workspaceOverlayFooter.classList.add("hidden");
+      return;
+    }
+    workspaceOverlayFooter.classList.remove("hidden");
+    actions.forEach((action, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = String(action?.label || `Action ${index + 1}`);
+      if (action?.className) button.className = String(action.className);
+      if (action?.close) {
+        button.dataset.overlayClose = "true";
+      }
+      button.addEventListener("click", () => {
+        const actionId = String(action?.actionId || `action_${index}`);
+        workspaceOverlay.dispatchEvent(new CustomEvent("workspace-overlay-action", { detail: { actionId } }));
+        if (action?.close) {
+          closeWorkspaceOverlay();
+        }
+      });
+      workspaceOverlayFooter.appendChild(button);
+    });
+  };
+
+  const openWorkspaceOverlay = (options = {}) => {
+    if (!(workspaceOverlay instanceof HTMLElement) || !(workspaceOverlayPanel instanceof HTMLElement)) return null;
+    const mode = String(options.mode || "drawer-right").trim().toLowerCase();
+    const title = String(options.title || "Workspace").trim();
+    const subtitle = String(options.subtitle || "").trim();
+    const templateId = String(options.templateId || "").trim();
+    const html = String(options.html || "").trim();
+    const dirtyGuardEnabled = options.dirtyGuard !== false;
+    const triggerElement = options.triggerElement instanceof HTMLElement
+      ? options.triggerElement
+      : document.activeElement;
+
+    workspaceOverlayState.restoreFocusElement = triggerElement instanceof HTMLElement ? triggerElement : null;
+    workspaceOverlayState.dirty = false;
+    workspaceOverlayState.dirtyGuardEnabled = dirtyGuardEnabled;
+
+    workspaceOverlayTitle.textContent = title || "Workspace";
+    if (subtitle) {
+      workspaceOverlaySubtitle.textContent = subtitle;
+      workspaceOverlaySubtitle.classList.remove("hidden");
+    } else {
+      workspaceOverlaySubtitle.textContent = "";
+      workspaceOverlaySubtitle.classList.add("hidden");
+    }
+
+    workspaceOverlayContent.innerHTML = "";
+    if (templateId) {
+      const sourceTemplate = document.getElementById(templateId);
+      if (sourceTemplate instanceof HTMLTemplateElement) {
+        workspaceOverlayContent.appendChild(sourceTemplate.content.cloneNode(true));
+      } else if (sourceTemplate instanceof HTMLElement) {
+        workspaceOverlayContent.appendChild(sourceTemplate.cloneNode(true));
+      }
+    } else if (html) {
+      workspaceOverlayContent.innerHTML = html;
+    } else if (options.content instanceof HTMLElement) {
+      workspaceOverlayContent.appendChild(options.content);
+    }
+
+    workspaceOverlayPanel.classList.remove("workspace-overlay-panel-drawer", "workspace-overlay-panel-fullscreen");
+    if (mode === "fullscreen") {
+      workspaceOverlayPanel.classList.add("workspace-overlay-panel-fullscreen");
+    } else {
+      workspaceOverlayPanel.classList.add("workspace-overlay-panel-drawer");
+    }
+
+    applyWorkspaceActions(options.actions);
+
+    workspaceOverlay.removeAttribute("hidden");
+    workspaceOverlay.classList.add("open");
+    workspaceOverlay.setAttribute("aria-hidden", "false");
+    document.body.classList.add("workspace-overlay-body-lock");
+
+    const focusable = getFocusableElements(workspaceOverlayPanel);
+    const autofocusTarget = workspaceOverlayContent.querySelector("[autofocus]");
+    if (autofocusTarget instanceof HTMLElement) {
+      autofocusTarget.focus();
+    } else if (focusable.length) {
+      focusable[0].focus();
+    } else {
+      workspaceOverlayPanel.focus();
+    }
+
+    workspaceOverlayState.open = true;
+    workspaceOverlayContent.querySelectorAll("form").forEach((formNode) => {
+      if (!(formNode instanceof HTMLFormElement)) return;
+      const watchDirty = String(formNode.dataset.overlayDirtyWatch || "true").toLowerCase() !== "false";
+      if (!watchDirty) return;
+      formNode.addEventListener("input", () => setWorkspaceDirty(true));
+      formNode.addEventListener("change", () => setWorkspaceDirty(true));
+      formNode.addEventListener("submit", () => setWorkspaceDirty(false));
+    });
+
+    applyTooltips(workspaceOverlayContent);
+    initCsrfForms(workspaceOverlayContent);
+    initTypeaheadKeyboard(workspaceOverlayContent);
+    initUserDirectoryTypeahead(workspaceOverlayContent);
+
+    workspaceOverlay.dispatchEvent(
+      new CustomEvent("workspace-overlay-opened", {
+        detail: {
+          mode,
+          title: workspaceOverlayTitle.textContent,
+          contentRoot: workspaceOverlayContent,
+        },
+      }),
+    );
+    return workspaceOverlayContent;
+  };
+
+  const onWorkspaceKeyDown = (event) => {
+    if (!workspaceOverlayState.open || !(workspaceOverlayPanel instanceof HTMLElement)) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeWorkspaceOverlay();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = getFocusableElements(workspaceOverlayPanel);
+    if (!focusable.length) {
+      event.preventDefault();
+      workspaceOverlayPanel.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey && active === first) {
+      event.preventDefault();
+      last.focus();
+      return;
+    }
+    if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+
+  window.VendorOverlay = {
+    open: openWorkspaceOverlay,
+    close: closeWorkspaceOverlay,
+    setDirty: setWorkspaceDirty,
+    clearDirty: () => setWorkspaceDirty(false),
+    isOpen: () => workspaceOverlayState.open,
+  };
+
+  if (workspaceOverlay instanceof HTMLElement) {
+    workspaceOverlay.addEventListener("keydown", onWorkspaceKeyDown);
+    workspaceOverlayCloseButtons.forEach((button) => {
+      if (!(button instanceof HTMLElement)) return;
+      button.addEventListener("click", () => {
+        closeWorkspaceOverlay();
+      });
+    });
+    workspaceOverlay.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (target.hasAttribute("data-overlay-close")) {
+        closeWorkspaceOverlay();
+      }
+    });
+  }
+
+  document.addEventListener("click", (event) => {
+    const target = event.target instanceof HTMLElement ? event.target.closest("[data-workspace-open]") : null;
+    if (!(target instanceof HTMLElement)) return;
+    event.preventDefault();
+    const templateId = String(target.dataset.workspaceTemplate || "").trim();
+    const mode = String(target.dataset.workspaceMode || "drawer-right").trim().toLowerCase();
+    const title = String(target.dataset.workspaceTitle || "Workspace").trim();
+    const subtitle = String(target.dataset.workspaceSubtitle || "").trim();
+    const dirtyGuard = String(target.dataset.workspaceDirtyGuard || "true").trim().toLowerCase() !== "false";
+    const contentRoot = openWorkspaceOverlay({
+      mode,
+      title,
+      subtitle,
+      templateId,
+      dirtyGuard,
+      triggerElement: target,
+    });
+    if (contentRoot instanceof HTMLElement) {
+      workspaceOverlay?.dispatchEvent(
+        new CustomEvent("workspace-overlay-template-opened", {
+          detail: {
+            templateId,
+            trigger: target,
+            contentRoot,
+          },
+        }),
+      );
+    }
+  });
+
+  const shouldShowLoadingForLink = (link) => {
+    if (!(link instanceof HTMLAnchorElement)) return false;
+    if (link.dataset.noLoading === "true") return false;
+    const href = String(link.getAttribute("href") || "").trim();
+    if (!href || href.startsWith("#") || href.startsWith("javascript:")) return false;
+    if (href.startsWith("mailto:") || href.startsWith("tel:")) return false;
+    if (link.hasAttribute("download")) return false;
+    const target = String(link.getAttribute("target") || "").trim().toLowerCase();
+    if (target && target !== "_self") return false;
+    try {
+      const resolved = new URL(link.href, window.location.href);
+      if (resolved.origin !== window.location.origin) return false;
+    } catch {
+      return false;
+    }
+    return true;
+  };
+
+  const shouldShowLoadingForForm = (form) => {
+    if (!(form instanceof HTMLFormElement)) return false;
+    if (form.dataset.noLoading === "true") return false;
+    const method = String(form.getAttribute("method") || "get").toLowerCase();
+    return ["get", "post", "put", "patch", "delete"].includes(method);
+  };
+
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (form instanceof HTMLFormElement && shouldShowLoadingForForm(form)) {
+      showLoadingOverlay(overlayShowDelayMs, "Saving changes...");
+    }
+  });
+
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const link = target.closest("a");
+    if (link instanceof HTMLAnchorElement && shouldShowLoadingForLink(link)) {
+      showLoadingOverlay(overlayShowDelayMs, "Loading next screen...");
+    }
+  });
+
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) {
+      hideLoadingOverlay(true);
+    }
+  });
+  window.addEventListener("popstate", () => {
+    hideLoadingOverlay(true);
+  });
+  window.addEventListener("load", () => {
+    hideLoadingOverlay(true);
+  });
+  window.addEventListener("beforeunload", () => {
+    showLoadingOverlay(overlayShowDelayMs, "Loading next screen...");
+  });
+
   const prettifyToken = (raw) =>
     String(raw || "")
       .replace(/[_-]+/g, " ")
@@ -364,6 +749,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         const href = row.getAttribute("data-href");
         if (href) {
+          showLoadingOverlay(overlayShowDelayMs, "Loading next screen...");
           window.location.href = href;
         }
       });
@@ -372,6 +758,7 @@ document.addEventListener("DOMContentLoaded", () => {
         event.preventDefault();
         const href = row.getAttribute("data-href");
         if (href) {
+          showLoadingOverlay(overlayShowDelayMs, "Loading next screen...");
           window.location.href = href;
         }
       });

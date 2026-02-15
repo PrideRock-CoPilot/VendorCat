@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from urllib.parse import quote
+import math
+from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
@@ -23,8 +24,54 @@ from vendor_catalog_app.web.routers.projects.common import (
 
 router = APIRouter(prefix="/projects")
 
+PROJECT_PAGE_SIZES = [25, 50, 100, 250]
+DEFAULT_PROJECT_PAGE_SIZE = 25
+MAX_PROJECT_PAGE_SIZE = 250
+MAX_PROJECT_LIST_ROWS = 5000
+
+
+def _normalize_project_page_size(raw_value: str | int | None) -> int:
+    try:
+        value = int(str(raw_value or DEFAULT_PROJECT_PAGE_SIZE).strip())
+    except Exception:
+        return DEFAULT_PROJECT_PAGE_SIZE
+    return max(1, min(value, MAX_PROJECT_PAGE_SIZE))
+
+
+def _normalize_project_page(raw_value: str | int | None) -> int:
+    try:
+        value = int(str(raw_value or 1).strip())
+    except Exception:
+        return 1
+    return max(1, value)
+
+
+def _projects_url(
+    *,
+    search: str,
+    status: str,
+    vendor: str,
+    page: int,
+    page_size: int,
+) -> str:
+    query = {
+        "search": search,
+        "status": status,
+        "vendor": vendor,
+        "page": str(page),
+        "page_size": str(page_size),
+    }
+    return f"/projects?{urlencode(query)}"
+
 @router.get("")
-def projects_home(request: Request, search: str = "", status: str = "all", vendor: str = "all"):
+def projects_home(
+    request: Request,
+    search: str = "",
+    status: str = "all",
+    vendor: str = "all",
+    page: int = 1,
+    page_size: int = DEFAULT_PROJECT_PAGE_SIZE,
+):
     repo = get_repo()
     user = get_user_context(request)
     ensure_session_started(request, user)
@@ -41,7 +88,21 @@ def projects_home(request: Request, search: str = "", status: str = "all", vendo
             row = profile.iloc[0].to_dict()
             vendor_label = str(row.get("display_name") or row.get("legal_name") or vendor)
 
-    rows = repo.list_all_projects(search_text=search, status=status, vendor_id=vendor).to_dict("records")
+    page_size = _normalize_project_page_size(page_size)
+    page = _normalize_project_page(page)
+    rows_df = repo.list_all_projects(
+        search_text=search,
+        status=status,
+        vendor_id=vendor,
+        limit=MAX_PROJECT_LIST_ROWS,
+    ).copy()
+    total_rows = int(len(rows_df.index))
+    page_count = max(1, math.ceil(total_rows / page_size)) if total_rows else 1
+    if page > page_count:
+        page = page_count
+    start = (page - 1) * page_size
+    end = start + page_size
+    rows = rows_df.iloc[start:end].to_dict("records")
     for row in rows:
         project_id = str(row.get("project_id") or "")
         if not str(row.get("vendor_display_name") or "").strip():
@@ -49,15 +110,46 @@ def projects_home(request: Request, search: str = "", status: str = "all", vendo
         row["_open_link"] = f"/projects/{project_id}/summary?return_to=%2Fprojects"
         row["_edit_link"] = f"/projects/{project_id}/edit?return_to=%2Fprojects"
 
+    prev_page = page - 1 if page > 1 else 1
+    next_page = page + 1 if page < page_count else page_count
+    show_from = (start + 1) if total_rows else 0
+    show_to = min(end, total_rows)
+
     context = base_template_context(
         request=request,
         context=user,
         title="Projects",
         active_nav="projects",
         extra={
-            "filters": {"search": search, "status": status, "vendor": vendor, "vendor_label": vendor_label},
+            "filters": {
+                "search": search,
+                "status": status,
+                "vendor": vendor,
+                "vendor_label": vendor_label,
+                "page": page,
+                "page_size": page_size,
+            },
             "status_options": PROJECT_STATUSES,
+            "page_sizes": PROJECT_PAGE_SIZES,
             "rows": rows,
+            "total_rows": total_rows,
+            "page_count": page_count,
+            "show_from": show_from,
+            "show_to": show_to,
+            "prev_page_url": _projects_url(
+                search=search,
+                status=status,
+                vendor=vendor,
+                page=prev_page,
+                page_size=page_size,
+            ),
+            "next_page_url": _projects_url(
+                search=search,
+                status=status,
+                vendor=vendor,
+                page=next_page,
+                page_size=page_size,
+            ),
         },
     )
     return request.app.state.templates.TemplateResponse(request, "projects.html", context)

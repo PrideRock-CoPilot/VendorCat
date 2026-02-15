@@ -13,6 +13,7 @@ if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
 from vendor_catalog_app.web.app import create_app
+from vendor_catalog_app.web.core.runtime import get_config, get_repo
 from vendor_catalog_app.web.routers import imports as imports_router
 
 
@@ -75,7 +76,12 @@ def _clear_import_state() -> None:
     imports_router._IMPORT_PREVIEW_STORE.clear()
 
 
-def test_import_template_download_returns_csv(_clear_import_state: None) -> None:
+def test_import_template_download_returns_csv(
+    _clear_import_state: None,
+    isolated_local_db: Path,
+) -> None:
+    get_config.cache_clear()
+    get_repo.cache_clear()
     app = create_app()
     client = TestClient(app)
     response = client.get("/imports/templates/vendors.csv")
@@ -88,6 +94,7 @@ def test_import_template_download_returns_csv(_clear_import_state: None) -> None
 def test_import_preview_and_apply_vendor_create(
     _clear_import_state: None,
     monkeypatch: pytest.MonkeyPatch,
+    isolated_local_db: Path,
 ) -> None:
     fake_repo = _FakeRepo()
     monkeypatch.setattr(imports_router, "get_repo", lambda: fake_repo)
@@ -95,6 +102,8 @@ def test_import_preview_and_apply_vendor_create(
     monkeypatch.setattr(imports_router, "ensure_session_started", lambda _request, _user: None)
     monkeypatch.setattr(imports_router, "log_page_view", lambda _request, _user, _name: None)
 
+    get_config.cache_clear()
+    get_repo.cache_clear()
     app = create_app()
     client = TestClient(app)
 

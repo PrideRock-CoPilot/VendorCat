@@ -1,0 +1,1013 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="breadcrumbs">
+  <a href="/demos">Demos</a>
+  <span class="breadcrumb-sep">/</span>
+  <span aria-current="page">Forms</span>
+</div>
+
+<h1>Demo Forms Library</h1>
+<p class="muted">Create and manage reusable form templates. Edits create new versions to preserve prior demo usage.</p>
+<div class="button-group section-divider">
+  <a class="button-link subtle {% if demo_tab == 'outcomes' %}active-tab{% endif %}" href="/demos">Outcomes</a>
+  <a class="button-link subtle {% if demo_tab == 'forms' %}active-tab{% endif %}" href="/demos/forms">Forms</a>
+</div>
+
+<section class="card">
+  <form method="get" action="/demos/forms" class="grid grid-3">
+    <label>
+      Search Forms
+      <input type="text" name="q" value="{{ forms_filters.q }}" placeholder="Name or template key">
+    </label>
+    <label>
+      Include Inactive
+      <select name="include_inactive">
+        <option value="0" {% if not forms_filters.include_inactive %}selected{% endif %}>No</option>
+        <option value="1" {% if forms_filters.include_inactive %}selected{% endif %}>Yes</option>
+      </select>
+    </label>
+    <div class="button-group">
+      <button type="submit">Apply Filters</button>
+      <a class="button-link subtle" href="/demos/forms">Reset</a>
+      {% if can_edit %}
+      <a
+        class="button-link subtle"
+        href="/demos/forms?include_inactive={{ 1 if forms_filters.include_inactive else 0 }}&q={{ forms_filters.q|urlencode }}&designer=1"
+        data-open-demo-designer
+      >New Form Workspace</a>
+      {% endif %}
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Library</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Template</th><th>Key</th><th>Version</th><th>Status</th><th>Questions</th><th>Created By</th><th>Updated</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for item in forms_catalog %}
+        <tr>
+          <td><strong>{{ item.title }}</strong></td>
+          <td><code>{{ item.template_key }}</code></td>
+          <td>v{{ item.current_version }}</td>
+          <td>{{ item.status }}</td>
+          <td>{{ item.question_count }}</td>
+          <td>{{ item.created_by }}</td>
+          <td>{{ item.created_at }}</td>
+          <td class="queue-row-actions">
+            <a class="button-link subtle" href="/demos/forms/{{ item.template_key }}/preview">Preview</a>
+            {% if can_edit %}
+            <a
+              class="button-link subtle"
+              href="/demos/forms?template_key={{ item.template_key }}&include_inactive={{ 1 if forms_filters.include_inactive else 0 }}&q={{ forms_filters.q|urlencode }}&designer=1"
+              data-open-demo-designer
+            >Edit</a>
+            {% endif %}
+            <form method="post" action="/demos/forms/{{ item.template_key }}/copy" class="queue-inline-action">
+              <button type="submit">Copy</button>
+            </form>
+            <form method="post" action="/demos/forms/{{ item.template_key }}/delete" class="queue-inline-action" onsubmit="return confirm('Delete this form template? Existing demo attachments will remain unchanged.');">
+              <button type="submit" class="button-link subtle">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8">No forms found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if can_edit %}
+<template id="demo-form-designer-template">
+  <section class="designer-workspace-shell">
+    <form method="post" action="/demos/forms/save" id="template-designer-form" data-overlay-dirty-watch="true">
+      <input type="hidden" name="template_key" value="{{ selected_template.template_key if selected_template else '' }}">
+      <div class="card section-divider">
+        <div class="designer-workspace-header">
+          <div>
+            <h2>{% if selected_template %}Edit Form Template{% else %}Create New Form Template{% endif %}</h2>
+            <p class="muted">Design reusable review forms with weighted scoring and version-safe updates.</p>
+          </div>
+          <div class="button-group">
+            <button class="button-link subtle" type="button" id="designer-preview-toggle">Preview</button>
+            <a
+              class="button-link subtle"
+              href="/demos/forms?template_key={{ selected_template.template_key if selected_template else '' }}&include_inactive={{ 1 if forms_filters.include_inactive else 0 }}&q={{ forms_filters.q|urlencode }}&designer=1"
+              target="_blank"
+              rel="noopener noreferrer"
+            >Open In New Tab</a>
+            <button type="submit">{% if selected_template %}Save New Version{% else %}Create Template{% endif %}</button>
+            <button class="button-link subtle" type="button" data-overlay-close>Close</button>
+          </div>
+        </div>
+
+        <div class="grid grid-2">
+          <label>Template Title
+            <input type="text" name="template_title" value="{{ selected_template.title if selected_template else 'Demo Evaluation Form' }}" required>
+          </label>
+          <label>Instructions
+            <textarea name="instructions" rows="2" placeholder="Explain how reviewers should complete this form.">{% if selected_template %}{{ selected_template.instructions }}{% endif %}</textarea>
+          </label>
+        </div>
+      </div>
+
+      <div class="designer-shell section-divider">
+        <aside class="designer-palette">
+          <h3>Question Blocks</h3>
+          <button class="button-link subtle designer-block-btn" type="button" data-new-type="scale">Slider / Scale</button>
+          <button class="button-link subtle designer-block-btn" type="button" data-new-type="boolean">Yes / No</button>
+          <button class="button-link subtle designer-block-btn" type="button" data-new-type="multi_choice">Multi Choice</button>
+          <button class="button-link subtle designer-block-btn" type="button" data-new-type="star_rating">Star Rating (1-5)</button>
+          <button class="button-link subtle designer-block-btn" type="button" data-new-type="likert_scale">Likert Scale</button>
+          <button class="button-link subtle designer-block-btn" type="button" data-new-type="dropdown_select">Dropdown Select</button>
+          <button class="button-link subtle designer-block-btn" type="button" data-new-type="short_text">Short Text</button>
+          <button class="button-link subtle designer-block-btn" type="button" data-new-type="long_text">Long Comment</button>
+          <button class="button-link subtle designer-block-btn" type="button" data-new-type="section_header">Section Header</button>
+        </aside>
+
+        <div class="designer-canvas-wrap">
+          <div class="designer-toolbar">
+            <div class="inline-form">
+              <span class="muted" id="designer-count-label">0 questions</span>
+              <span class="muted" id="designer-mode-label">Edit mode</span>
+            </div>
+            <div class="button-group">
+              <button class="button-link subtle" type="button" id="designer-export-json">Export JSON</button>
+              <button class="button-link subtle" type="button" id="designer-import-json">Import JSON</button>
+              <button class="button-link subtle" type="button" id="designer-clear-draft">Clear Draft</button>
+            </div>
+          </div>
+          <div id="designer-canvas" class="designer-canvas"></div>
+          <div id="designer-import-pane" class="designer-import-pane hidden">
+            <label>Paste Template JSON
+              <textarea id="designer-import-json-text" rows="8" placeholder='{"title":"Form title","instructions":"","questions":[...]}'></textarea>
+            </label>
+            <div class="button-group">
+              <button type="button" id="designer-import-apply">Load JSON</button>
+              <button type="button" id="designer-import-cancel" class="button-link subtle">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <aside class="designer-properties">
+          <h3>Properties</h3>
+          <div id="designer-empty-state" class="muted">Select a question to edit properties.</div>
+          <div id="designer-props-panel" class="hidden">
+            <label>Question Label
+              <input type="text" id="prop-label" maxlength="160">
+            </label>
+            <label>Question Type
+              <select id="prop-type">
+                <option value="scale">Slider / Scale</option>
+                <option value="boolean">Yes / No</option>
+                <option value="multi_choice">Multi Choice</option>
+                <option value="star_rating">Star Rating (1-5)</option>
+                <option value="likert_scale">Likert Scale</option>
+                <option value="dropdown_select">Dropdown Select</option>
+                <option value="short_text">Short Text</option>
+                <option value="long_text">Long Comment</option>
+                <option value="section_header">Section Header</option>
+              </select>
+            </label>
+            <label>Weight
+              <input type="number" id="prop-weight" min="0.01" step="0.01">
+            </label>
+            <label>Help Text
+              <textarea id="prop-help" rows="2" maxlength="240"></textarea>
+            </label>
+            <label>Required
+              <select id="prop-required">
+                <option value="true">Required</option>
+                <option value="false">Optional</option>
+              </select>
+            </label>
+            <label>Layout
+              <select id="prop-layout">
+                <option value="vertical">Vertical</option>
+                <option value="horizontal">Horizontal</option>
+                <option value="dropdown">Dropdown</option>
+              </select>
+            </label>
+            <label>Placeholder
+              <input type="text" id="prop-placeholder" maxlength="120">
+            </label>
+            <label id="prop-allow-multiple-wrap">Allow Multiple Selections
+              <select id="prop-allow-multiple">
+                <option value="false">No</option>
+                <option value="true">Yes</option>
+              </select>
+            </label>
+            <div id="prop-scale-fields">
+              <label>Scale Min
+                <input type="number" id="prop-scale-min" step="0.1">
+              </label>
+              <label>Scale Max
+                <input type="number" id="prop-scale-max" step="0.1">
+              </label>
+              <label>Scale Step
+                <input type="number" id="prop-scale-step" step="0.01">
+              </label>
+            </div>
+            <div id="prop-option-fields">
+              <div class="designer-option-toolbar">
+                <button type="button" id="prop-option-add" class="button-link subtle">Add Option</button>
+                <button type="button" id="prop-option-preset-yes-no" class="button-link subtle">Preset Yes/No</button>
+                <button type="button" id="prop-option-preset-likert5" class="button-link subtle">Preset Likert 5</button>
+                <button type="button" id="prop-option-preset-likert7" class="button-link subtle">Preset Likert 7</button>
+              </div>
+              <div class="table-wrap">
+                <table class="designer-option-table">
+                  <thead>
+                    <tr><th>Label</th><th>Value</th><th>Weight</th><th>Action</th></tr>
+                  </thead>
+                  <tbody id="prop-option-table-body"></tbody>
+                </table>
+              </div>
+              <input type="hidden" id="prop-options">
+              <input type="hidden" id="prop-option-weights">
+            </div>
+            <div class="button-group">
+              <button type="button" id="prop-apply-btn">Apply</button>
+            </div>
+            <div class="button-group section-divider">
+              <button type="button" id="prop-move-up" class="button-link subtle">Move Up</button>
+              <button type="button" id="prop-move-down" class="button-link subtle">Move Down</button>
+              <button type="button" id="prop-duplicate" class="button-link subtle">Duplicate</button>
+              <button type="button" id="prop-delete" class="button-link subtle">Delete</button>
+            </div>
+          </div>
+        </aside>
+      </div>
+      <div id="designer-hidden-inputs"></div>
+    </form>
+    {% if selected_versions %}
+    <section class="card section-divider">
+      <h3>Version History</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Version</th><th>Status</th><th>Created</th><th>By</th><th>Questions</th></tr>
+          </thead>
+          <tbody>
+          {% for version in selected_versions %}
+          <tr>
+            <td>v{{ version.template_version }}</td>
+            <td>{{ version.template_status }}</td>
+            <td>{{ version.created_at }}</td>
+            <td>{{ version.created_by }}</td>
+            <td>{{ version.questions|length }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {% endif %}
+  </section>
+</template>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+{% if can_edit %}
+<script>
+(function () {
+  const selectedTemplate = {{ (selected_template if selected_template else {}) | tojson }};
+  const initialQuestionsSeed = {{ (selected_template.questions if selected_template else []) | tojson }};
+  const shouldAutoOpenDesigner = {{ "true" if forms_filters.designer else "false" }};
+
+  function initTemplateDesigner(root) {
+    if (!(root instanceof HTMLElement)) return;
+    const form = root.querySelector("#template-designer-form");
+    if (!(form instanceof HTMLFormElement)) return;
+
+    const canvas = root.querySelector("#designer-canvas");
+    const hiddenInputs = root.querySelector("#designer-hidden-inputs");
+    const emptyState = root.querySelector("#designer-empty-state");
+    const propsPanel = root.querySelector("#designer-props-panel");
+    const previewToggle = root.querySelector("#designer-preview-toggle");
+    const countLabel = root.querySelector("#designer-count-label");
+    const modeLabel = root.querySelector("#designer-mode-label");
+    const propScaleFields = root.querySelector("#prop-scale-fields");
+    const propOptionFields = root.querySelector("#prop-option-fields");
+    const propAllowMultipleWrap = root.querySelector("#prop-allow-multiple-wrap");
+    const optionTableBody = root.querySelector("#prop-option-table-body");
+    const propWeightInput = root.querySelector("#prop-weight");
+    const propRequiredSelect = root.querySelector("#prop-required");
+    const importPane = root.querySelector("#designer-import-pane");
+    const importText = root.querySelector("#designer-import-json-text");
+    const exportJsonButton = root.querySelector("#designer-export-json");
+    const importJsonButton = root.querySelector("#designer-import-json");
+    const importApplyButton = root.querySelector("#designer-import-apply");
+    const importCancelButton = root.querySelector("#designer-import-cancel");
+    const clearDraftButton = root.querySelector("#designer-clear-draft");
+    const optionAddButton = root.querySelector("#prop-option-add");
+    const optionPresetYesNoButton = root.querySelector("#prop-option-preset-yes-no");
+    const optionPresetLikert5Button = root.querySelector("#prop-option-preset-likert5");
+    const optionPresetLikert7Button = root.querySelector("#prop-option-preset-likert7");
+    if (!(canvas instanceof HTMLElement) || !(hiddenInputs instanceof HTMLElement) || !(emptyState instanceof HTMLElement)) return;
+
+    let previewMode = false;
+    let selectedIndex = -1;
+    const SCALE_TYPES = new Set(["scale", "star_rating"]);
+    const OPTION_TYPES = new Set(["boolean", "multi_choice", "likert_scale", "dropdown_select"]);
+    const TEXT_TYPES = new Set(["short_text", "long_text"]);
+    const NON_SCORED_TYPES = new Set(["short_text", "long_text", "section_header"]);
+    const ALLOWED_TYPES = new Set([
+      "scale",
+      "boolean",
+      "multi_choice",
+      "star_rating",
+      "likert_scale",
+      "dropdown_select",
+      "short_text",
+      "long_text",
+      "section_header",
+    ]);
+    const templateTitleInput = form.querySelector('input[name="template_title"]');
+    const instructionsInput = form.querySelector('textarea[name="instructions"]');
+    const baseTemplateKey = String(selectedTemplate?.template_key || "new").trim().toLowerCase() || "new";
+    const draftStorageKey = `tvendor_demo_form_designer_${baseTemplateKey}`;
+    let optionDrafts = [];
+
+    const numberOrDefault = (value, fallback, minValue = null, maxValue = null) => {
+      const parsed = Number.parseFloat(String(value ?? "").trim());
+      let out = Number.isFinite(parsed) ? parsed : fallback;
+      if (Number.isFinite(minValue)) out = Math.max(minValue, out);
+      if (Number.isFinite(maxValue)) out = Math.min(maxValue, out);
+      return out;
+    };
+
+    const defaultOptionsForType = (type) => {
+      if (type === "boolean") {
+        return [
+          { value: "yes", label: "Yes", weight: 1 },
+          { value: "no", label: "No", weight: 0 },
+        ];
+      }
+      if (type === "multi_choice") {
+        return [
+          { value: "option_1", label: "Option 1", weight: 1 },
+          { value: "option_2", label: "Option 2", weight: 0.5 },
+          { value: "option_3", label: "Option 3", weight: 0 },
+        ];
+      }
+      if (type === "likert_scale") {
+        return [
+          { value: "strongly_disagree", label: "Strongly Disagree", weight: 1 },
+          { value: "disagree", label: "Disagree", weight: 2 },
+          { value: "neutral", label: "Neutral", weight: 3 },
+          { value: "agree", label: "Agree", weight: 4 },
+          { value: "strongly_agree", label: "Strongly Agree", weight: 5 },
+        ];
+      }
+      if (type === "dropdown_select") {
+        return [
+          { value: "option_1", label: "Option 1", weight: 1 },
+          { value: "option_2", label: "Option 2", weight: 0 },
+        ];
+      }
+      return [];
+    };
+
+    const defaultLabelForType = (type) => {
+      if (type === "section_header") return "Section Header";
+      if (type === "short_text") return "Short Answer";
+      if (type === "long_text") return "Long Comment";
+      if (type === "star_rating") return "Overall Star Rating";
+      if (type === "likert_scale") return "I found the demo valuable";
+      if (type === "dropdown_select") return "Choose one option";
+      if (type === "boolean") return "Was the objective met?";
+      if (type === "multi_choice") return "Select applicable options";
+      return "Business Fit";
+    };
+
+    const likertPreset = (points) => {
+      if (points === 7) {
+        return [
+          { value: "strongly_disagree", label: "Strongly Disagree", weight: 1 },
+          { value: "disagree", label: "Disagree", weight: 2 },
+          { value: "somewhat_disagree", label: "Somewhat Disagree", weight: 3 },
+          { value: "neutral", label: "Neutral", weight: 4 },
+          { value: "somewhat_agree", label: "Somewhat Agree", weight: 5 },
+          { value: "agree", label: "Agree", weight: 6 },
+          { value: "strongly_agree", label: "Strongly Agree", weight: 7 },
+        ];
+      }
+      return defaultOptionsForType("likert_scale");
+    };
+
+    const cloneQuestionState = (question) => JSON.parse(JSON.stringify(question || {}));
+
+    const persistDraft = () => {
+      try {
+        const payload = {
+          title: String(templateTitleInput?.value || "").trim(),
+          instructions: String(instructionsInput?.value || "").trim(),
+          questions,
+          updated_at: new Date().toISOString(),
+        };
+        window.localStorage.setItem(draftStorageKey, JSON.stringify(payload));
+      } catch (_err) {
+        // best-effort draft persistence
+      }
+    };
+
+    const clearDraft = () => {
+      try {
+        window.localStorage.removeItem(draftStorageKey);
+      } catch (_err) {
+        // ignore localStorage errors
+      }
+    };
+
+    const optionRowsToHidden = (rows) => {
+      const labels = rows.map((row) => row.label).join(", ");
+      const weights = rows.map((row) => String(row.weight)).join(", ");
+      const labelsInput = root.querySelector("#prop-options");
+      const weightsInput = root.querySelector("#prop-option-weights");
+      if (labelsInput instanceof HTMLInputElement) labelsInput.value = labels;
+      if (weightsInput instanceof HTMLInputElement) weightsInput.value = weights;
+    };
+
+    const normalizeQuestion = (question, index) => {
+      const type = String(question?.question_type || question?.type || "scale").trim().toLowerCase();
+      const parsedType = ALLOWED_TYPES.has(type) ? type : "scale";
+      const label = String(question?.label || defaultLabelForType(parsedType) || `Question ${index + 1}`).trim();
+      const weightFloor = NON_SCORED_TYPES.has(parsedType) ? 0 : 0.01;
+      const weight = numberOrDefault(question?.weight, 1, weightFloor, 100);
+      const requiredRaw = String(question?.required ?? "true").trim().toLowerCase() !== "false";
+      const required = parsedType === "section_header" ? false : requiredRaw;
+      const layoutRaw = String(question?.layout || "vertical").trim().toLowerCase();
+      const layout = ["vertical", "horizontal", "dropdown"].includes(layoutRaw) ? layoutRaw : "vertical";
+      const placeholder = String(question?.placeholder || "");
+      const allowMultipleRaw = String(question?.allow_multiple || question?.allowMultiple || "false").trim().toLowerCase() === "true";
+      const helpText = String(question?.help_text || "");
+      const scaleMin = numberOrDefault(question?.scale_min, 1, 0, 1000);
+      let scaleMax = numberOrDefault(question?.scale_max, 5, 0.01, 1000);
+      if (!(scaleMax > scaleMin)) scaleMax = scaleMin + 1;
+      const scaleStep = numberOrDefault(question?.scale_step, 1, 0.01, 100);
+      const allowMultiple = parsedType === "multi_choice" ? allowMultipleRaw : false;
+      const normalizedLayout = parsedType === "dropdown_select"
+        ? "dropdown"
+        : (parsedType === "boolean" || parsedType === "likert_scale")
+          ? "horizontal"
+          : layout;
+      const normalizedScale = parsedType === "star_rating"
+        ? { min: 1, max: 5, step: 1 }
+        : { min: scaleMin, max: scaleMax, step: scaleStep };
+
+      let options = Array.isArray(question?.options) ? question.options : [];
+      if (!options.length && OPTION_TYPES.has(parsedType)) options = defaultOptionsForType(parsedType);
+
+      options = options.map((option, optionIndex) => {
+        const optionLabel = String(option?.label || `Option ${optionIndex + 1}`).trim();
+        const valueSeed = String(option?.value || optionLabel.toLowerCase().replace(/[^a-z0-9]+/g, "_")).trim();
+        const optionWeight = numberOrDefault(option?.weight, 1, 0, 100);
+        return {
+          value: valueSeed || `option_${optionIndex + 1}`,
+          label: optionLabel || `Option ${optionIndex + 1}`,
+          weight: optionWeight,
+        };
+      });
+
+      return {
+        label,
+        question_type: parsedType,
+        weight,
+        required,
+        layout: normalizedLayout,
+        placeholder,
+        allow_multiple: allowMultiple,
+        help_text: helpText,
+        scale_min: normalizedScale.min,
+        scale_max: normalizedScale.max,
+        scale_step: normalizedScale.step,
+        options,
+      };
+    };
+
+    let questions = (initialQuestionsSeed || []).map(normalizeQuestion);
+    if (!questions.length) questions = [normalizeQuestion({ label: "Business Fit", question_type: "scale" }, 0)];
+
+    const syncOptionDraftsFromQuestion = (question) => {
+      optionDrafts = (Array.isArray(question?.options) ? question.options : []).map((option, idx) => {
+        const label = String(option?.label || `Option ${idx + 1}`).trim() || `Option ${idx + 1}`;
+        const value = String(option?.value || slugify(label) || `option_${idx + 1}`).trim() || `option_${idx + 1}`;
+        const weight = numberOrDefault(option?.weight, 1, 0, 100);
+        return { label, value, weight };
+      });
+      if (!optionDrafts.length && OPTION_TYPES.has(String(question?.question_type || "").trim())) {
+        optionDrafts = defaultOptionsForType(String(question.question_type)).map((option) => ({
+          label: String(option.label),
+          value: String(option.value),
+          weight: numberOrDefault(option.weight, 1, 0, 100),
+        }));
+      }
+      optionRowsToHidden(optionDrafts);
+    };
+
+    const renderOptionTable = () => {
+      if (!(optionTableBody instanceof HTMLElement)) return;
+      optionTableBody.innerHTML = "";
+      optionDrafts.forEach((row, idx) => {
+        const tr = document.createElement("tr");
+        tr.dataset.optionIndex = String(idx);
+        tr.innerHTML = `
+          <td><input type="text" data-col="label" value="${row.label}" maxlength="80"></td>
+          <td><input type="text" data-col="value" value="${row.value}" maxlength="80"></td>
+          <td><input type="number" data-col="weight" value="${row.weight}" step="0.01" min="0" max="100"></td>
+          <td><button type="button" class="button-link subtle" data-col="remove">Remove</button></td>
+        `;
+        optionTableBody.appendChild(tr);
+      });
+      optionRowsToHidden(optionDrafts);
+    };
+
+    const applyOptionPreset = (presetName) => {
+      if (selectedIndex < 0 || selectedIndex >= questions.length) return;
+      if (presetName === "yes_no") {
+        optionDrafts = defaultOptionsForType("boolean");
+      } else if (presetName === "likert_5") {
+        optionDrafts = likertPreset(5);
+      } else if (presetName === "likert_7") {
+        optionDrafts = likertPreset(7);
+      }
+      renderOptionTable();
+    };
+
+    const optionSummary = (question) => {
+      if (question.question_type === "section_header") {
+        return "Visual divider with optional instructions.";
+      }
+      if (question.question_type === "short_text") {
+        return `Short text response${question.required ? " (required)" : " (optional)"}`;
+      }
+      if (question.question_type === "long_text") {
+        return `Long comment response${question.required ? " (required)" : " (optional)"}`;
+      }
+      if (SCALE_TYPES.has(question.question_type)) {
+        return `${question.scale_min} to ${question.scale_max} (step ${question.scale_step})`;
+      }
+      if (question.layout === "dropdown") {
+        return `Dropdown: ${(question.options || []).map((option) => option.label).join(", ")}`;
+      }
+      return (question.options || []).map((option) => `${option.label} (${option.weight})`).join("  |  ");
+    };
+
+    const previewFieldHtml = (question, index) => {
+      const fieldName = `preview_q_${index}`;
+      if (question.question_type === "section_header") {
+        return "<div class=\"muted\">Section header</div>";
+      }
+      if (question.question_type === "short_text") {
+        return `<input type="text" aria-label="${question.label}" placeholder="${question.placeholder || "Enter response"}">`;
+      }
+      if (question.question_type === "long_text") {
+        return `<textarea rows="3" aria-label="${question.label}" placeholder="${question.placeholder || "Enter response"}"></textarea>`;
+      }
+      if (question.question_type === "star_rating") {
+        return `<div class="inline-form">${[1, 2, 3, 4, 5].map((score) => `<label><input type="radio" name="${fieldName}" value="${score}"> ${score}★</label>`).join("")}</div>`;
+      }
+      if (question.question_type === "scale") {
+        return `<input type="range" min="${question.scale_min}" max="${question.scale_max}" step="${question.scale_step}" value="${question.scale_min}" aria-label="${question.label}">`;
+      }
+      if (question.layout === "dropdown") {
+        const options = (question.options || [])
+          .map((option) => `<option value="${option.value}">${option.label}</option>`)
+          .join("");
+        return `<select aria-label="${question.label}" ${question.allow_multiple ? "multiple" : ""}>${options}</select>`;
+      }
+      if (question.question_type === "boolean") {
+        return `<div class="inline-form">${(question.options || [])
+          .map((option) => `<label><input type="radio" name="${fieldName}" value="${option.value}"> ${option.label}</label>`)
+          .join("")}</div>`;
+      }
+      const inputType = question.allow_multiple ? "checkbox" : "radio";
+      return `<div class="inline-form">${(question.options || [])
+        .map((option) => `<label><input type="${inputType}" name="${fieldName}" value="${option.value}"> ${option.label}</label>`)
+        .join("")}</div>`;
+    };
+
+    const renderCanvas = () => {
+      canvas.innerHTML = "";
+      questions.forEach((question, index) => {
+        const card = document.createElement("article");
+        card.className = `designer-question-card${index === selectedIndex ? " selected" : ""}`;
+        card.dataset.index = String(index);
+        card.innerHTML = `
+          <header>
+            <strong>Q${index + 1}. ${question.label}</strong>
+            <span class="designer-chip">${question.question_type}</span>
+            <span class="designer-chip">weight ${question.weight}</span>
+            <span class="designer-chip">${question.layout}</span>
+          </header>
+          <p class="muted">${question.help_text || "No help text"}</p>
+          <p class="designer-option-preview">${optionSummary(question)}</p>
+          ${previewMode ? `<div class="designer-option-preview">${previewFieldHtml(question, index)}</div>` : ""}
+        `;
+        card.addEventListener("click", () => {
+          if (previewMode) return;
+          selectedIndex = index;
+          renderCanvas();
+          updatePropertyPanel();
+        });
+        canvas.appendChild(card);
+      });
+      countLabel.textContent = `${questions.length} question${questions.length === 1 ? "" : "s"}`;
+      modeLabel.textContent = previewMode ? "Preview mode" : "Edit mode";
+    };
+
+    const updatePropertyPanel = () => {
+      if (!(propsPanel instanceof HTMLElement)) return;
+      if (previewMode || selectedIndex < 0 || selectedIndex >= questions.length) {
+        emptyState.classList.remove("hidden");
+        propsPanel.classList.add("hidden");
+        return;
+      }
+      const question = questions[selectedIndex];
+      emptyState.classList.add("hidden");
+      propsPanel.classList.remove("hidden");
+      root.querySelector("#prop-label").value = question.label;
+      root.querySelector("#prop-type").value = question.question_type;
+      root.querySelector("#prop-weight").value = question.weight;
+      root.querySelector("#prop-help").value = question.help_text;
+      root.querySelector("#prop-required").value = question.required ? "true" : "false";
+      root.querySelector("#prop-layout").value = question.layout || "vertical";
+      root.querySelector("#prop-placeholder").value = question.placeholder || "";
+      root.querySelector("#prop-allow-multiple").value = question.allow_multiple ? "true" : "false";
+      root.querySelector("#prop-scale-min").value = question.scale_min;
+      root.querySelector("#prop-scale-max").value = question.scale_max;
+      root.querySelector("#prop-scale-step").value = question.scale_step;
+      const isScaleType = SCALE_TYPES.has(question.question_type);
+      const isOptionType = OPTION_TYPES.has(question.question_type);
+      propScaleFields.classList.toggle("hidden", !isScaleType);
+      propOptionFields.classList.toggle("hidden", !isOptionType);
+      propAllowMultipleWrap.classList.toggle("hidden", question.question_type !== "multi_choice");
+      if (propWeightInput instanceof HTMLInputElement) {
+        propWeightInput.disabled = question.question_type === "section_header";
+      }
+      if (propRequiredSelect instanceof HTMLSelectElement) {
+        propRequiredSelect.disabled = question.question_type === "section_header";
+      }
+      syncOptionDraftsFromQuestion(question);
+      renderOptionTable();
+    };
+
+    const slugify = (value) => (
+      String(value || "")
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "")
+      || "option"
+    );
+
+    const readOptionDraftsFromTable = () => {
+      if (!(optionTableBody instanceof HTMLElement)) return;
+      const rows = Array.from(optionTableBody.querySelectorAll("tr"));
+      const parsed = rows.map((row, idx) => {
+        const labelInput = row.querySelector('input[data-col="label"]');
+        const valueInput = row.querySelector('input[data-col="value"]');
+        const weightInput = row.querySelector('input[data-col="weight"]');
+        const label = String(labelInput?.value || "").trim() || `Option ${idx + 1}`;
+        const suggestedValue = slugify(label) || `option_${idx + 1}`;
+        const value = String(valueInput?.value || "").trim() || suggestedValue;
+        const weight = numberOrDefault(weightInput?.value, 1, 0, 100);
+        return { label, value, weight };
+      });
+      optionDrafts = parsed.filter((row) => row.label);
+      optionRowsToHidden(optionDrafts);
+    };
+
+    const applyPropertyChanges = () => {
+      if (selectedIndex < 0 || selectedIndex >= questions.length) return;
+      const question = questions[selectedIndex];
+      question.label = root.querySelector("#prop-label").value.trim() || `Question ${selectedIndex + 1}`;
+      question.question_type = root.querySelector("#prop-type").value;
+      const weightFloor = NON_SCORED_TYPES.has(question.question_type) ? 0 : 0.01;
+      question.weight = numberOrDefault(root.querySelector("#prop-weight").value, 1, weightFloor, 100);
+      question.help_text = root.querySelector("#prop-help").value.trim();
+      question.required = question.question_type === "section_header"
+        ? false
+        : (root.querySelector("#prop-required").value === "true");
+      question.layout = root.querySelector("#prop-layout").value;
+      if (question.question_type === "dropdown_select") question.layout = "dropdown";
+      if (question.question_type === "boolean" || question.question_type === "likert_scale") question.layout = "horizontal";
+      question.placeholder = root.querySelector("#prop-placeholder").value.trim();
+      question.allow_multiple = question.question_type === "multi_choice"
+        ? (root.querySelector("#prop-allow-multiple").value === "true")
+        : false;
+      question.scale_min = numberOrDefault(root.querySelector("#prop-scale-min").value, 1, 0, 1000);
+      question.scale_max = numberOrDefault(root.querySelector("#prop-scale-max").value, 5, 0.01, 1000);
+      if (!(question.scale_max > question.scale_min) && SCALE_TYPES.has(question.question_type)) {
+        question.scale_max = question.scale_min + 1;
+      }
+      question.scale_step = numberOrDefault(root.querySelector("#prop-scale-step").value, 1, 0.01, 100);
+      if (question.question_type === "star_rating") {
+        question.scale_min = 1;
+        question.scale_max = 5;
+        question.scale_step = 1;
+      }
+      if (OPTION_TYPES.has(question.question_type)) {
+        readOptionDraftsFromTable();
+        question.options = optionDrafts.map((row, idx) => ({
+          value: String(row.value || slugify(row.label) || `option_${idx + 1}`),
+          label: String(row.label || `Option ${idx + 1}`),
+          weight: numberOrDefault(row.weight, question.question_type === "boolean" ? (idx === 0 ? 1 : 0) : 1, 0, 100),
+        }));
+        if (!question.options.length) question.options = defaultOptionsForType(question.question_type);
+      } else {
+        question.options = [];
+      }
+      renderCanvas();
+      updatePropertyPanel();
+      window.VendorOverlay?.setDirty(true);
+      persistDraft();
+    };
+
+    const addQuestion = (type) => {
+      questions.push(normalizeQuestion({ label: defaultLabelForType(type), question_type: type }, questions.length));
+      selectedIndex = questions.length - 1;
+      renderCanvas();
+      updatePropertyPanel();
+      window.VendorOverlay?.setDirty(true);
+    };
+
+    const moveSelected = (delta) => {
+      if (selectedIndex < 0) return;
+      const target = selectedIndex + delta;
+      if (target < 0 || target >= questions.length) return;
+      const swap = questions[selectedIndex];
+      questions[selectedIndex] = questions[target];
+      questions[target] = swap;
+      selectedIndex = target;
+      renderCanvas();
+      updatePropertyPanel();
+      window.VendorOverlay?.setDirty(true);
+      persistDraft();
+    };
+
+    const duplicateSelected = () => {
+      if (selectedIndex < 0 || selectedIndex >= questions.length) return;
+      questions.splice(selectedIndex + 1, 0, JSON.parse(JSON.stringify(questions[selectedIndex])));
+      selectedIndex += 1;
+      renderCanvas();
+      updatePropertyPanel();
+      window.VendorOverlay?.setDirty(true);
+      persistDraft();
+    };
+
+    const deleteSelected = () => {
+      if (selectedIndex < 0 || selectedIndex >= questions.length) return;
+      questions.splice(selectedIndex, 1);
+      if (!questions.length) questions.push(normalizeQuestion({ label: "Business Fit", question_type: "scale" }, 0));
+      selectedIndex = Math.min(selectedIndex, questions.length - 1);
+      renderCanvas();
+      updatePropertyPanel();
+      window.VendorOverlay?.setDirty(true);
+      persistDraft();
+    };
+
+    const createHidden = (name, value) => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = name;
+      input.value = value;
+      return input;
+    };
+
+    const syncHiddenInputs = () => {
+      hiddenInputs.innerHTML = "";
+      questions.forEach((question) => {
+        hiddenInputs.appendChild(createHidden("question_label[]", question.label));
+        hiddenInputs.appendChild(createHidden("question_type[]", question.question_type));
+        hiddenInputs.appendChild(createHidden("question_weight[]", String(question.weight)));
+        hiddenInputs.appendChild(createHidden("question_required[]", question.required ? "true" : "false"));
+        hiddenInputs.appendChild(createHidden("question_layout[]", question.layout || "vertical"));
+        hiddenInputs.appendChild(createHidden("question_placeholder[]", question.placeholder || ""));
+        hiddenInputs.appendChild(createHidden("allow_multiple[]", question.allow_multiple ? "true" : "false"));
+        hiddenInputs.appendChild(createHidden("scale_min[]", String(question.scale_min)));
+        hiddenInputs.appendChild(createHidden("scale_max[]", String(question.scale_max)));
+        hiddenInputs.appendChild(createHidden("scale_step[]", String(question.scale_step)));
+        hiddenInputs.appendChild(createHidden("option_labels[]", (question.options || []).map((option) => option.label).join(", ")));
+        hiddenInputs.appendChild(createHidden("option_weights[]", (question.options || []).map((option) => option.weight).join(", ")));
+        hiddenInputs.appendChild(createHidden("question_help_text[]", question.help_text || ""));
+      });
+    };
+
+    root.querySelectorAll(".designer-block-btn").forEach((button) => {
+      button.addEventListener("click", () => {
+        addQuestion(button.dataset.newType || "scale");
+        persistDraft();
+      });
+    });
+    root.querySelector("#prop-apply-btn")?.addEventListener("click", applyPropertyChanges);
+    root.querySelector("#prop-move-up")?.addEventListener("click", () => moveSelected(-1));
+    root.querySelector("#prop-move-down")?.addEventListener("click", () => moveSelected(1));
+    root.querySelector("#prop-duplicate")?.addEventListener("click", duplicateSelected);
+    root.querySelector("#prop-delete")?.addEventListener("click", deleteSelected);
+    previewToggle?.addEventListener("click", () => {
+      previewMode = !previewMode;
+      previewToggle.textContent = previewMode ? "Back To Edit" : "Preview";
+      canvas.classList.toggle("preview", previewMode);
+      renderCanvas();
+      updatePropertyPanel();
+    });
+
+    optionAddButton?.addEventListener("click", () => {
+      optionDrafts.push({
+        label: `Option ${optionDrafts.length + 1}`,
+        value: `option_${optionDrafts.length + 1}`,
+        weight: 1,
+      });
+      renderOptionTable();
+      window.VendorOverlay?.setDirty(true);
+      persistDraft();
+    });
+    optionPresetYesNoButton?.addEventListener("click", () => {
+      applyOptionPreset("yes_no");
+      window.VendorOverlay?.setDirty(true);
+      persistDraft();
+    });
+    optionPresetLikert5Button?.addEventListener("click", () => {
+      applyOptionPreset("likert_5");
+      window.VendorOverlay?.setDirty(true);
+      persistDraft();
+    });
+    optionPresetLikert7Button?.addEventListener("click", () => {
+      applyOptionPreset("likert_7");
+      window.VendorOverlay?.setDirty(true);
+      persistDraft();
+    });
+    optionTableBody?.addEventListener("input", () => {
+      readOptionDraftsFromTable();
+      window.VendorOverlay?.setDirty(true);
+      persistDraft();
+    });
+    optionTableBody?.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (target.getAttribute("data-col") !== "remove") return;
+      const row = target.closest("tr");
+      if (!(row instanceof HTMLTableRowElement)) return;
+      const index = Number.parseInt(row.dataset.optionIndex || "-1", 10);
+      if (!Number.isFinite(index) || index < 0 || index >= optionDrafts.length) return;
+      optionDrafts.splice(index, 1);
+      renderOptionTable();
+      window.VendorOverlay?.setDirty(true);
+      persistDraft();
+    });
+
+    exportJsonButton?.addEventListener("click", () => {
+      const payload = {
+        title: String(templateTitleInput?.value || "").trim() || "Demo Evaluation Form",
+        instructions: String(instructionsInput?.value || "").trim(),
+        questions,
+      };
+      const fileSafeTitle = String(payload.title || "demo_form")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "");
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${fileSafeTitle || "demo_form_template"}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    });
+
+    importJsonButton?.addEventListener("click", () => {
+      importPane?.classList.toggle("hidden");
+      if (!importPane?.classList.contains("hidden")) {
+        importText?.focus();
+      }
+    });
+    importCancelButton?.addEventListener("click", () => {
+      importPane?.classList.add("hidden");
+      if (importText instanceof HTMLTextAreaElement) importText.value = "";
+    });
+    importApplyButton?.addEventListener("click", () => {
+      const raw = String(importText?.value || "").trim();
+      if (!raw) return;
+      try {
+        const parsed = JSON.parse(raw);
+        const importedQuestionsRaw = Array.isArray(parsed?.questions) ? parsed.questions : [];
+        const importedQuestions = importedQuestionsRaw.map((row, idx) => normalizeQuestion(row, idx)).filter(Boolean);
+        if (!importedQuestions.length) {
+          window.alert("Imported JSON does not contain valid questions.");
+          return;
+        }
+        if (templateTitleInput instanceof HTMLInputElement && String(parsed?.title || "").trim()) {
+          templateTitleInput.value = String(parsed.title).trim();
+        }
+        if (instructionsInput instanceof HTMLTextAreaElement) {
+          instructionsInput.value = String(parsed?.instructions || "").trim();
+        }
+        questions = importedQuestions;
+        selectedIndex = 0;
+        importPane?.classList.add("hidden");
+        if (importText instanceof HTMLTextAreaElement) importText.value = "";
+        renderCanvas();
+        updatePropertyPanel();
+        window.VendorOverlay?.setDirty(true);
+        persistDraft();
+      } catch (_err) {
+        window.alert("Invalid JSON. Paste a valid template payload.");
+      }
+    });
+
+    clearDraftButton?.addEventListener("click", () => {
+      clearDraft();
+      window.alert("Draft cache cleared.");
+    });
+
+    templateTitleInput?.addEventListener("input", persistDraft);
+    instructionsInput?.addEventListener("input", persistDraft);
+
+    form.addEventListener("submit", (event) => {
+      if (!questions.length) {
+        event.preventDefault();
+        return;
+      }
+      syncHiddenInputs();
+      window.VendorOverlay?.clearDirty?.();
+      clearDraft();
+    });
+
+    try {
+      const draftRaw = window.localStorage.getItem(draftStorageKey);
+      if (draftRaw) {
+        const draft = JSON.parse(draftRaw);
+        const draftQuestionsRaw = Array.isArray(draft?.questions) ? draft.questions : [];
+        if (draftQuestionsRaw.length) {
+          const shouldRestore = window.confirm("Restore unsaved designer draft?");
+          if (shouldRestore) {
+            questions = draftQuestionsRaw.map((row, idx) => normalizeQuestion(row, idx));
+            if (templateTitleInput instanceof HTMLInputElement && String(draft?.title || "").trim()) {
+              templateTitleInput.value = String(draft.title).trim();
+            }
+            if (instructionsInput instanceof HTMLTextAreaElement) {
+              instructionsInput.value = String(draft?.instructions || "").trim();
+            }
+          } else {
+            clearDraft();
+          }
+        }
+      }
+    } catch (_err) {
+      // ignore malformed or blocked localStorage payloads
+    }
+
+    selectedIndex = questions.length ? 0 : -1;
+    renderCanvas();
+    updatePropertyPanel();
+  }
+
+  const openDesignerOverlay = (triggerElement) => {
+    if (!window.VendorOverlay) return;
+    const title = selectedTemplate?.template_key
+      ? `Form Designer: ${selectedTemplate.title || selectedTemplate.template_key}`
+      : "Form Designer";
+    const subtitle = selectedTemplate?.template_key
+      ? `Editing ${selectedTemplate.template_key}`
+      : "Create a reusable review form template";
+    const contentRoot = window.VendorOverlay.open({
+      mode: "fullscreen",
+      title,
+      subtitle,
+      templateId: "demo-form-designer-template",
+      dirtyGuard: true,
+      triggerElement,
+    });
+    if (contentRoot instanceof HTMLElement) {
+      initTemplateDesigner(contentRoot);
+    }
+  };
+
+  document.querySelectorAll("[data-open-demo-designer]").forEach((trigger) => {
+    trigger.addEventListener("click", (event) => {
+      const href = String(trigger.getAttribute("href") || "").trim();
+      const current = window.location.pathname + window.location.search;
+      if (!href || href !== current) return;
+      event.preventDefault();
+      openDesignerOverlay(trigger);
+    });
+  });
+
+  if (shouldAutoOpenDesigner) {
+    window.setTimeout(() => {
+      openDesignerOverlay(document.querySelector("[data-open-demo-designer]"));
+    }, 40);
+  }
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "doc_link_form.html" import render_doc_link_form with context %}
-{% from "owner_forms.html" import offering_owner_add_form, offering_contact_add_form with context %}
+{% from "owner_forms.html" import offering_owner_add_form, offering_contact_add_form, owner_principal_input, select_input with context %}
 {% block content %}
 {% set section_labels = {
   "summary": "Summary",
@@ -540,38 +540,117 @@
 <div class="grid grid-2">
   <section class="card section-divider">
     <h2>Offering Owners</h2>
-    <table>
-      <thead><tr><th>Owner</th><th>Role</th><th>Active</th><th>Action</th></tr></thead>
-      <tbody>
-      {% for row in offering_owners %}
-      <tr>
-        <td>{{ row.owner_user_principal }}</td>
-        <td>{{ row.owner_role }}</td>
-        <td>{{ row.active_flag }}</td>
-        <td>
-          {% if can_edit and not locked_mode %}
-          <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/owners/remove" class="inline-form">
-            <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?section=ownership&return_to={{ return_to|urlencode }}&edit=1">
-            <input type="hidden" name="offering_owner_id" value="{{ row.offering_owner_id }}">
-            <input type="text" name="reason" placeholder="Reason">
-            <button type="submit">Remove</button>
-          </form>
-          {% endif %}
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="4">No owners</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
+    {% if owner_integrity_warning_count > 0 %}
+    <div class="owner-warning-banner">
+      {{ owner_integrity_warning_count }} owner assignment(s) reference users not active in employee directory.
+    </div>
+    {% endif %}
+    <div class="grid grid-3">
+      <label>Search Owner
+        <input type="text" id="owner-search-filter" placeholder="Principal or display name">
+      </label>
+      <label>Role Filter
+        <select id="owner-role-filter">
+          <option value="">all</option>
+          {% for option in owner_role_options %}
+          <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      {% if can_edit and not locked_mode %}
+      <div class="form-actions">
+        <a
+          class="button-link"
+          href="#"
+          data-workspace-open
+          data-workspace-mode="drawer-right"
+          data-workspace-title="Add Offering Owner"
+          data-workspace-template="offering-owner-add-template"
+        >Add Owner</a>
+      </div>
+      {% endif %}
+    </div>
+    <div class="table-wrap table-scroll">
+      <table id="offering-owners-table">
+        <thead><tr><th>Owner</th><th>Role</th><th>Active</th><th>Directory</th><th>Action</th></tr></thead>
+        <tbody>
+        {% for row in offering_owners %}
+        {% set owner_return_to = "/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "?section=ownership&return_to=" ~ (return_to|urlencode) ~ "&edit=1" %}
+        <tr data-owner-filter-row data-owner-principal="{{ row.owner_user_principal|lower }}" data-owner-role="{{ row.owner_role|lower }}">
+          <td>
+            <strong>{{ row.owner_user_principal }}</strong>
+            {% if row.owner_identity_display_name %}
+            <div class="muted">{{ row.owner_identity_display_name }}</div>
+            {% endif %}
+          </td>
+          <td>{{ row.owner_role }}</td>
+          <td>{{ row.active_flag }}</td>
+          <td>
+            {% if row.owner_identity_status == "active" %}
+            <span class="owner-status-badge active" title="Active employee">active</span>
+            {% elif row.owner_identity_status == "inactive" %}
+            <span class="owner-status-badge inactive" title="Inactive employee record">inactive</span>
+            {% else %}
+            <span class="owner-status-badge missing" title="Not found in employee directory">not found</span>
+            {% endif %}
+          </td>
+          <td class="queue-row-actions">
+            {% if can_edit and not locked_mode %}
+            <a
+              class="button-link subtle"
+              href="#"
+              data-workspace-open
+              data-workspace-mode="drawer-right"
+              data-workspace-title="Edit Offering Owner"
+              data-workspace-template="offering-owner-edit-template-{{ row.offering_owner_id }}"
+            >Edit</a>
+            <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/owners/remove" class="queue-inline-action">
+              <input type="hidden" name="return_to" value="{{ owner_return_to }}">
+              <input type="hidden" name="offering_owner_id" value="{{ row.offering_owner_id }}">
+              <input type="text" name="reason" placeholder="Reason">
+              <button type="submit">Remove</button>
+            </form>
+            {% else %}
+            -
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5">No owners</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
     {% if can_edit and not locked_mode %}
-    <h3>Add Owner</h3>
-    {{ offering_owner_add_form(
-         post_url="/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "/owners/add",
-         return_to="/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "?section=ownership&return_to=" ~ (return_to|urlencode) ~ "&edit=1",
-         default_role="business_owner",
-         submit_label="Add Owner"
-       ) }}
+    {% set owner_return_to = "/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "?section=ownership&return_to=" ~ (return_to|urlencode) ~ "&edit=1" %}
+    <template id="offering-owner-add-template">
+      <section>
+        <h3>Add Owner</h3>
+        {{ offering_owner_add_form(
+             post_url="/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "/owners/add",
+             return_to=owner_return_to,
+             default_role="business_owner",
+             submit_label="Add Owner"
+           ) }}
+      </section>
+    </template>
+    {% for row in offering_owners %}
+    <template id="offering-owner-edit-template-{{ row.offering_owner_id }}">
+      <section>
+        <h3>Edit Owner</h3>
+        <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/owners/{{ row.offering_owner_id }}/update" class="grid grid-2 form-grid" data-overlay-dirty-watch="true">
+          <input type="hidden" name="return_to" value="{{ owner_return_to }}">
+          {{ owner_principal_input("owner_user_principal", row.owner_user_principal, "Owner Principal", "user@company.com", true) }}
+          {{ select_input("owner_role", "Role", owner_role_options, row.owner_role or "business_owner", true) }}
+          <label class="full">Reason
+            <input type="text" name="reason" placeholder="Reason for owner update">
+          </label>
+          <div class="form-actions"><button type="submit">Save Owner</button></div>
+        </form>
+      </section>
+    </template>
+    {% endfor %}
     {% endif %}
   </section>
 
@@ -930,5 +1009,36 @@
   </details>
   {% endif %}
 </section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+{% if section == "ownership" %}
+<script>
+(function () {
+  const searchInput = document.getElementById("owner-search-filter");
+  const roleSelect = document.getElementById("owner-role-filter");
+  const rows = Array.from(document.querySelectorAll("[data-owner-filter-row]"));
+  if (!(searchInput instanceof HTMLInputElement) || !(roleSelect instanceof HTMLSelectElement) || !rows.length) return;
+
+  const applyFilters = () => {
+    const searchNeedle = String(searchInput.value || "").trim().toLowerCase();
+    const roleNeedle = String(roleSelect.value || "").trim().toLowerCase();
+    rows.forEach((row) => {
+      if (!(row instanceof HTMLElement)) return;
+      const principal = String(row.dataset.ownerPrincipal || "").toLowerCase();
+      const role = String(row.dataset.ownerRole || "").toLowerCase();
+      const text = String(row.textContent || "").toLowerCase();
+      const searchMatch = !searchNeedle || principal.includes(searchNeedle) || text.includes(searchNeedle);
+      const roleMatch = !roleNeedle || role === roleNeedle;
+      row.style.display = searchMatch && roleMatch ? "" : "none";
+    });
+  };
+
+  searchInput.addEventListener("input", applyFilters);
+  roleSelect.addEventListener("change", applyFilters);
+})();
+</script>
 {% endif %}
 {% endblock %}

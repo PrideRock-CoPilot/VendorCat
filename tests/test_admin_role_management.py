@@ -68,28 +68,28 @@ def test_admin_can_grant_custom_role_to_user(client: TestClient) -> None:
 
     grant = client.post(
         "/admin/grant-role",
-        data={"target_user": "custom.user@example.com", "role_code": "vendor_custom_reporter"},
+        data={"target_user": "owner@example.com", "role_code": "vendor_custom_reporter"},
         follow_redirects=False,
     )
     assert grant.status_code == 303
 
     admin_page = client.get("/admin")
     assert admin_page.status_code == 200
-    assert "custom.user@example.com" in admin_page.text
+    assert "Owner User" in admin_page.text
     assert "vendor_custom_reporter" in admin_page.text
 
 
 def test_admin_can_change_user_role_from_dropdown_flow(client: TestClient) -> None:
     client.post(
         "/admin/grant-role",
-        data={"target_user": "dropdown.user@example.com", "role_code": "vendor_editor"},
+        data={"target_user": "pm@example.com", "role_code": "vendor_editor"},
         follow_redirects=False,
     )
 
     change = client.post(
         "/admin/change-role",
         data={
-            "target_user": "dropdown.user@example.com",
+            "target_user": "pm@example.com",
             "current_role_code": "vendor_editor",
             "new_role_code": "vendor_auditor",
         },
@@ -99,9 +99,31 @@ def test_admin_can_change_user_role_from_dropdown_flow(client: TestClient) -> No
 
     repo = get_repo()
     grants = repo.list_role_grants()
-    user_rows = grants[grants["user_principal"].astype(str) == "dropdown.user@example.com"].copy()
+    user_rows = grants[grants["user_principal"].astype(str) == "pm@example.com"].copy()
     active_rows = user_rows[user_rows["active_flag"].astype(str).str.lower().isin({"1", "true"})]
     assert set(active_rows["role_code"].astype(str).tolist()) == {"vendor_auditor"}
+
+
+def test_admin_grant_role_replaces_existing_active_role(client: TestClient) -> None:
+    first_grant = client.post(
+        "/admin/grant-role",
+        data={"target_user": "owner@example.com", "role_code": "vendor_editor"},
+        follow_redirects=False,
+    )
+    assert first_grant.status_code == 303
+
+    second_grant = client.post(
+        "/admin/grant-role",
+        data={"target_user": "owner@example.com", "role_code": "vendor_admin"},
+        follow_redirects=False,
+    )
+    assert second_grant.status_code == 303
+
+    repo = get_repo()
+    grants = repo.list_role_grants()
+    user_rows = grants[grants["user_principal"].astype(str) == "owner@example.com"].copy()
+    active_rows = user_rows[user_rows["active_flag"].astype(str).str.lower().isin({"1", "true"})]
+    assert set(active_rows["role_code"].astype(str).tolist()) == {"vendor_admin"}
 
 
 def test_admin_can_revoke_user_role_from_table_flow(client: TestClient) -> None:

@@ -338,6 +338,8 @@ CREATE TABLE IF NOT EXISTS app_user_directory (
   login_identifier TEXT NOT NULL UNIQUE,
   email TEXT,
   network_id TEXT,
+  employee_id TEXT,
+  manager_id TEXT,
   first_name TEXT,
   last_name TEXT,
   display_name TEXT NOT NULL,
@@ -345,6 +347,18 @@ CREATE TABLE IF NOT EXISTS app_user_directory (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   last_seen_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS app_employee_directory (
+  login_identifier TEXT PRIMARY KEY,
+  email TEXT NOT NULL,
+  network_id TEXT,
+  employee_id TEXT,
+  manager_id TEXT,
+  first_name TEXT,
+  last_name TEXT,
+  display_name TEXT NOT NULL,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1))
 );
 
 CREATE TABLE IF NOT EXISTS app_user_settings (
@@ -616,6 +630,44 @@ CREATE TABLE IF NOT EXISTS sec_role_permission (
 );
 
 -- Reporting views (local/dev unsecured variants)
+CREATE VIEW IF NOT EXISTS rpt_spend_fact AS
+SELECT
+  date(i.invoice_date, 'start of month') AS month,
+  i.vendor_id AS vendor_id,
+  coalesce(v.owner_org_id, 'unknown') AS org_id,
+  coalesce(o.offering_type, 'unknown') AS category,
+  coalesce(i.amount, 0.0) AS amount
+FROM app_offering_invoice i
+INNER JOIN core_vendor v
+  ON i.vendor_id = v.vendor_id
+LEFT JOIN core_vendor_offering o
+  ON i.offering_id = o.offering_id
+WHERE coalesce(i.active_flag, 1) = 1
+  AND lower(coalesce(i.invoice_status, '')) NOT IN ('cancelled', 'canceled', 'void', 'rejected');
+
+CREATE VIEW IF NOT EXISTS rpt_contract_renewals AS
+SELECT
+  c.contract_id AS contract_id,
+  c.vendor_id AS vendor_id,
+  coalesce(v.display_name, v.legal_name, c.vendor_id) AS vendor_name,
+  coalesce(v.owner_org_id, 'unknown') AS org_id,
+  coalesce(o.offering_type, 'vendor_contract') AS category,
+  c.end_date AS renewal_date,
+  coalesce(c.annual_value, 0.0) AS annual_value,
+  coalesce(v.risk_tier, 'unknown') AS risk_tier,
+  CASE
+    WHEN coalesce(c.cancelled_flag, 0) = 1 THEN 'cancelled'
+    WHEN lower(coalesce(c.contract_status, '')) IN ('expired', 'terminated') THEN 'expired'
+    WHEN lower(coalesce(c.contract_status, '')) IN ('pending_renewal', 'renewal_due') THEN 'pending_renewal'
+    ELSE 'active'
+  END AS renewal_status
+FROM core_contract c
+LEFT JOIN core_vendor v
+  ON c.vendor_id = v.vendor_id
+LEFT JOIN core_vendor_offering o
+  ON c.offering_id = o.offering_id
+WHERE c.end_date IS NOT NULL;
+
 CREATE VIEW IF NOT EXISTS rpt_vendor_360 AS
 SELECT
   vendor_id,
@@ -652,6 +704,19 @@ INNER JOIN core_contract_event e
   ON c.contract_id = e.contract_id
 WHERE e.event_type = 'contract_cancelled';
 
+CREATE VIEW IF NOT EXISTS vw_employee_directory AS
+SELECT
+  login_identifier,
+  email,
+  network_id,
+  employee_id,
+  manager_id,
+  first_name,
+  last_name,
+  display_name,
+  active_flag
+FROM app_employee_directory;
+
 -- Performance indexes
 CREATE INDEX IF NOT EXISTS idx_core_vendor_owner_org ON core_vendor(owner_org_id);
 CREATE INDEX IF NOT EXISTS idx_core_vendor_display ON core_vendor(display_name);
@@ -675,6 +740,10 @@ CREATE INDEX IF NOT EXISTS idx_app_offering_invoice_offering ON app_offering_inv
 CREATE INDEX IF NOT EXISTS idx_app_offering_invoice_vendor ON app_offering_invoice(vendor_id, active_flag, invoice_date);
 CREATE INDEX IF NOT EXISTS idx_app_doc_entity ON app_document_link(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_app_user_directory_login ON app_user_directory(login_identifier);
+CREATE INDEX IF NOT EXISTS idx_app_user_directory_employee ON app_user_directory(employee_id);
+CREATE INDEX IF NOT EXISTS idx_app_employee_directory_email ON app_employee_directory(email);
+CREATE INDEX IF NOT EXISTS idx_app_employee_directory_network ON app_employee_directory(network_id);
+CREATE INDEX IF NOT EXISTS idx_app_employee_directory_employee ON app_employee_directory(employee_id);
 CREATE INDEX IF NOT EXISTS idx_app_lookup_type_code ON app_lookup_option(lookup_type, option_code);
 CREATE INDEX IF NOT EXISTS idx_app_lookup_type_sort ON app_lookup_option(lookup_type, active_flag, sort_order);
 CREATE INDEX IF NOT EXISTS idx_app_lookup_type_current ON app_lookup_option(lookup_type, is_current, sort_order);

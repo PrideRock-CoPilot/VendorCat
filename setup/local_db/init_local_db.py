@@ -17,6 +17,8 @@ REQUIRED_SCHEMA: dict[str, tuple[str, ...]] = {
         "display_name",
         "first_name",
         "last_name",
+        "employee_id",
+        "manager_id",
     ),
     "app_lookup_option": (
         "option_id",
@@ -73,6 +75,13 @@ REQUIRED_SCHEMA: dict[str, tuple[str, ...]] = {
     ),
 }
 
+COMPAT_COLUMN_MIGRATIONS: dict[str, tuple[tuple[str, str], ...]] = {
+    "app_user_directory": (
+        ("employee_id", "TEXT"),
+        ("manager_id", "TEXT"),
+    ),
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Initialize a local SQLite DB with full twvendor schema and seed data.")
@@ -100,6 +109,12 @@ def parse_args() -> argparse.Namespace:
         "--skip-seed",
         action="store_true",
         help="Skip running seed scripts.",
+    )
+    parser.add_argument(
+        "--seed-profile",
+        default="baseline",
+        choices=("baseline", "full"),
+        help="Seed profile to apply when seeding is enabled. 'full' adds a corporate-scale dataset.",
     )
     parser.add_argument(
         "--reset",
@@ -131,11 +146,42 @@ def _apply_sql_files(conn: sqlite3.Connection, files: Iterable[Path]) -> int:
     return count
 
 
+def _apply_full_seed(conn: sqlite3.Connection) -> dict[str, int]:
+    from seed_full_corporate import seed_full_corporate
+
+    return seed_full_corporate(conn)
+
+
 def _table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
     cursor = conn.execute(f"PRAGMA table_info({table_name})")
     rows = cursor.fetchall()
     columns = {str(row[1]).strip().lower() for row in rows if len(row) > 1 and str(row[1]).strip()}
     return columns
+
+
+def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+    cursor = conn.execute(
+        """
+        SELECT 1
+        FROM sqlite_master
+        WHERE type = 'table'
+          AND lower(name) = lower(?)
+        LIMIT 1
+        """,
+        (table_name,),
+    )
+    return cursor.fetchone() is not None
+
+
+def _apply_compat_column_migrations(conn: sqlite3.Connection) -> None:
+    for table_name, migrations in COMPAT_COLUMN_MIGRATIONS.items():
+        if not _table_exists(conn, table_name):
+            continue
+        present = _table_columns(conn, table_name)
+        for column_name, definition in migrations:
+            if column_name.lower() in present:
+                continue
+            conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
 
 
 def verify_required_schema(conn: sqlite3.Connection) -> list[str]:
@@ -199,8 +245,12 @@ def main() -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     with sqlite3.connect(db_path) as conn:
+        _apply_compat_column_migrations(conn)
         schema_script_count = _apply_sql_files(conn, schema_files)
         seed_script_count = _apply_sql_files(conn, seed_files) if seed_files else 0
+        full_seed_counts: dict[str, int] | None = None
+        if not args.skip_seed and args.seed_profile == "full":
+            full_seed_counts = _apply_full_seed(conn)
         conn.commit()
         if not args.skip_verify:
             schema_errors = verify_required_schema(conn)
@@ -218,6 +268,10 @@ def main() -> None:
     print(f"Local database ready: {db_path}")
     print(f"Schema scripts applied: {schema_script_count}")
     print(f"Seed scripts applied: {seed_script_count}")
+    if not args.skip_seed and args.seed_profile == "full":
+        print("Seed profile: full (corporate-scale synthetic dataset)")
+        if full_seed_counts:
+            print(f"Largest table row count: {max(full_seed_counts.values())}")
     print(f"Tables: {table_count}")
     print(f"Views: {view_count}")
 

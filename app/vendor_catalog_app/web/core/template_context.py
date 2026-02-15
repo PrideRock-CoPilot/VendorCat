@@ -4,6 +4,21 @@ from typing import Any
 
 from fastapi import Request
 
+from vendor_catalog_app.core.defaults import (
+    DEFAULT_LOADING_OVERLAY_MAX_DELAY_MS,
+    DEFAULT_LOADING_OVERLAY_MIN_DELAY_MS,
+    DEFAULT_LOADING_OVERLAY_SAFETY_MS,
+    DEFAULT_LOADING_OVERLAY_SHOW_DELAY_MS,
+    DEFAULT_LOADING_OVERLAY_SLOW_STATUS_MS,
+)
+from vendor_catalog_app.core.env import (
+    TVENDOR_LOADING_OVERLAY_MAX_DELAY_MS,
+    TVENDOR_LOADING_OVERLAY_MIN_DELAY_MS,
+    TVENDOR_LOADING_OVERLAY_SAFETY_MS,
+    TVENDOR_LOADING_OVERLAY_SHOW_DELAY_MS,
+    TVENDOR_LOADING_OVERLAY_SLOW_STATUS_MS,
+    get_env_int,
+)
 from vendor_catalog_app.core.repository_constants import (
     DEFAULT_ASSIGNMENT_TYPE_OPTIONS,
     DEFAULT_CONTACT_TYPE_OPTIONS,
@@ -35,6 +50,37 @@ from vendor_catalog_app.web.core.identity import display_name_for_principal
 from vendor_catalog_app.web.core.runtime import get_repo, testing_role_override_enabled
 from vendor_catalog_app.web.http.flash import pop_flashes
 from vendor_catalog_app.web.security.controls import CSRF_SESSION_KEY
+
+LOADING_OVERLAY_MIN_DELAY_MS = get_env_int(
+    TVENDOR_LOADING_OVERLAY_MIN_DELAY_MS,
+    default=DEFAULT_LOADING_OVERLAY_MIN_DELAY_MS,
+    min_value=250,
+    max_value=120000,
+)
+LOADING_OVERLAY_MAX_DELAY_MS = get_env_int(
+    TVENDOR_LOADING_OVERLAY_MAX_DELAY_MS,
+    default=DEFAULT_LOADING_OVERLAY_MAX_DELAY_MS,
+    min_value=250,
+    max_value=120000,
+)
+LOADING_OVERLAY_SHOW_DELAY_MS = get_env_int(
+    TVENDOR_LOADING_OVERLAY_SHOW_DELAY_MS,
+    default=DEFAULT_LOADING_OVERLAY_SHOW_DELAY_MS,
+    min_value=50,
+    max_value=5000,
+)
+LOADING_OVERLAY_SLOW_STATUS_MS = get_env_int(
+    TVENDOR_LOADING_OVERLAY_SLOW_STATUS_MS,
+    default=DEFAULT_LOADING_OVERLAY_SLOW_STATUS_MS,
+    min_value=500,
+    max_value=120000,
+)
+LOADING_OVERLAY_SAFETY_MS = get_env_int(
+    TVENDOR_LOADING_OVERLAY_SAFETY_MS,
+    default=DEFAULT_LOADING_OVERLAY_SAFETY_MS,
+    min_value=1000,
+    max_value=300000,
+)
 
 
 def _lookup_values(
@@ -234,6 +280,17 @@ def base_template_context(
         "offering_type_options": offering_type_options,
         "offering_lob_options": offering_lob_options,
         "offering_service_type_options": offering_service_type_options,
+        "loading_overlay_min_delay_ms": min(
+            LOADING_OVERLAY_MIN_DELAY_MS,
+            LOADING_OVERLAY_MAX_DELAY_MS,
+        ),
+        "loading_overlay_max_delay_ms": max(
+            LOADING_OVERLAY_MIN_DELAY_MS,
+            LOADING_OVERLAY_MAX_DELAY_MS,
+        ),
+        "loading_overlay_show_delay_ms": LOADING_OVERLAY_SHOW_DELAY_MS,
+        "loading_overlay_slow_status_ms": LOADING_OVERLAY_SLOW_STATUS_MS,
+        "loading_overlay_safety_ms": LOADING_OVERLAY_SAFETY_MS,
     }
     if extra:
         payload.update(extra)

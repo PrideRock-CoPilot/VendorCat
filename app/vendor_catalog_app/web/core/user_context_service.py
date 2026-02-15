@@ -13,8 +13,6 @@ from vendor_catalog_app.core.security import (
     ADMIN_PORTAL_ROLES,
     ROLE_ADMIN,
     ROLE_CHOICES,
-    ROLE_VIEWER,
-    effective_roles,
 )
 from vendor_catalog_app.web.core.context import UserContext
 from vendor_catalog_app.web.core.identity import (
@@ -171,7 +169,7 @@ def get_user_context(request: Request) -> UserContext:
             str(item).strip()
             for item in (snapshot.get("raw_roles") or [])
             if str(item).strip()
-        } or {ROLE_VIEWER}
+        }
         roles = {
             str(item).strip()
             for item in (snapshot.get("roles") or [])
@@ -181,13 +179,11 @@ def get_user_context(request: Request) -> UserContext:
         role_policy = snapshot.get("role_policy") if isinstance(snapshot.get("role_policy"), dict) else None
     else:
         if user_principal == UNKNOWN_USER_PRINCIPAL:
-            raw_roles = {ROLE_VIEWER}
+            raw_roles = set()
         else:
-            raw_roles = effective_roles(
-                repo.bootstrap_user_access(
-                    user_principal,
-                    group_principals=group_principals,
-                )
+            raw_roles = repo.bootstrap_user_access(
+                user_principal,
+                group_principals=group_principals,
             )
         known_roles = set(repo.list_known_roles())
         roles, role_override = _resolve_effective_roles(

@@ -908,6 +908,67 @@ class RepositoryOfferingWriteMixin:
             request_id=None,
         )
 
+    def update_offering_owner(
+        self,
+        *,
+        vendor_id: str,
+        offering_id: str,
+        offering_owner_id: str,
+        owner_user_principal: str,
+        owner_role: str,
+        actor_user_principal: str,
+    ) -> None:
+        if not self.offering_belongs_to_vendor(vendor_id, offering_id):
+            raise ValueError("Offering does not belong to vendor.")
+        owner_ref = self.resolve_user_id(owner_user_principal, allow_create=True)
+        if not owner_ref:
+            raise ValueError("Owner must exist in the app user directory.")
+        owner_role_options = self.list_owner_role_options() or ["business_owner"]
+        owner_role_value = self._normalize_choice(
+            owner_role,
+            field_name="Owner role",
+            allowed=set(owner_role_options),
+            default=owner_role_options[0],
+        )
+        before_df = self.get_vendor_offering_business_owners(vendor_id)
+        before_row = (
+            before_df[before_df["offering_owner_id"].astype(str) == str(offering_owner_id)]
+            .head(1)
+            .to_dict("records")
+        )
+        before_json = before_row[0] if before_row else None
+        now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
+        self._execute_file(
+            "updates/update_offering_owner.sql",
+            params=(
+                owner_ref,
+                owner_role_value,
+                now,
+                actor_ref,
+                offering_owner_id,
+                offering_id,
+            ),
+            core_offering_business_owner=self._table("core_offering_business_owner"),
+        )
+        after_json = {
+            "offering_owner_id": str(offering_owner_id),
+            "offering_id": str(offering_id),
+            "owner_user_principal": owner_ref,
+            "owner_role": owner_role_value,
+            "updated_at": now.isoformat(),
+            "updated_by": actor_ref,
+        }
+        self._write_audit_entity_change(
+            entity_name="core_offering_business_owner",
+            entity_id=str(offering_owner_id),
+            action_type="update",
+            actor_user_principal=actor_user_principal,
+            before_json=before_json,
+            after_json=after_json,
+            request_id=None,
+        )
+
     def add_offering_contact(
         self,
         *,
@@ -921,8 +982,25 @@ class RepositoryOfferingWriteMixin:
     ) -> str:
         if not self.offering_belongs_to_vendor(vendor_id, offering_id):
             raise ValueError("Offering does not belong to vendor.")
-        if not full_name.strip():
-            raise ValueError("Contact name is required.")
+        lookup_value = str(email or "").strip() or str(full_name or "").strip()
+        if not lookup_value:
+            raise ValueError("Contact must be selected from employee directory.")
+        login_identifier = self.resolve_user_login_identifier(lookup_value)
+        if not login_identifier:
+            raise ValueError("Offering contact must exist in vw_employee_directory.")
+        self._ensure_user_directory_entry(login_identifier)
+        profile = self.get_user_directory_profile(login_identifier) or {}
+        resolved_display_name = (
+            str(profile.get("display_name") or "").strip()
+            or " ".join(
+                [
+                    str(profile.get("first_name") or "").strip(),
+                    str(profile.get("last_name") or "").strip(),
+                ]
+            ).strip()
+            or login_identifier
+        )
+        resolved_email = str(profile.get("email") or "").strip() or login_identifier
         contact_type_options = self.list_contact_type_options() or ["business"]
         contact_type_value = self._normalize_choice(
             contact_type,
@@ -937,9 +1015,9 @@ class RepositoryOfferingWriteMixin:
             "offering_contact_id": contact_id,
             "offering_id": offering_id,
             "contact_type": contact_type_value,
-            "full_name": full_name.strip(),
-            "email": (email or "").strip() or None,
-            "phone": (phone or "").strip() or None,
+            "full_name": resolved_display_name,
+            "email": resolved_email,
+            "phone": None,
             "active_flag": True,
             "updated_at": now.isoformat(),
             "updated_by": actor_ref,

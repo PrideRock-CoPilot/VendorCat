@@ -13,6 +13,7 @@ if str(APP_ROOT) not in sys.path:
 
 from vendor_catalog_app.web.app import create_app
 from vendor_catalog_app.web.core.runtime import get_config, get_repo
+from vendor_catalog_app.web.routers.demos.common import parse_template_questions_from_form
 
 
 @pytest.fixture()
@@ -38,9 +39,9 @@ def test_vendor_list_empty_state_shows_next_actions(client: TestClient) -> None:
 
 
 def test_vendor_new_requires_edit_permissions(client: TestClient) -> None:
-    response = client.get("/vendors/new?as_user=viewer.only@example.com", follow_redirects=False)
+    response = client.get("/vendors/new?as_user=bob.smith@example.com", follow_redirects=False)
     assert response.status_code == 303
-    assert response.headers["location"].startswith("/vendors")
+    assert response.headers["location"] == "/access/request"
 
 
 def test_create_vendor_and_find_in_list(client: TestClient) -> None:
@@ -354,41 +355,188 @@ def test_contract_and_demo_forms_use_expected_inputs(client: TestClient) -> None
 
 
 def test_demo_review_form_template_and_submission_flow(client: TestClient) -> None:
-    review_page = client.get("/demos/demo-001/review-form")
+    review_page = client.get("/demos/demo-005/review-form")
     assert review_page.status_code == 200
-    assert "Review Template Builder" in review_page.text
+    assert "Template Designer" in review_page.text
 
     template_save = client.post(
-        "/demos/demo-001/review-form/template",
+        "/demos/demo-005/review-form/template",
         data={
             "template_title": "Enterprise Demo Scorecard",
-            "max_score": "10",
-            "criteria_csv": "Business Fit, Security, Supportability",
-            "instructions": "Score each category from 0 to 10.",
+            "instructions": "Use weighted scoring for enterprise review.",
+            "attach_now": "1",
+            "question_label[]": ["Business Fit", "Security Model", "Deployment Readiness"],
+            "question_type[]": ["scale", "boolean", "multi_choice"],
+            "question_weight[]": ["2.0", "1.0", "1.5"],
+            "scale_min[]": ["1", "1", "1"],
+            "scale_max[]": ["5", "5", "5"],
+            "scale_step[]": ["1", "1", "1"],
+            "option_labels[]": ["", "Yes, No", "Cloud Native, Hybrid, On Prem"],
+            "option_weights[]": ["", "1, 0", "1, 0.6, 0.2"],
+            "question_help_text[]": ["Score strategic fit", "Security gate", "Preferred deployment model"],
         },
         follow_redirects=False,
     )
     assert template_save.status_code == 303
 
     review_submit = client.post(
-        "/demos/demo-001/review-form/submit",
+        "/demos/demo-005/review-form/submit",
         data={
-            "score_business_fit": "8.5",
-            "score_security": "9.0",
-            "score_supportability": "7.5",
+            "answer_business_fit": "4",
+            "answer_security_model": "yes",
+            "answer_deployment_readiness": "cloud_native",
             "review_comment": "Strong overall fit with minor support concerns.",
         },
         follow_redirects=False,
     )
     assert review_submit.status_code == 303
 
-    refreshed = client.get("/demos/demo-001/review-form")
+    review_update = client.post(
+        "/demos/demo-005/review-form/submit",
+        data={
+            "answer_business_fit": "5",
+            "answer_security_model": "yes",
+            "answer_deployment_readiness": "hybrid",
+            "review_comment": "Updated after architecture review.",
+        },
+        follow_redirects=False,
+    )
+    assert review_update.status_code == 303
+
+    refreshed = client.get("/demos/demo-005/review-form")
     assert refreshed.status_code == 200
     assert "Enterprise Demo Scorecard" in refreshed.text
     assert "Business Fit" in refreshed.text
-    assert "Security" in refreshed.text
-    assert "Supportability" in refreshed.text
+    assert "Security Model" in refreshed.text
+    assert "Deployment Readiness" in refreshed.text
+    assert "Updated after architecture review." in refreshed.text
     assert "Submissions" in refreshed.text
+
+
+def test_demo_workspace_supports_stage_tracking_and_scorecard_views(client: TestClient) -> None:
+    workspace = client.get("/demos/demo-005")
+    assert workspace.status_code == 200
+    assert "Demo Workspace" in workspace.text
+    assert "Lifecycle Stages" in workspace.text
+    assert "Scoring Cards" in workspace.text
+
+    stage_update = client.post(
+        "/demos/demo-005/stage",
+        data={
+            "stage": "scoring",
+            "notes": "Technical and security scoring session started.",
+        },
+        follow_redirects=False,
+    )
+    assert stage_update.status_code == 303
+
+    refreshed = client.get("/demos/demo-005")
+    assert refreshed.status_code == 200
+    assert "Technical and security scoring session started." in refreshed.text
+
+
+def test_demo_forms_library_supports_version_copy_delete_and_preview(client: TestClient) -> None:
+    forms_page = client.get("/demos/forms")
+    assert forms_page.status_code == 200
+    assert "Demo Forms Library" in forms_page.text
+    assert "data-open-demo-designer" in forms_page.text
+    assert "demo-form-designer-template" in forms_page.text
+    assert "Export JSON" in forms_page.text
+    assert "Import JSON" in forms_page.text
+    assert "Clear Draft" in forms_page.text
+    assert "prop-option-table-body" in forms_page.text
+
+    auto_open_page = client.get("/demos/forms?designer=1")
+    assert auto_open_page.status_code == 200
+    assert "shouldAutoOpenDesigner = true" in auto_open_page.text
+
+    create_response = client.post(
+        "/demos/forms/save",
+        data={
+            "template_title": "Lifecycle Evaluation Form",
+            "instructions": "Evaluate capability and readiness.",
+            "question_label[]": ["Business Fit", "Security Gate"],
+            "question_type[]": ["scale", "boolean"],
+            "question_weight[]": ["1.5", "1"],
+            "question_required[]": ["true", "true"],
+            "question_layout[]": ["vertical", "horizontal"],
+            "question_placeholder[]": ["", ""],
+            "allow_multiple[]": ["false", "false"],
+            "scale_min[]": ["1", "1"],
+            "scale_max[]": ["5", "5"],
+            "scale_step[]": ["1", "1"],
+            "option_labels[]": ["", "Yes, No"],
+            "option_weights[]": ["", "1, 0"],
+            "question_help_text[]": ["Score strategic fit", "Pass or fail gate"],
+        },
+        follow_redirects=False,
+    )
+    assert create_response.status_code == 303
+    create_location = create_response.headers.get("location", "")
+    match = re.search(r"template_key=(frm-[a-z0-9-]+)", create_location)
+    assert match is not None
+    template_key = match.group(1)
+
+    edit_response = client.post(
+        "/demos/forms/save",
+        data={
+            "template_key": template_key,
+            "template_title": "Lifecycle Evaluation Form",
+            "instructions": "Evaluate capability, security, and adoption readiness.",
+            "question_label[]": ["Business Fit", "Security Gate"],
+            "question_type[]": ["scale", "boolean"],
+            "question_weight[]": ["2", "1"],
+            "question_required[]": ["true", "true"],
+            "question_layout[]": ["vertical", "horizontal"],
+            "question_placeholder[]": ["", ""],
+            "allow_multiple[]": ["false", "false"],
+            "scale_min[]": ["1", "1"],
+            "scale_max[]": ["5", "5"],
+            "scale_step[]": ["1", "1"],
+            "option_labels[]": ["", "Yes, No"],
+            "option_weights[]": ["", "1, 0"],
+            "question_help_text[]": ["Score strategic fit", "Pass or fail gate"],
+        },
+        follow_redirects=False,
+    )
+    assert edit_response.status_code == 303
+
+    preview_response = client.get(f"/demos/forms/{template_key}/preview")
+    assert preview_response.status_code == 200
+    assert "Form Preview" in preview_response.text
+    assert "Lifecycle Evaluation Form" in preview_response.text
+
+    copy_response = client.post(
+        f"/demos/forms/{template_key}/copy",
+        follow_redirects=False,
+    )
+    assert copy_response.status_code == 303
+    copy_location = copy_response.headers.get("location", "")
+    copy_match = re.search(r"template_key=(frm-[a-z0-9-]+)", copy_location)
+    assert copy_match is not None
+    copied_key = copy_match.group(1)
+    assert copied_key != template_key
+
+    delete_response = client.post(
+        f"/demos/forms/{template_key}/delete",
+        follow_redirects=False,
+    )
+    assert delete_response.status_code == 303
+
+    active_listing = client.get("/demos/forms")
+    assert active_listing.status_code == 200
+    assert template_key not in active_listing.text
+
+    inactive_listing = client.get(f"/demos/forms?include_inactive=1&q={template_key}")
+    assert inactive_listing.status_code == 200
+    assert template_key in inactive_listing.text
+    assert "deleted" in inactive_listing.text.lower()
+    assert "Star Rating (1-5)" in forms_page.text
+    assert "Likert Scale" in forms_page.text
+    assert "Dropdown Select" in forms_page.text
+    assert "Short Text" in forms_page.text
+    assert "Long Comment" in forms_page.text
+    assert "Section Header" in forms_page.text
 
 
 def test_vendor_contracts_page_supports_add_and_cancel(client: TestClient) -> None:
@@ -559,7 +707,7 @@ def test_vendor_ownership_allows_adding_owner_assignment_and_contact(client: Tes
         "/vendors/vnd-002/owners/add",
         data={
             "return_to": "/vendors/vnd-002/ownership",
-            "owner_user_principal": "new.owner@example.com",
+            "owner_user_principal": "owner@example.com",
             "owner_role": "business_owner",
             "reason": "Add current service owner.",
         },
@@ -595,7 +743,7 @@ def test_vendor_ownership_allows_adding_owner_assignment_and_contact(client: Tes
 
     ownership_page = client.get("/vendors/vnd-002/ownership?return_to=%2Fvendors")
     assert ownership_page.status_code == 200
-    assert "new.owner@example.com" in ownership_page.text
+    assert "owner@example.com" in ownership_page.text
     assert "FIN-OPS" in ownership_page.text
     assert "Taylor Ops" in ownership_page.text
 
@@ -605,7 +753,7 @@ def test_offering_ownership_allows_adding_owner_and_contact(client: TestClient) 
         "/vendors/vnd-001/offerings/off-004/owners/add",
         data={
             "return_to": "/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors",
-            "owner_user_principal": "offering.owner@example.com",
+            "owner_user_principal": "pm@example.com",
             "owner_role": "business_owner",
             "reason": "Assign offering owner.",
         },
@@ -619,7 +767,7 @@ def test_offering_ownership_allows_adding_owner_and_contact(client: TestClient) 
             "return_to": "/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors",
             "full_name": "Offering Contact",
             "contact_type": "support",
-            "email": "offering.contact@example.com",
+            "email": "secops@example.com",
             "phone": "555-0119",
             "reason": "Assign offering support contact.",
         },
@@ -629,8 +777,163 @@ def test_offering_ownership_allows_adding_owner_and_contact(client: TestClient) 
 
     ownership_page = client.get("/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors")
     assert ownership_page.status_code == 200
-    assert "offering.owner@example.com" in ownership_page.text
-    assert "Offering Contact" in ownership_page.text
+    assert "pm@example.com" in ownership_page.text
+
+    owner_rows = get_repo().get_vendor_offering_business_owners("vnd-001")
+    owner_rows = owner_rows[
+        (owner_rows["offering_id"].astype(str) == "off-004")
+        & (owner_rows["owner_user_principal"].astype(str) == "pm@example.com")
+    ]
+    assert not owner_rows.empty
+    owner_id = str(owner_rows.iloc[0]["offering_owner_id"])
+
+    owner_update = client.post(
+        f"/vendors/vnd-001/offerings/off-004/owners/{owner_id}/update",
+        data={
+            "return_to": "/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors",
+            "owner_user_principal": "pm@example.com",
+            "owner_role": "security_owner",
+            "reason": "Role update.",
+        },
+        follow_redirects=False,
+    )
+    assert owner_update.status_code == 303
+
+    ownership_page = client.get("/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors")
+    assert ownership_page.status_code == 200
+    assert "pm@example.com" in ownership_page.text
+    assert "Secops User" in ownership_page.text
+    assert "security_owner" in ownership_page.text
+    assert "owner-search-filter" in ownership_page.text
+    assert "Add Owner" in ownership_page.text
+
+
+def test_offering_ownership_shows_employee_directory_warning_banner(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    add_owner = client.post(
+        "/vendors/vnd-001/offerings/off-004/owners/add",
+        data={
+            "return_to": "/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors",
+            "owner_user_principal": "pm@example.com",
+            "owner_role": "business_owner",
+            "reason": "Assign owner.",
+        },
+        follow_redirects=False,
+    )
+    assert add_owner.status_code == 303
+
+    repo = get_repo()
+
+    def _fake_status_map(principals):
+        return {
+            str(item).strip().lower(): {
+                "principal": str(item).strip(),
+                "status": "missing",
+                "active": False,
+                "login_identifier": None,
+                "display_name": None,
+            }
+            for item in principals
+        }
+
+    monkeypatch.setattr(repo, "get_employee_directory_status_map", _fake_status_map)
+    response = client.get("/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors")
+    assert response.status_code == 200
+    assert "reference users not active in employee directory" in response.text
+    assert "owner-status-badge missing" in response.text
+
+
+def test_parse_template_questions_preserves_optional_required_flag() -> None:
+    class FakeForm:
+        def __init__(self, values):
+            self._values = values
+
+        def getlist(self, key):
+            return self._values.get(key, [])
+
+    form = FakeForm(
+        {
+            "question_label[]": ["Optional Comment"],
+            "question_type[]": ["multi_choice"],
+            "question_weight[]": ["1"],
+            "question_required[]": ["false"],
+            "question_layout[]": ["vertical"],
+            "question_placeholder[]": [""],
+            "allow_multiple[]": ["true"],
+            "scale_min[]": ["1"],
+            "scale_max[]": ["5"],
+            "scale_step[]": ["1"],
+            "option_labels[]": ["Excellent, Good, Poor"],
+            "option_weights[]": ["1, 0.7, 0.2"],
+            "question_help_text[]": ["Optional sentiment check."],
+        }
+    )
+
+    parsed = parse_template_questions_from_form(form)
+    assert len(parsed) == 1
+    assert parsed[0]["required"] is False
+
+
+def test_parse_template_questions_supports_extended_question_types() -> None:
+    class FakeForm:
+        def __init__(self, values):
+            self._values = values
+
+        def getlist(self, key):
+            return self._values.get(key, [])
+
+    form = FakeForm(
+        {
+            "question_label[]": [
+                "Overall rating",
+                "Business sentiment",
+                "Reviewer note",
+                "Section intro",
+                "Decision option",
+            ],
+            "question_type[]": [
+                "star_rating",
+                "likert_scale",
+                "long_text",
+                "section_header",
+                "dropdown_select",
+            ],
+            "question_weight[]": ["1", "1.5", "0", "0", "1"],
+            "question_required[]": ["true", "true", "false", "false", "true"],
+            "question_layout[]": ["vertical", "horizontal", "vertical", "vertical", "dropdown"],
+            "question_placeholder[]": ["", "", "Enter notes", "", ""],
+            "allow_multiple[]": ["false", "false", "false", "false", "false"],
+            "scale_min[]": ["1", "1", "1", "1", "1"],
+            "scale_max[]": ["5", "5", "5", "5", "5"],
+            "scale_step[]": ["1", "1", "1", "1", "1"],
+            "option_labels[]": [
+                "",
+                "Strongly Disagree, Disagree, Neutral, Agree, Strongly Agree",
+                "",
+                "",
+                "Select, Defer",
+            ],
+            "option_weights[]": ["", "1,2,3,4,5", "", "", "1,0"],
+            "question_help_text[]": ["", "", "", "", ""],
+        }
+    )
+
+    parsed = parse_template_questions_from_form(form)
+    by_type = {row["question_type"]: row for row in parsed}
+    assert "star_rating" in by_type
+    assert by_type["star_rating"]["scale_min"] == 1.0
+    assert by_type["star_rating"]["scale_max"] == 5.0
+    assert "likert_scale" in by_type
+    assert len(by_type["likert_scale"]["options"]) == 5
+    assert "long_text" in by_type
+    assert by_type["long_text"]["max_answer_weight"] == 0.0
+    assert "section_header" in by_type
+    assert by_type["section_header"]["required"] is False
+    assert by_type["section_header"]["max_answer_weight"] == 0.0
+    assert "dropdown_select" in by_type
+    assert by_type["dropdown_select"]["layout"] == "dropdown"
 
 
 def test_offering_sectioned_page_supports_operational_profile_updates(client: TestClient) -> None:

@@ -18,11 +18,38 @@ def _create_user_directory_table(db_path: Path) -> None:
     with sqlite3.connect(db_path) as conn:
         conn.executescript(
             """
+            CREATE TABLE IF NOT EXISTS app_employee_directory (
+              login_identifier TEXT PRIMARY KEY,
+              email TEXT NOT NULL,
+              network_id TEXT,
+              employee_id TEXT,
+              manager_id TEXT,
+              first_name TEXT,
+              last_name TEXT,
+              display_name TEXT NOT NULL,
+              active_flag INTEGER NOT NULL
+            );
+
+            CREATE VIEW IF NOT EXISTS vw_employee_directory AS
+            SELECT
+              login_identifier,
+              email,
+              network_id,
+              employee_id,
+              manager_id,
+              first_name,
+              last_name,
+              display_name,
+              active_flag
+            FROM app_employee_directory;
+
             CREATE TABLE IF NOT EXISTS app_user_directory (
               user_id TEXT PRIMARY KEY,
               login_identifier TEXT NOT NULL UNIQUE,
               email TEXT,
               network_id TEXT,
+              employee_id TEXT,
+              manager_id TEXT,
               first_name TEXT,
               last_name TEXT,
               display_name TEXT NOT NULL,
@@ -31,6 +58,12 @@ def _create_user_directory_table(db_path: Path) -> None:
               updated_at TEXT NOT NULL,
               last_seen_at TEXT NOT NULL
             );
+
+            INSERT INTO app_employee_directory (
+              login_identifier, email, network_id, employee_id, manager_id, first_name, last_name, display_name, active_flag
+            ) VALUES
+              ('jane.doe@example.com', 'jane.doe@example.com', 'jane.doe', 'E2001', 'E2000', 'Jane', 'Doe', 'Jane Doe', 1),
+              ('john_smith@example.com', 'john_smith@example.com', 'john_smith', 'E2002', 'E2001', 'John', 'Smith', 'John Smith', 1);
             """
         )
         conn.commit()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import pandas as pd
 from fastapi import APIRouter, Request
 from vendor_catalog_app.web.core.activity import ensure_session_started, log_page_view
@@ -7,6 +8,7 @@ from vendor_catalog_app.web.core.runtime import get_repo
 from vendor_catalog_app.web.core.template_context import base_template_context
 from vendor_catalog_app.web.core.user_context_service import get_user_context
 from vendor_catalog_app.web.routers.contracts.common import (
+    CONTRACT_PAGE_SIZES,
     CONTRACT_EXPIRING_WINDOW_DAYS,
     CONTRACT_SCOPE_OPTIONS,
     CONTRACT_STATUS_FILTER_OPTIONS,
@@ -18,7 +20,8 @@ from vendor_catalog_app.web.routers.contracts.common import (
     CONTRACT_TABS,
     contracts_rows_to_dict,
     contracts_url,
-    normalize_limit,
+    normalize_page,
+    normalize_page_size,
     normalize_scope,
     normalize_status,
     normalize_tab,
@@ -39,13 +42,17 @@ def contracts(request: Request):
     search_text = str(request.query_params.get("q", "")).strip()
     selected_status = normalize_status(request.query_params.get("status"))
     selected_scope = normalize_scope(request.query_params.get("scope"))
-    selected_limit = normalize_limit(request.query_params.get("limit"))
-
+    selected_page = normalize_page(request.query_params.get("page"))
+    if "page_size" in request.query_params:
+        selected_page_size = normalize_page_size(request.query_params.get("page_size"))
+    else:
+        # Backward compatibility: treat legacy `limit` as page size when provided.
+        selected_page_size = normalize_page_size(request.query_params.get("limit"))
     contracts_df = repo.list_contracts_workspace(
         search_text=search_text,
         status=selected_status,
         contract_scope=selected_scope,
-        limit=selected_limit,
+        limit=5000,
     )
 
     if contracts_df.empty:
@@ -140,7 +147,18 @@ def contracts(request: Request):
         selected_rows_df = cancelled_rows_df
         selected_tab_title = "Cancelled Contracts"
 
-    selected_rows = contracts_rows_to_dict(selected_rows_df)
+    selected_total_rows = int(len(selected_rows_df.index))
+    selected_page_count = max(1, math.ceil(selected_total_rows / selected_page_size)) if selected_total_rows else 1
+    if selected_page > selected_page_count:
+        selected_page = selected_page_count
+    selected_start = (selected_page - 1) * selected_page_size
+    selected_end = selected_start + selected_page_size
+    selected_rows = contracts_rows_to_dict(selected_rows_df.iloc[selected_start:selected_end].copy())
+    selected_show_from = (selected_start + 1) if selected_total_rows else 0
+    selected_show_to = min(selected_end, selected_total_rows)
+    prev_page = selected_page - 1 if selected_page > 1 else 1
+    next_page = selected_page + 1 if selected_page < selected_page_count else selected_page_count
+
     overview_rows = contracts_rows_to_dict(expiring_rows_df.head(25))
 
     cancellation_rows: list[dict[str, object]] = []
@@ -165,7 +183,8 @@ def contracts(request: Request):
                 q=search_text,
                 status=selected_status,
                 scope=selected_scope,
-                limit=selected_limit,
+                page=1,
+                page_size=selected_page_size,
             ),
             "active": tab_id == active_tab,
         }
@@ -196,7 +215,9 @@ def contracts(request: Request):
             "search_text": search_text,
             "selected_status": selected_status,
             "selected_scope": selected_scope,
-            "selected_limit": selected_limit,
+            "selected_page": selected_page,
+            "selected_page_size": selected_page_size,
+            "page_sizes": CONTRACT_PAGE_SIZES,
             "status_options": CONTRACT_STATUS_FILTER_OPTIONS,
             "scope_options": CONTRACT_SCOPE_OPTIONS,
             "metrics": metrics,
@@ -205,6 +226,26 @@ def contracts(request: Request):
             "offering_summary_rows": offering_summary_rows,
             "overview_rows": overview_rows,
             "selected_rows": selected_rows,
+            "selected_total_rows": selected_total_rows,
+            "selected_page_count": selected_page_count,
+            "selected_show_from": selected_show_from,
+            "selected_show_to": selected_show_to,
+            "prev_page_url": contracts_url(
+                tab=active_tab,
+                q=search_text,
+                status=selected_status,
+                scope=selected_scope,
+                page=prev_page,
+                page_size=selected_page_size,
+            ),
+            "next_page_url": contracts_url(
+                tab=active_tab,
+                q=search_text,
+                status=selected_status,
+                scope=selected_scope,
+                page=next_page,
+                page_size=selected_page_size,
+            ),
             "cancellation_rows": cancellation_rows,
             "expiring_window_days": CONTRACT_EXPIRING_WINDOW_DAYS,
         },

@@ -264,6 +264,69 @@ async def remove_offering_owner_submit(request: Request, vendor_id: str, offerin
     return RedirectResponse(url=return_to, status_code=303)
 
 
+@router.post("/{vendor_id}/offerings/{offering_id}/owners/{offering_owner_id}/update")
+async def update_offering_owner_submit(
+    request: Request,
+    vendor_id: str,
+    offering_id: str,
+    offering_owner_id: str,
+):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", f"/vendors/{vendor_id}/offerings/{offering_id}")))
+    owner_user_principal = str(form.get("owner_user_principal", "")).strip()
+    owner_role = str(form.get("owner_role", "")).strip()
+    reason = str(form.get("reason", "")).strip()
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not repo.offering_belongs_to_vendor(vendor_id, offering_id):
+        add_flash(request, "Offering does not belong to this vendor.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+
+    payload = {
+        "offering_id": offering_id,
+        "offering_owner_id": offering_owner_id,
+        "owner_user_principal": owner_user_principal,
+        "owner_role": owner_role,
+        "reason": reason,
+    }
+    try:
+        if user.can_apply_change("add_offering_owner"):
+            repo.update_offering_owner(
+                vendor_id=vendor_id,
+                offering_id=offering_id,
+                offering_owner_id=offering_owner_id,
+                owner_user_principal=owner_user_principal,
+                owner_role=owner_role,
+                actor_user_principal=user.user_principal,
+            )
+            add_flash(request, "Offering owner updated.", "success")
+        else:
+            request_id = repo.create_vendor_change_request(
+                vendor_id=vendor_id,
+                requestor_user_principal=user.user_principal,
+                change_type="update_offering_owner",
+                payload=payload,
+            )
+            add_flash(request, f"Pending change request submitted: {request_id}", "success")
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_offering_detail",
+            event_type="update_offering_owner",
+            payload={"vendor_id": vendor_id, "offering_id": offering_id, "offering_owner_id": offering_owner_id},
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not update offering owner: {exc}", "error")
+
+    return RedirectResponse(url=return_to, status_code=303)
+
+
 @router.post("/{vendor_id}/offerings/{offering_id}/contacts/add")
 async def add_offering_contact_submit(request: Request, vendor_id: str, offering_id: str):
     repo = get_repo()

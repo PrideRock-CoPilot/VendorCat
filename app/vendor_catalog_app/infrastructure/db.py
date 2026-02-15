@@ -365,7 +365,48 @@ class DatabricksSQLClient:
         normalized = normalized.replace("%s", "?")
         if self.config.use_local_db:
             normalized = normalized.replace(f"{self.config.fq_schema}.", "")
+            normalized = self._rewrite_sql_for_sqlite(normalized)
         return normalized
+
+    @staticmethod
+    def _rewrite_sql_for_sqlite(statement: str) -> str:
+        sql = str(statement or "")
+
+        def _sqlite_month_offset(match: re.Match[str]) -> str:
+            raw_offset = int(match.group(1))
+            if raw_offset == 0:
+                return "date('now', 'start of month')"
+            sign = "+" if raw_offset > 0 else "-"
+            return f"date('now', 'start of month', '{sign}{abs(raw_offset)} months')"
+
+        def _sqlite_day_offset(match: re.Match[str]) -> str:
+            raw_offset = int(match.group(1))
+            if raw_offset == 0:
+                return "date('now')"
+            sign = "+" if raw_offset > 0 else "-"
+            return f"date('now', '{sign}{abs(raw_offset)} days')"
+
+        sql = re.sub(
+            r"add_months\(\s*date_trunc\(\s*'month'\s*,\s*current_date\(\)\s*\)\s*,\s*(-?\d+)\s*\)",
+            _sqlite_month_offset,
+            sql,
+            flags=re.IGNORECASE,
+        )
+        sql = re.sub(
+            r"date_add\(\s*current_date\(\)\s*,\s*(-?\d+)\s*\)",
+            _sqlite_day_offset,
+            sql,
+            flags=re.IGNORECASE,
+        )
+        sql = re.sub(
+            r"datediff\(\s*([^,]+?)\s*,\s*current_date\(\)\s*\)",
+            r"CAST(julianday(\1) - julianday(date('now')) AS INTEGER)",
+            sql,
+            flags=re.IGNORECASE,
+        )
+        sql = re.sub(r"current_date\(\)", "date('now')", sql, flags=re.IGNORECASE)
+        sql = re.sub(r"date_trunc\(\s*'month'\s*,\s*date\('now'\)\s*\)", "date('now', 'start of month')", sql, flags=re.IGNORECASE)
+        return sql
 
     def _prepare_params(self, params: Iterable[Any] | None) -> tuple[Any, ...]:
         if not params:

@@ -73,6 +73,7 @@ Then set these values in `setup/config/tvendor.dev_pat.env`:
 Use `app/app.dev_local.yaml` values in your app config:
 `TVENDOR_USE_LOCAL_DB=true`, `TVENDOR_LOCAL_DB_AUTO_INIT=true`, and `TVENDOR_LOCAL_DB_SEED=false`.
 On startup, the app bootstraps a small local SQLite DB automatically (schema-only by default).
+Set `TVENDOR_LOCAL_DB_SEED=true` and `TVENDOR_LOCAL_DB_SEED_PROFILE=full` for a full enterprise-scale synthetic dataset.
 
 For Databricks Apps, prefer binding a SQL warehouse resource and use:
 ```yaml
@@ -176,6 +177,10 @@ pip install -r app/requirements.txt
 2. Initialize local DB (optional but recommended):
 ```bat
 python setup\local_db\init_local_db.py --reset
+```
+Enterprise-scale local test data:
+```bat
+python setup\local_db\init_local_db.py --reset --seed-profile full
 ```
 3. Launch:
 ```bat

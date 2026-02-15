@@ -49,11 +49,13 @@ class _FakeRepo:
 
     def resolve_role_policy(self, user_roles: set[str]) -> dict[str, object]:
         self.resolve_policy_called += 1
+        can_submit_requests = bool(not user_roles or "vendor_viewer" in user_roles or "vendor_editor" in user_roles or "vendor_admin" in user_roles)
         return {
             "roles": sorted(user_roles),
             "can_edit": "vendor_editor" in user_roles or "vendor_admin" in user_roles,
             "can_report": True,
             "can_direct_apply": "vendor_admin" in user_roles,
+            "can_submit_requests": can_submit_requests,
             "approval_level": 10 if "vendor_admin" in user_roles else (4 if "vendor_editor" in user_roles else 0),
             "allowed_change_actions": [],
         }
@@ -89,7 +91,8 @@ def test_unknown_user_gets_viewer_without_bootstrap(monkeypatch) -> None:
     context = user_context_service.get_user_context(_request())
 
     assert context.user_principal == UNKNOWN_USER_PRINCIPAL
-    assert context.roles == {ROLE_VIEWER}
+    assert context.roles == set()
+    assert context.can_submit_requests is True
     assert repo.bootstrap_called == 0
     assert repo.ensure_called == 1
 

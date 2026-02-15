@@ -36,6 +36,44 @@ def _create_lookup_table_with_scd(db_path: Path) -> None:
     with sqlite3.connect(db_path) as conn:
         conn.executescript(
             """
+            CREATE TABLE IF NOT EXISTS app_employee_directory (
+              login_identifier TEXT PRIMARY KEY,
+              email TEXT NOT NULL,
+              network_id TEXT,
+              employee_id TEXT,
+              manager_id TEXT,
+              first_name TEXT,
+              last_name TEXT,
+              display_name TEXT NOT NULL,
+              active_flag INTEGER NOT NULL
+            );
+            CREATE VIEW IF NOT EXISTS vw_employee_directory AS
+            SELECT
+              login_identifier,
+              email,
+              network_id,
+              employee_id,
+              manager_id,
+              first_name,
+              last_name,
+              display_name,
+              active_flag
+            FROM app_employee_directory;
+            CREATE TABLE IF NOT EXISTS app_user_directory (
+              user_id TEXT PRIMARY KEY,
+              login_identifier TEXT NOT NULL UNIQUE,
+              email TEXT,
+              network_id TEXT,
+              employee_id TEXT,
+              manager_id TEXT,
+              first_name TEXT,
+              last_name TEXT,
+              display_name TEXT NOT NULL,
+              active_flag INTEGER NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              last_seen_at TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS app_lookup_option (
               option_id TEXT PRIMARY KEY,
               lookup_type TEXT NOT NULL,
@@ -50,6 +88,10 @@ def _create_lookup_table_with_scd(db_path: Path) -> None:
               updated_at TEXT NOT NULL,
               updated_by TEXT NOT NULL
             );
+            INSERT INTO app_employee_directory (
+              login_identifier, email, network_id, employee_id, manager_id, first_name, last_name, display_name, active_flag
+            ) VALUES
+              ('tester@example.com', 'tester@example.com', 'tester', 'E3001', 'E3000', 'Test', 'User', 'Test User', 1);
             """
         )
         conn.commit()
