@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from copy import deepcopy
-from typing import Any, Callable
+from typing import Any
 
 import pandas as pd
+
 from vendor_catalog_app.core.env import TVENDOR_USAGE_LOG_MIN_INTERVAL_SEC, get_env
 
 

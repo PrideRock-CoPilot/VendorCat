@@ -3,6 +3,7 @@ from __future__ import annotations
 import pandas as pd
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+
 from vendor_catalog_app.web.core.runtime import get_repo
 from vendor_catalog_app.web.core.template_context import base_template_context
 from vendor_catalog_app.web.core.user_context_service import get_user_context
@@ -20,6 +21,7 @@ from vendor_catalog_app.web.routers.vendors.constants import (
     CONTRACT_STATUS_OPTIONS,
     VENDOR_DEFAULT_RETURN_TO,
 )
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/vendors")
 
@@ -56,6 +58,7 @@ def vendor_contracts_page(request: Request, vendor_id: str, return_to: str = VEN
 
 
 @router.post("/{vendor_id}/map-contract")
+@require_permission("vendor_contract_map")
 async def map_contract_submit(request: Request, vendor_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -116,8 +119,7 @@ async def map_contract_submit(request: Request, vendor_id: str):
     return RedirectResponse(url=return_to, status_code=303)
 
 
-@router.post("/{vendor_id}/contracts/add")
-async def add_vendor_contract_submit(request: Request, vendor_id: str):
+@router.post("/{vendor_id}/contracts/add")@require_permission("vendor_contract_create")async def add_vendor_contract_submit(request: Request, vendor_id: str):
     repo = get_repo()
     user = get_user_context(request)
     form = await request.form()
@@ -182,8 +184,7 @@ async def add_vendor_contract_submit(request: Request, vendor_id: str):
     return RedirectResponse(url=return_to, status_code=303)
 
 
-@router.post("/{vendor_id}/contracts/{contract_id}/cancel")
-async def cancel_vendor_contract_submit(request: Request, vendor_id: str, contract_id: str):
+@router.post("/{vendor_id}/contracts/{contract_id}/cancel")@require_permission("vendor_contract_cancel")async def cancel_vendor_contract_submit(request: Request, vendor_id: str, contract_id: str):
     repo = get_repo()
     user = get_user_context(request)
     form = await request.form()
@@ -247,8 +248,7 @@ async def cancel_vendor_contract_submit(request: Request, vendor_id: str, contra
     return RedirectResponse(url=return_to, status_code=303)
 
 
-@router.post("/{vendor_id}/contracts/{contract_id}/update")
-async def update_vendor_contract_submit(request: Request, vendor_id: str, contract_id: str):
+@router.post("/{vendor_id}/contracts/{contract_id}/update")@require_permission("vendor_contract_update")async def update_vendor_contract_submit(request: Request, vendor_id: str, contract_id: str):
     repo = get_repo()
     user = get_user_context(request)
     form = await request.form()
@@ -310,6 +310,7 @@ async def update_vendor_contract_submit(request: Request, vendor_id: str, contra
 
 
 @router.post("/{vendor_id}/map-contracts/bulk")
+@require_permission("vendor_contract_map_bulk")
 async def map_contracts_bulk_submit(request: Request, vendor_id: str):
     repo = get_repo()
     user = get_user_context(request)

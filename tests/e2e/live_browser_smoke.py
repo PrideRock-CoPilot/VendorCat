@@ -7,9 +7,9 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -96,9 +96,7 @@ def _click_nav_links(page: Page, base_url: str) -> list[StepResult]:
             current = page.url
             if expected_path not in current:
                 # Some links redirect (vendor-360 -> /vendors)
-                if label == "Vendor 360" and "/vendors" in current:
-                    results.append(StepResult(name=f"nav:{label}", ok=True, detail=current))
-                elif label == "Pending Approvals" and "/workflows" in current:
+                if label == "Vendor 360" and "/vendors" in current or label == "Pending Approvals" and "/workflows" in current:
                     results.append(StepResult(name=f"nav:{label}", ok=True, detail=current))
                 else:
                     results.append(StepResult(name=f"nav:{label}", ok=False, detail=current))
@@ -276,7 +274,7 @@ def _run_browser_flows(base_url: str) -> list[StepResult]:
             vendor_id = vendor_state["vendor_id"]
             offering_id = vendor_state["offering_id"]
             _goto(page, base_url, "/demos", expect_text="Demo Outcomes")
-            form = page.locator("form[action='/demos']").first
+            form = page.locator("form[action='/demos'][method='post']").first
             form.locator("input[name='vendor_id']").fill(vendor_id)
             form.locator("input[name='offering_id']").fill(offering_id)
             form.locator("input[name='demo_date']").fill("2026-02-10")

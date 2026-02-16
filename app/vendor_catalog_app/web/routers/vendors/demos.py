@@ -3,6 +3,7 @@ from __future__ import annotations
 import pandas as pd
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+
 from vendor_catalog_app.web.core.runtime import get_repo
 from vendor_catalog_app.web.core.template_context import base_template_context
 from vendor_catalog_app.web.core.user_context_service import get_user_context
@@ -14,6 +15,7 @@ from vendor_catalog_app.web.routers.vendors.common import (
     _write_blocked,
 )
 from vendor_catalog_app.web.routers.vendors.constants import VENDOR_DEFAULT_RETURN_TO
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/vendors")
 
@@ -46,6 +48,7 @@ def vendor_demos_page(request: Request, vendor_id: str, return_to: str = VENDOR_
 
 
 @router.post("/{vendor_id}/map-demo")
+@require_permission("vendor_demo_map")
 async def map_demo_submit(request: Request, vendor_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -107,6 +110,7 @@ async def map_demo_submit(request: Request, vendor_id: str):
 
 
 @router.post("/{vendor_id}/map-demos/bulk")
+@require_permission("vendor_demo_map_bulk")
 async def map_demos_bulk_submit(request: Request, vendor_id: str):
     repo = get_repo()
     user = get_user_context(request)

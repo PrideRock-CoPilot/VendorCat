@@ -5,6 +5,7 @@ import uuid
 from typing import Any
 
 import pandas as pd
+
 from vendor_catalog_app.core.repository_constants import *
 
 LOGGER = logging.getLogger(__name__)
@@ -387,7 +388,7 @@ class RepositoryOfferingWriteMixin:
         after.update(clean_updates)
 
         request_id = str(uuid.uuid4())
-        set_clause = ", ".join([f"{k} = %s" for k in clean_updates.keys()])
+        set_clause = ", ".join([f"{k} = %s" for k in clean_updates])
         params = list(clean_updates.values()) + [offering_id, vendor_id]
         self._ensure_local_offering_columns()
         self._execute_file(

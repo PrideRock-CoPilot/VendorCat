@@ -1,4 +1,61 @@
 document.addEventListener("DOMContentLoaded", () => {
+  // Theme toggle
+  const themeToggle = document.getElementById("theme-toggle");
+  const body = document.body;
+  const themeKey = "vendor-catalog-theme";
+
+  const setTheme = (isDark) => {
+    if (isDark) {
+      body.classList.add("dark-mode");
+      themeToggle.textContent = "☀️";
+      localStorage.setItem(themeKey, "dark");
+    } else {
+      body.classList.remove("dark-mode");
+      themeToggle.textContent = "🌙";
+      localStorage.setItem(themeKey, "light");
+    }
+  };
+
+  const toggleTheme = () => {
+    const isDark = body.classList.contains("dark-mode");
+    setTheme(!isDark);
+  };
+
+  // Load saved theme or default to light
+  const savedTheme = localStorage.getItem(themeKey);
+  if (savedTheme === "dark") {
+    setTheme(true);
+  } else {
+    setTheme(false);
+  }
+
+  if (themeToggle) {
+    themeToggle.addEventListener("click", toggleTheme);
+  }
+
+  // Utility functions
+  window.VendorCatalogUtils = {
+    formatDate: (dateString) => {
+      if (!dateString) return '';
+      const date = new Date(dateString);
+      return date.toLocaleDateString();
+    },
+    formatCurrency: (amount) => {
+      return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+    },
+    debounce: (func, wait) => {
+      let timeout;
+      return function executedFunction(...args) {
+        const later = () => {
+          clearTimeout(timeout);
+          func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+      };
+    }
+  };
+
   const loadingOverlay = document.getElementById("loading-overlay");
   const loadingOverlayStatus = document.getElementById("loading-overlay-status");
   let loadingTimer = null;
@@ -779,6 +836,48 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
+  const initHelpCenter = (scope = document) => {
+    const copyButtons = Array.from(scope.querySelectorAll("[data-help-copy-link]"));
+    if (!copyButtons.length) return;
+
+    const copyText = async (text) => {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "readonly");
+      textarea.style.position = "absolute";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    };
+
+    copyButtons.forEach((button) => {
+      if (!(button instanceof HTMLElement)) return;
+      if (button.dataset.helpCopyInit === "1") return;
+      button.dataset.helpCopyInit = "1";
+      button.addEventListener("click", async () => {
+        const rawLink = String(button.getAttribute("data-help-link") || "").trim();
+        const link = rawLink || window.location.pathname;
+        const url = link.startsWith("http") ? link : `${window.location.origin}${link}`;
+        try {
+          await copyText(url);
+          const original = button.textContent || "Copy link";
+          button.textContent = "Link copied";
+          window.setTimeout(() => {
+            button.textContent = original;
+          }, 1800);
+        } catch {
+          window.alert("Copy failed. Please copy the URL from the address bar.");
+        }
+      });
+    });
+  };
+
   applyTooltips(document);
   initCsrfForms(document);
   initDocLinkForms(document);
@@ -786,6 +885,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initTypeaheadKeyboard(document);
   initClickableRows(document);
   initResponsiveTables(document);
+  initHelpCenter(document);
 
   const observer = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
@@ -798,6 +898,7 @@ document.addEventListener("DOMContentLoaded", () => {
           initTypeaheadKeyboard(node);
           initClickableRows(node);
           initResponsiveTables(node);
+          initHelpCenter(node);
         }
       });
     });

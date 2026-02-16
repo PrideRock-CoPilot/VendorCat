@@ -4,6 +4,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+
 from vendor_catalog_app.web.core.runtime import get_repo
 from vendor_catalog_app.web.core.template_context import base_template_context
 from vendor_catalog_app.web.core.user_context_service import get_user_context
@@ -38,6 +39,7 @@ from vendor_catalog_app.web.routers.vendors.pages import (
     _offering_service_type_options,
     _offering_type_options,
 )
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/vendors")
 
@@ -152,6 +154,7 @@ def offering_new_form(request: Request, vendor_id: str, return_to: str = VENDOR_
 
 
 @router.post("/{vendor_id}/offerings/new")
+@require_permission("offering_create")
 async def offering_new_submit(request: Request, vendor_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -440,6 +443,7 @@ def offering_detail_page(
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/update")
+@require_permission("offering_edit")
 async def offering_update_submit(request: Request, vendor_id: str, offering_id: str):
     repo = get_repo()
     user = get_user_context(request)

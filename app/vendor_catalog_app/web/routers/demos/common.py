@@ -5,7 +5,6 @@ import re
 from datetime import date
 from typing import Any
 
-
 DEMO_REVIEW_TEMPLATE_NOTE_TYPE = "review_form_template_v1"
 DEMO_REVIEW_TEMPLATE_V2_NOTE_TYPE = "review_form_template_v2"
 DEMO_REVIEW_TEMPLATE_NOTE_TYPES = [

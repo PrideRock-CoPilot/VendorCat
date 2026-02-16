@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from vendor_catalog_app.repository import (
     LOOKUP_TYPE_ASSIGNMENT_TYPE,
@@ -16,7 +16,6 @@ from vendor_catalog_app.repository import (
     LOOKUP_TYPE_PROJECT_TYPE,
     LOOKUP_TYPE_WORKFLOW_STATUS,
 )
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -49,7 +48,7 @@ def _admin_redirect_url(
     if section == ADMIN_SECTION_DEFAULTS:
         selected_lookup = lookup_type if lookup_type in LOOKUP_TYPE_LABELS else LOOKUP_TYPE_DOC_SOURCE
         selected_status = lookup_status if lookup_status in LOOKUP_STATUS_OPTIONS else "active"
-        selected_as_of = str(as_of or "").strip() or datetime.now(timezone.utc).date().isoformat()
+        selected_as_of = str(as_of or "").strip() or datetime.now(UTC).date().isoformat()
         return (
             f"/admin?section={ADMIN_SECTION_DEFAULTS}&lookup_type={selected_lookup}"
             f"&status={selected_status}&as_of={selected_as_of}"
@@ -92,7 +91,7 @@ def _normalize_as_of_date(raw: str | None) -> str:
             return datetime.fromisoformat(value).date().isoformat()
         except Exception:
             LOGGER.debug("Invalid as_of date '%s'; falling back to current UTC date.", value, exc_info=True)
-    return datetime.now(timezone.utc).date().isoformat()
+    return datetime.now(UTC).date().isoformat()
 
 
 def _date_value(value: object) -> str:

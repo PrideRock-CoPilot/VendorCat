@@ -3,11 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from vendor_catalog_app.web.routers.pending_approvals.common import *
-
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/workflows")
 
 @router.post("/{change_request_id}/decision")
+@require_permission("approval_decision")
 async def workflow_decision(request: Request, change_request_id: str):
     repo = get_repo()
     user = get_user_context(request)

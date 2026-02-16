@@ -105,6 +105,7 @@ async def add_offering_invoice_submit(request: Request, vendor_id: str, offering
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/invoices/{invoice_id}/remove")
+@require_permission("offering_invoice_delete")
 async def remove_offering_invoice_submit(request: Request, vendor_id: str, offering_id: str, invoice_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -212,6 +213,7 @@ async def add_offering_owner_submit(request: Request, vendor_id: str, offering_i
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/owners/remove")
+@require_permission("offering_owner_delete")
 async def remove_offering_owner_submit(request: Request, vendor_id: str, offering_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -260,6 +262,7 @@ async def remove_offering_owner_submit(request: Request, vendor_id: str, offerin
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/owners/{offering_owner_id}/update")
+@require_permission("offering_owner_edit")
 async def update_offering_owner_submit(
     request: Request,
     vendor_id: str,
@@ -382,6 +385,7 @@ async def add_offering_contact_submit(request: Request, vendor_id: str, offering
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/contacts/remove")
+@require_permission("offering_contact_delete")
 async def remove_offering_contact_submit(request: Request, vendor_id: str, offering_id: str):
     repo = get_repo()
     user = get_user_context(request)

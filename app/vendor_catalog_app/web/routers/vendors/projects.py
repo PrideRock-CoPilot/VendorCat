@@ -264,6 +264,7 @@ def project_edit_form(request: Request, vendor_id: str, project_id: str, return_
 
 
 @router.post("/{vendor_id}/projects/{project_id}/edit")
+@require_permission("project_edit")
 async def project_edit_submit(request: Request, vendor_id: str, project_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -394,6 +395,7 @@ def project_demo_new_form(request: Request, vendor_id: str, project_id: str, ret
 
 
 @router.post("/{vendor_id}/projects/{project_id}/demos/new")
+@require_permission("project_demo_create")
 async def project_demo_new_submit(request: Request, vendor_id: str, project_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -467,6 +469,7 @@ async def project_demo_new_submit(request: Request, vendor_id: str, project_id: 
 
 
 @router.post("/{vendor_id}/projects/{project_id}/demos/map")
+@require_permission("project_demo_map")
 async def project_demo_map_submit(request: Request, vendor_id: str, project_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -507,6 +510,7 @@ async def project_demo_map_submit(request: Request, vendor_id: str, project_id: 
 
 
 @router.post("/{vendor_id}/projects/{project_id}/demos/{demo_id}/update")
+@require_permission("project_demo_update")
 async def project_demo_update_submit(request: Request, vendor_id: str, project_id: str, demo_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -574,6 +578,7 @@ async def project_demo_update_submit(request: Request, vendor_id: str, project_i
 
 
 @router.post("/{vendor_id}/projects/{project_id}/demos/{demo_id}/remove")
+@require_permission("project_demo_delete")
 async def project_demo_remove_submit(request: Request, vendor_id: str, project_id: str, demo_id: str):
     repo = get_repo()
     user = get_user_context(request)

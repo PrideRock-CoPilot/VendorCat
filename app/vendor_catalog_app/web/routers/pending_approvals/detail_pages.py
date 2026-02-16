@@ -4,7 +4,6 @@ from fastapi import APIRouter
 
 from vendor_catalog_app.web.routers.pending_approvals.common import *
 
-
 router = APIRouter(prefix="/workflows")
 
 @router.get("/{change_request_id}")

@@ -4,7 +4,6 @@ from fastapi import APIRouter
 
 from vendor_catalog_app.web.routers.reports.common import *
 
-
 router = APIRouter()
 @router.get("/reports/download")
 def reports_download(

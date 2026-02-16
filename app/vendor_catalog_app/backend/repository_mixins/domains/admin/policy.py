@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 import pandas as pd
+
 from vendor_catalog_app.core.security import (
     CHANGE_APPROVAL_LEVELS,
     MAX_APPROVAL_LEVEL,

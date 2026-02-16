@@ -4,8 +4,6 @@ import os
 
 import uvicorn
 
-from vendor_catalog_app.web.app import app
-
 
 def run() -> None:
     port = int(os.getenv("PORT", os.getenv("DATABRICKS_APP_PORT", "8000")))

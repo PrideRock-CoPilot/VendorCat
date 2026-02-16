@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+
 from vendor_catalog_app.web.http.flash import add_flash
 from vendor_catalog_app.web.routers.imports.apply_ops import (
     ImportApplyContext,
@@ -27,6 +28,7 @@ from vendor_catalog_app.web.routers.imports.store import (
     load_preview_payload,
     save_preview_payload,
 )
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter()
 
@@ -39,6 +41,7 @@ def _imports_module():
 
 
 @router.post("/imports/preview")
+@require_permission("import_preview")
 async def imports_preview(request: Request):
     imports_module = _imports_module()
     repo = imports_module.get_repo()
@@ -97,8 +100,7 @@ async def imports_preview(request: Request):
     return request.app.state.templates.TemplateResponse(request, "imports.html", context)
 
 
-@router.post("/imports/apply")
-async def imports_apply(request: Request):
+@router.post("/imports/apply")@require_permission("import_apply")async def imports_apply(request: Request):
     imports_module = _imports_module()
     repo = imports_module.get_repo()
     user = imports_module.get_user_context(request)

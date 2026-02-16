@@ -180,7 +180,7 @@ class RepositoryDocumentsMixin:
         after.update(clean_updates)
         request_id = str(uuid.uuid4())
         now = self._now()
-        set_clause = ", ".join([f"{k} = %s" for k in clean_updates.keys()])
+        set_clause = ", ".join([f"{k} = %s" for k in clean_updates])
         params = list(clean_updates.values()) + [now, actor_user_principal, doc_id]
         self._execute_file(
             "updates/update_doc_link.sql",

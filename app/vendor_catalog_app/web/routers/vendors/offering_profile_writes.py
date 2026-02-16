@@ -4,6 +4,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+
 from vendor_catalog_app.web.core.runtime import get_repo
 from vendor_catalog_app.web.core.user_context_service import get_user_context
 from vendor_catalog_app.web.http.flash import add_flash
@@ -18,11 +19,13 @@ from vendor_catalog_app.web.routers.vendors.constants import (
     OFFERING_TICKET_STATUSES,
     VENDOR_DEFAULT_RETURN_TO,
 )
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/vendors")
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/profile/save")
+@require_permission("offering_profile_edit")
 async def offering_profile_save_submit(request: Request, vendor_id: str, offering_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -162,6 +165,7 @@ async def offering_profile_save_submit(request: Request, vendor_id: str, offerin
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/dataflows/add")
+@require_permission("offering_dataflow_create")
 async def add_offering_data_flow_submit(request: Request, vendor_id: str, offering_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -279,6 +283,7 @@ async def add_offering_data_flow_submit(request: Request, vendor_id: str, offeri
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/dataflows/remove")
+@require_permission("offering_dataflow_delete")
 async def remove_offering_data_flow_submit(request: Request, vendor_id: str, offering_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -348,6 +353,7 @@ async def remove_offering_data_flow_submit(request: Request, vendor_id: str, off
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/dataflows/update")
+@require_permission("offering_dataflow_edit")
 async def update_offering_data_flow_submit(request: Request, vendor_id: str, offering_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -485,6 +491,7 @@ async def update_offering_data_flow_submit(request: Request, vendor_id: str, off
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/notes/add")
+@require_permission("offering_note_create")
 async def add_offering_note_submit(request: Request, vendor_id: str, offering_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -552,6 +559,7 @@ async def add_offering_note_submit(request: Request, vendor_id: str, offering_id
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/tickets/add")
+@require_permission("offering_ticket_create")
 async def add_offering_ticket_submit(request: Request, vendor_id: str, offering_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -639,6 +647,7 @@ async def add_offering_ticket_submit(request: Request, vendor_id: str, offering_
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/tickets/{ticket_id}/status")
+@require_permission("offering_ticket_update")
 async def update_offering_ticket_status_submit(request: Request, vendor_id: str, offering_id: str, ticket_id: str):
     repo = get_repo()
     user = get_user_context(request)

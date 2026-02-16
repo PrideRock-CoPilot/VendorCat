@@ -4,6 +4,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+
 from vendor_catalog_app.web.core.runtime import get_repo
 from vendor_catalog_app.web.core.user_context_service import get_user_context
 from vendor_catalog_app.web.http.flash import add_flash
@@ -11,15 +12,15 @@ from vendor_catalog_app.web.routers.projects.common import (
     _dedupe_ordered,
     _normalize_project_status,
     _normalize_project_type,
-    _prepare_doc_payload,
     _request_scope_vendor_id,
     _safe_return_to,
-    _safe_vendor_id,
 )
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/projects")
 
 @router.post("/new")
+@require_permission("project_create")
 async def projects_new_submit(request: Request):
     repo = get_repo()
     user = get_user_context(request)
@@ -94,6 +95,7 @@ async def projects_new_submit(request: Request):
 
 
 @router.post("/{project_id}/edit")
+@require_permission("project_edit")
 async def project_edit_submit(request: Request, project_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -176,6 +178,7 @@ async def project_edit_submit(request: Request, project_id: str):
 
 
 @router.post("/{project_id}/owner/update")
+@require_permission("project_owner_update")
 async def project_owner_update(request: Request, project_id: str):
     repo = get_repo()
     user = get_user_context(request)

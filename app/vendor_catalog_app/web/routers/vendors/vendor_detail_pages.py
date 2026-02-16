@@ -138,6 +138,7 @@ def vendor_ownership_page(request: Request, vendor_id: str, return_to: str = VEN
 
 
 @router.post("/{vendor_id}/owners/add")
+@require_permission("vendor_owner_create")
 async def add_vendor_owner_submit(request: Request, vendor_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -188,6 +189,7 @@ async def add_vendor_owner_submit(request: Request, vendor_id: str):
 
 
 @router.post("/{vendor_id}/org-assignments/add")
+@require_permission("vendor_org_assignment_create")
 async def add_vendor_org_assignment_submit(request: Request, vendor_id: str):
     repo = get_repo()
     user = get_user_context(request)

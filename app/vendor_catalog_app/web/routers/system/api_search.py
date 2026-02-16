@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+
 from vendor_catalog_app.web.core.activity import ensure_session_started
 from vendor_catalog_app.web.core.runtime import get_repo
 from vendor_catalog_app.web.core.user_context_service import get_user_context

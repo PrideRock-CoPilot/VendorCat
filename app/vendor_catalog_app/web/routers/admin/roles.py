@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+
 from vendor_catalog_app.core.security import (
     MAX_APPROVAL_LEVEL,
     MIN_APPROVAL_LEVEL,

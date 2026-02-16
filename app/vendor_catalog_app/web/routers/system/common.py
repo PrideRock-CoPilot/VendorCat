@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from vendor_catalog_app.repository import SchemaBootstrapRequiredError
+
 
 def _normalize_limit(limit: int) -> int:
     return max(1, min(int(limit or 20), 50))
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _runtime_ready(repo) -> tuple[bool, str | None]:

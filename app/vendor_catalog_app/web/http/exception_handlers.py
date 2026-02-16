@@ -18,7 +18,6 @@ from vendor_catalog_app.web.system.bootstrap_diagnostics import (
     build_bootstrap_diagnostics_payload,
 )
 
-
 LOGGER = logging.getLogger(__name__)
 
 

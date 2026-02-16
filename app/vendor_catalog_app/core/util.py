@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 TRUE_LIKE_VALUES = {"1", "true", "yes", "y", "on"}
 
 

@@ -7,6 +7,7 @@
     <p>Offering-level details, mappings, and editable controls.</p>
   </div>
   <div class="button-group">
+    <a class="button-link subtle" href="/help/offerings-list-and-mappings">? Help</a>
     {% if can_edit and not locked_mode %}
     <a class="button-link" href="/vendors/{{ vendor_id }}/offerings/new?return_to={{ return_to|urlencode }}">+ New Offering</a>
     {% endif %}

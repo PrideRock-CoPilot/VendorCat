@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from copy import deepcopy
 import threading
 import time
 import uuid
+from copy import deepcopy
 from typing import Any
-
 
 IMPORT_PREVIEW_TTL_SEC = 1800.0
 IMPORT_PREVIEW_MAX_ITEMS = 64

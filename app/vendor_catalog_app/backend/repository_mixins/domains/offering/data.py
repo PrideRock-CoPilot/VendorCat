@@ -5,6 +5,7 @@ import uuid
 from typing import Any
 
 import pandas as pd
+
 from vendor_catalog_app.core.repository_constants import *
 
 LOGGER = logging.getLogger(__name__)
@@ -693,9 +694,9 @@ class RepositoryOfferingDataMixin:
         clean_updates["updated_by"] = actor_ref
 
         set_clause = ", ".join(
-            [f"{key} = %s" for key in clean_updates.keys() if key not in {"updated_at", "updated_by"}]
+            [f"{key} = %s" for key in clean_updates if key not in {"updated_at", "updated_by"}]
         )
-        params = [clean_updates[key] for key in clean_updates.keys() if key not in {"updated_at", "updated_by"}]
+        params = [clean_updates[key] for key in clean_updates if key not in {"updated_at", "updated_by"}]
         self._execute_file(
             "updates/update_offering_data_flow.sql",
             params=tuple(params + [now, actor_ref, data_flow_id, offering_id, vendor_id]),
@@ -885,8 +886,8 @@ class RepositoryOfferingDataMixin:
         clean_updates["updated_at"] = now.isoformat()
         clean_updates["updated_by"] = actor_ref
 
-        set_clause = ", ".join([f"{key} = %s" for key in clean_updates.keys() if key not in {"updated_at", "updated_by"}])
-        params = [clean_updates[key] for key in clean_updates.keys() if key not in {"updated_at", "updated_by"}]
+        set_clause = ", ".join([f"{key} = %s" for key in clean_updates if key not in {"updated_at", "updated_by"}])
+        params = [clean_updates[key] for key in clean_updates if key not in {"updated_at", "updated_by"}]
         self._execute_file(
             "updates/update_offering_ticket.sql",
             params=tuple(params + [now, actor_ref, ticket_id, offering_id, vendor_id]),

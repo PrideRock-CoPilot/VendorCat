@@ -84,6 +84,8 @@ def _cleanup_existing_corporate_rows(conn: sqlite3.Connection) -> None:
         "DELETE FROM sec_group_role_map WHERE group_principal LIKE 'group:corp_%'",
         "DELETE FROM app_user_directory WHERE user_id LIKE 'usr-corp-%'",
         "DELETE FROM app_employee_directory WHERE login_identifier LIKE 'emp%@example.com'",
+        "DELETE FROM vendor_help_feedback WHERE feedback_id LIKE 'hfb-corp-%'",
+        "DELETE FROM vendor_help_issue WHERE issue_id LIKE 'his-corp-%'",
     )
     for statement in statements:
         conn.execute(statement)
@@ -967,6 +969,58 @@ def seed_full_corporate(conn: sqlite3.Connection, config: SeedConfig | None = No
         VALUES (?, ?, ?, ?, ?, ?)
         """,
         usage_rows,
+    )
+
+    help_feedback_rows = [
+        (
+            "hfb-corp-000001",
+            "help-003",
+            "add-vendor",
+            1,
+            "Clear steps and good example.",
+            "emp005@example.com",
+            "/help/add-vendor",
+            _as_ts(base_dt, -2),
+        ),
+        (
+            "hfb-corp-000002",
+            "help-013",
+            "add-document-link",
+            0,
+            "Need a note about owner field.",
+            "emp021@example.com",
+            "/help/add-document-link",
+            _as_ts(base_dt, -1),
+        ),
+    ]
+    conn.executemany(
+        """
+        INSERT INTO vendor_help_feedback
+          (feedback_id, article_id, article_slug, was_helpful, comment, user_principal, page_path, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        help_feedback_rows,
+    )
+
+    help_issue_rows = [
+        (
+            "his-corp-000001",
+            "help-008",
+            "create-project",
+            "Update owner example",
+            "Owner example should use a real email address format.",
+            "/help/create-project",
+            "emp017@example.com",
+            _as_ts(base_dt, -1, 2),
+        )
+    ]
+    conn.executemany(
+        """
+        INSERT INTO vendor_help_issue
+          (issue_id, article_id, article_slug, issue_title, issue_description, page_path, user_principal, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        help_issue_rows,
     )
 
     table_rows = conn.execute(

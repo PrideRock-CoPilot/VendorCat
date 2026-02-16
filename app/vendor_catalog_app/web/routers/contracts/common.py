@@ -6,7 +6,6 @@ import pandas as pd
 
 from vendor_catalog_app.web.routers.vendors.constants import CONTRACT_STATUS_OPTIONS
 
-
 CONTRACT_TAB_OVERVIEW = "overview"
 CONTRACT_TAB_ALL = "all"
 CONTRACT_TAB_VENDOR = "vendor"

@@ -8,19 +8,18 @@ from typing import Any
 from fastapi import Request
 
 from vendor_catalog_app.core.config import AppConfig
-from vendor_catalog_app.repository import UNKNOWN_USER_PRINCIPAL, VendorRepository
 from vendor_catalog_app.core.security import (
     ADMIN_PORTAL_ROLES,
     ROLE_ADMIN,
     ROLE_CHOICES,
 )
+from vendor_catalog_app.repository import UNKNOWN_USER_PRINCIPAL, VendorRepository
 from vendor_catalog_app.web.core.context import UserContext
 from vendor_catalog_app.web.core.identity import (
     resolve_databricks_request_group_principals,
     resolve_databricks_request_identity,
 )
 from vendor_catalog_app.web.core.runtime import get_config, get_repo, testing_role_override_enabled
-
 
 ADMIN_ROLE_OVERRIDE_SESSION_KEY = "tvendor_admin_role_override"
 IDENTITY_SYNC_SESSION_KEY_PREFIX = "tvendor_identity_synced_at"

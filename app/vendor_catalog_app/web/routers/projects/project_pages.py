@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import math
-from urllib.parse import quote, urlencode
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+
 from vendor_catalog_app.web.core.activity import ensure_session_started, log_page_view
 from vendor_catalog_app.web.core.runtime import get_repo
 from vendor_catalog_app.web.core.template_context import base_template_context
@@ -13,9 +14,7 @@ from vendor_catalog_app.web.http.flash import add_flash
 from vendor_catalog_app.web.routers.projects.common import (
     PROJECT_STATUS_VALUES,
     PROJECT_STATUSES,
-    _project_base_context,
     _project_type_options,
-    _render_project_section,
     _safe_return_to,
     _safe_vendor_id,
     _selected_offering_rows,

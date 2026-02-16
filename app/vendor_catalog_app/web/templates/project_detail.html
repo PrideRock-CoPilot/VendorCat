@@ -16,6 +16,7 @@
     <p>{{ vendor_display_name }} project workflow, demos, and document links.</p>
   </div>
   <div class="button-group">
+    <a class="button-link subtle" href="/help/project-detail">? Help</a>
     {% if can_edit and not locked_mode %}
     <a class="button-link subtle" href="/vendors/{{ vendor_id }}/projects/{{ project.project_id }}/edit?return_to={{ return_to|urlencode }}">Edit Project</a>
     {% endif %}

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Iterable
+from collections.abc import Iterable
 
 from vendor_catalog_app.core.util import as_bool, as_float, as_int
 

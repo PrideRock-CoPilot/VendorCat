@@ -8,7 +8,6 @@ from vendor_catalog_app.web.routers.admin.roles import router as roles_router
 from vendor_catalog_app.web.routers.admin.scopes import router as scopes_router
 from vendor_catalog_app.web.routers.admin.testing_role import router as testing_role_router
 
-
 router = APIRouter()
 router.include_router(pages_router)
 router.include_router(roles_router)

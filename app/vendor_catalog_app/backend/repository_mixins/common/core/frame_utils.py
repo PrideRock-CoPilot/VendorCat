@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import pandas as pd
+
 from vendor_catalog_app.infrastructure.db import DataConnectionError, DataQueryError
 
 
 class RepositoryCoreFrameMixin:
     def _now(self) -> datetime:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
     @staticmethod
     def _normalize_choice(

@@ -5,8 +5,7 @@ import time
 import uuid
 
 from fastapi import FastAPI, Request
-from fastapi.responses import PlainTextResponse
-from fastapi.responses import RedirectResponse
+from fastapi.responses import PlainTextResponse, RedirectResponse
 
 from vendor_catalog_app.infrastructure.db import (
     clear_request_perf_context,
@@ -22,7 +21,6 @@ from vendor_catalog_app.web.security.controls import (
     request_requires_write_protection,
 )
 from vendor_catalog_app.web.system.settings import AppRuntimeSettings
-
 
 LOGGER = logging.getLogger(__name__)
 PERF_LOGGER = logging.getLogger("vendor_catalog_app.perf")

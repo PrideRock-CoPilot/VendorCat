@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 ROLE_ADMIN = "vendor_admin"
 ROLE_SYSTEM_ADMIN = "system_admin"
 ROLE_APPROVER = "vendor_approver"

@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import math
+
 import pandas as pd
 from fastapi import APIRouter, Request
+
 from vendor_catalog_app.web.core.activity import ensure_session_started, log_page_view
 from vendor_catalog_app.web.core.runtime import get_repo
 from vendor_catalog_app.web.core.template_context import base_template_context
 from vendor_catalog_app.web.core.user_context_service import get_user_context
 from vendor_catalog_app.web.routers.contracts.common import (
-    CONTRACT_PAGE_SIZES,
     CONTRACT_EXPIRING_WINDOW_DAYS,
+    CONTRACT_PAGE_SIZES,
     CONTRACT_SCOPE_OPTIONS,
     CONTRACT_STATUS_FILTER_OPTIONS,
     CONTRACT_TAB_CANCELLED,

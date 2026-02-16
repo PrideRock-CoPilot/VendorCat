@@ -3,10 +3,11 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from vendor_catalog_app.web.routers.reports.common import *
-
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter()
 @router.post("/reports/email")
+@require_permission("report_email")
 async def reports_email_request(request: Request):
     repo = get_repo()
     user = get_user_context(request)

@@ -13,7 +13,6 @@ from vendor_catalog_app.core.env import (
     get_env_bool,
 )
 
-
 RUNTIME_REQUIRED_TABLES = (
     "core_vendor",
     "sec_user_role_map",

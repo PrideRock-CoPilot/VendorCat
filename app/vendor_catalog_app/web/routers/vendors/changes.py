@@ -4,6 +4,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+
 from vendor_catalog_app.core.security import (
     MAX_APPROVAL_LEVEL,
     MIN_CHANGE_APPROVAL_LEVEL,
@@ -23,6 +24,7 @@ from vendor_catalog_app.web.routers.vendors.constants import (
     RISK_TIERS,
     VENDOR_DEFAULT_RETURN_TO,
 )
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/vendors")
 
@@ -83,6 +85,7 @@ def vendor_changes_page(request: Request, vendor_id: str, return_to: str = VENDO
 
 
 @router.post("/{vendor_id}/direct-update")
+@require_permission("vendor_edit")
 async def vendor_direct_update(request: Request, vendor_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -145,6 +148,7 @@ async def vendor_direct_update(request: Request, vendor_id: str):
 
 
 @router.post("/{vendor_id}/change-request")
+@require_permission("vendor_change_request_create")
 async def vendor_change_request(request: Request, vendor_id: str):
     repo = get_repo()
     user = get_user_context(request)

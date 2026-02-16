@@ -14,7 +14,6 @@ from vendor_catalog_app.web.routers.dashboard.common import (
     render_startup_splash,
 )
 
-
 router = APIRouter()
 
 
