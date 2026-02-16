@@ -477,6 +477,153 @@ ROLE_PERMISSIONS = {
 }
 ```
 
+---
+
+## Real-World Examples (PR Bundle 2)
+
+The following endpoints demonstrate the RBAC pattern in production code:
+
+### Example 1: Add Vendor Contact
+
+**File**: `app/vendor_catalog_app/web/routers/vendors/vendor_detail_pages.py`
+
+```python
+from vendor_catalog_app.web.security.rbac import require_permission
+
+@router.post("/{vendor_id}/contacts/add")
+@require_permission("vendor_contact_create")
+async def add_vendor_contact_submit(request: Request, vendor_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    # ... Form validation ...
+    
+    # No manual permission check needed - decorator handles it
+    if user.can_apply_change("add_vendor_contact"):
+        contact_id = repo.add_vendor_contact(...)
+    else:
+        request_id = repo.create_vendor_change_request(...)
+    
+    # ... Flash message and redirect ...
+```
+
+**Key Points**:
+- `@require_permission("vendor_contact_create")` enforces permission before handler runs
+- No need for `if not user.can_edit:` check (decorator handles it)
+- Workflow logic (`can_apply_change`) determines direct vs. approval flow
+
+---
+
+### Example 2: Create Project
+
+**File**: `app/vendor_catalog_app/web/routers/vendors/projects.py`
+
+```python
+@router.post("/{vendor_id}/projects/new")
+@require_permission("project_create")
+async def project_new_submit(request: Request, vendor_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    # ... Project creation logic ...
+    
+    if user.can_apply_change("create_project"):
+        project_id = repo.create_project(...)
+    else:
+        request_id = repo.create_vendor_change_request(...)
+    # ... Return redirect ...
+```
+
+**Required Roles**: `vendor_admin`, `vendor_editor`, `system_admin`
+
+---
+
+### Example 3: Add Offering Invoice
+
+**File**: `app/vendor_catalog_app/web/routers/vendors/offering_writes.py`
+
+```python
+@router.post("/{vendor_id}/offerings/{offering_id}/invoices/add")
+@require_permission("offering_invoice_create")
+async def add_offering_invoice_submit(request: Request, vendor_id: str, offering_id: str):
+    # ... Invoice validation ...
+    
+    if user.can_apply_change("add_offering_invoice"):
+        invoice_id = repo.add_offering_invoice(...)
+    else:
+        request_id = repo.create_vendor_change_request(...)
+```
+
+**Required Roles**: `vendor_admin`, `vendor_editor`
+
+---
+
+### Example 4: Add Offering Owner
+
+**File**: `app/vendor_catalog_app/web/routers/vendors/offering_writes.py`
+
+```python
+@router.post("/{vendor_id}/offerings/{offering_id}/owners/add")
+@require_permission("offering_owner_create")
+async def add_offering_owner_submit(request: Request, vendor_id: str, offering_id: str):
+    # Permission enforced by decorator
+    if user.can_apply_change("add_offering_owner"):
+        owner_id = repo.add_offering_owner(...)
+    else:
+        request_id = repo.create_vendor_change_request(...)
+```
+
+---
+
+### Example 5: Add Offering Contact
+
+**File**: `app/vendor_catalog_app/web/routers/vendors/offering_writes.py`
+
+```python
+@router.post("/{vendor_id}/offerings/{offering_id}/contacts/add")
+@require_permission("offering_contact_create")
+async def add_offering_contact_submit(request: Request, vendor_id: str, offering_id: str):
+    # Decorator enforces permission, handler focuses on business logic
+    if user.can_apply_change("add_offering_contact"):
+        contact_id = repo.add_offering_contact(...)
+    else:
+        request_id = repo.create_vendor_change_request(...)
+```
+
+---
+
+### Permission Definitions
+
+These permissions are defined in `app/vendor_catalog_app/core/permissions.py`:
+
+```python
+ROLE_PERMISSIONS = {
+    'vendor_admin': [
+        'vendor_contact_create',
+        'project_create',
+        'offering_invoice_create',
+        'offering_owner_create',
+        'offering_contact_create',
+        # ... other permissions ...
+    ],
+    'vendor_editor': [
+        'vendor_contact_create',
+        'project_create',
+        'offering_invoice_create',
+        'offering_owner_create',
+        'offering_contact_create',
+        # ... other permissions ...
+    ],
+    # ... other roles ...
+}
+```
+
+**Workflow**: 
+- `vendor_editor` can create vendor contacts, projects, and offering data
+- `vendor_approver` may need to approve changes before they're applied
+- `vendor_viewer` and `vendor_auditor` cannot perform write operations
+
+---
+
 ## Testing RBAC
 
 ### Test Coverage

@@ -4,6 +4,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+
 from vendor_catalog_app.core.defaults import DEFAULT_PROJECT_TYPE
 from vendor_catalog_app.web.core.runtime import get_repo
 from vendor_catalog_app.web.core.template_context import base_template_context
@@ -26,6 +27,7 @@ from vendor_catalog_app.web.routers.vendors.constants import (
     PROJECT_TYPES_FALLBACK,
     VENDOR_DEFAULT_RETURN_TO,
 )
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/vendors")
 
@@ -123,6 +125,7 @@ def project_new_form(request: Request, vendor_id: str, return_to: str = VENDOR_D
 
 
 @router.post("/{vendor_id}/projects/new")
+@require_permission("project_create")
 async def project_new_submit(request: Request, vendor_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -131,9 +134,6 @@ async def project_new_submit(request: Request, vendor_id: str):
 
     if _write_blocked(user):
         add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
-        return RedirectResponse(url=return_to, status_code=303)
-    if not user.can_edit:
-        add_flash(request, "You do not have permission to create projects.", "error")
         return RedirectResponse(url=return_to, status_code=303)
 
     linked_offerings = _dedupe_ordered([str(x).strip() for x in form.getlist("linked_offerings") if str(x).strip()])

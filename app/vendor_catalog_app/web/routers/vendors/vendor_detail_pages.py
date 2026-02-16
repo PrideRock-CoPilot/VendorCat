@@ -4,6 +4,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+
 from vendor_catalog_app.core.defaults import (
     DEFAULT_PROJECT_STATUS_ACTIVE,
     DEFAULT_VENDOR_SUMMARY_MONTHS,
@@ -22,6 +23,7 @@ from vendor_catalog_app.web.routers.vendors.pages import (
     _build_line_chart_points,
     _series_with_bar_pct,
 )
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/vendors")
 
@@ -232,6 +234,7 @@ async def add_vendor_org_assignment_submit(request: Request, vendor_id: str):
 
 
 @router.post("/{vendor_id}/contacts/add")
+@require_permission("vendor_contact_create")
 async def add_vendor_contact_submit(request: Request, vendor_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -245,9 +248,6 @@ async def add_vendor_contact_submit(request: Request, vendor_id: str):
 
     if _write_blocked(user):
         add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
-        return RedirectResponse(url=return_to, status_code=303)
-    if not user.can_edit:
-        add_flash(request, "You do not have edit permission.", "error")
         return RedirectResponse(url=return_to, status_code=303)
 
     try:

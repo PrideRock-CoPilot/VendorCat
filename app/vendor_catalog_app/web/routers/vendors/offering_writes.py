@@ -4,6 +4,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+
 from vendor_catalog_app.web.core.runtime import get_repo
 from vendor_catalog_app.web.core.user_context_service import get_user_context
 from vendor_catalog_app.web.http.flash import add_flash
@@ -15,11 +16,13 @@ from vendor_catalog_app.web.routers.vendors.constants import (
     OFFERING_INVOICE_STATUSES,
     VENDOR_DEFAULT_RETURN_TO,
 )
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/vendors")
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/invoices/add")
+@require_permission("offering_invoice_create")
 async def add_offering_invoice_submit(request: Request, vendor_id: str, offering_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -35,12 +38,6 @@ async def add_offering_invoice_submit(request: Request, vendor_id: str, offering
 
     if _write_blocked(user):
         add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
-        return RedirectResponse(
-            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=financials&return_to={quote(return_to, safe='')}",
-            status_code=303,
-        )
-    if not user.can_edit:
-        add_flash(request, "You do not have edit permission.", "error")
         return RedirectResponse(
             url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=financials&return_to={quote(return_to, safe='')}",
             status_code=303,
@@ -162,6 +159,7 @@ async def remove_offering_invoice_submit(request: Request, vendor_id: str, offer
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/owners/add")
+@require_permission("offering_owner_create")
 async def add_offering_owner_submit(request: Request, vendor_id: str, offering_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -173,9 +171,6 @@ async def add_offering_owner_submit(request: Request, vendor_id: str, offering_i
 
     if _write_blocked(user):
         add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
-        return RedirectResponse(url=return_to, status_code=303)
-    if not user.can_edit:
-        add_flash(request, "You do not have edit permission.", "error")
         return RedirectResponse(url=return_to, status_code=303)
     if not repo.offering_belongs_to_vendor(vendor_id, offering_id):
         add_flash(request, "Offering does not belong to this vendor.", "error")
@@ -328,6 +323,7 @@ async def update_offering_owner_submit(
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/contacts/add")
+@require_permission("offering_contact_create")
 async def add_offering_contact_submit(request: Request, vendor_id: str, offering_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -341,9 +337,6 @@ async def add_offering_contact_submit(request: Request, vendor_id: str, offering
 
     if _write_blocked(user):
         add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
-        return RedirectResponse(url=return_to, status_code=303)
-    if not user.can_edit:
-        add_flash(request, "You do not have edit permission.", "error")
         return RedirectResponse(url=return_to, status_code=303)
     if not repo.offering_belongs_to_vendor(vendor_id, offering_id):
         add_flash(request, "Offering does not belong to this vendor.", "error")
