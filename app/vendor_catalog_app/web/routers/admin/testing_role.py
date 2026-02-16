@@ -10,11 +10,13 @@ from vendor_catalog_app.web.core.user_context_service import (
     get_user_context,
 )
 from vendor_catalog_app.web.http.flash import add_flash
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/admin")
 
 
 @router.post("/testing-role")
+@require_permission("admin_testing_role")
 async def set_testing_role(request: Request):
     repo = get_repo()
     user = get_user_context(request)

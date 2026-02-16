@@ -16,11 +16,13 @@ from vendor_catalog_app.web.routers.admin.common import (
     _normalize_lookup_type,
     _slug_lookup_code,
 )
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/admin")
 
 
 @router.post("/lookup/save")
+@require_permission("admin_lookup_manage")
 async def save_lookup_option(request: Request):
     repo = get_repo()
     user = get_user_context(request)
@@ -101,6 +103,7 @@ async def save_lookup_option(request: Request):
 
 
 @router.post("/lookup/delete")
+@require_permission("admin_lookup_manage")
 async def delete_lookup_option(request: Request):
     repo = get_repo()
     user = get_user_context(request)

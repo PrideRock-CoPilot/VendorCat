@@ -10,11 +10,13 @@ from vendor_catalog_app.web.routers.admin.common import (
     ADMIN_SECTION_ACCESS,
     _admin_redirect_url,
 )
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/admin")
 
 
 @router.post("/grant-scope")
+@require_permission("admin_scope_manage")
 async def grant_scope(request: Request):
     repo = get_repo()
     user = get_user_context(request)
@@ -50,6 +52,7 @@ async def grant_scope(request: Request):
 
 
 @router.post("/revoke-scope")
+@require_permission("admin_scope_manage")
 async def revoke_scope(request: Request):
     repo = get_repo()
     user = get_user_context(request)

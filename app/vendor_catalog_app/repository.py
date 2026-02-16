@@ -7,4 +7,6 @@ so existing imports continue to work while backend internals are modularized.
 """
 
 from vendor_catalog_app.core.repository_constants import *  # noqa: F403
+from vendor_catalog_app.backend.repository import VendorRepository
+from vendor_catalog_app.core.repository_errors import SchemaBootstrapRequiredError
 

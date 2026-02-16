@@ -48,6 +48,13 @@ def require_permission(change_type: str) -> Callable:
             # Get user from request state (set by middleware)
             user = getattr(request.state, 'user', None)
             if not user:
+                try:
+                    from vendor_catalog_app.web.core.user_context_service import get_user_context
+
+                    user = get_user_context(request)
+                except Exception:
+                    user = None
+            if not user:
                 raise HTTPException(
                     status_code=401,
                     detail="User not authenticated"

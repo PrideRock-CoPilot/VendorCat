@@ -58,7 +58,7 @@ def test_help_markdown_sanitized(client: TestClient) -> None:
 
 def test_help_feedback_persists(client: TestClient) -> None:
     response = client.post(
-        "/help/feedback",
+        "/help/feedback?as_user=admin@example.com",
         data={
             "article_id": "help-003",
             "article_slug": "add-vendor",
@@ -67,6 +67,7 @@ def test_help_feedback_persists(client: TestClient) -> None:
             "page_path": "/help/add-vendor",
             "return_to": "/help/add-vendor",
         },
+        follow_redirects=False,
     )
     assert response.status_code == 303
     repo = get_repo()

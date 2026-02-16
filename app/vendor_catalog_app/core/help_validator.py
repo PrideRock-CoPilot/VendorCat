@@ -11,6 +11,12 @@ REQUIRED_WORKFLOW_SECTIONS = (
     "example",
 )
 
+LEGACY_WORKFLOW_SECTIONS = (
+    "scenario",
+    "navigate",
+    "steps",
+)
+
 
 def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", str(text or "").strip().lower())
@@ -33,6 +39,8 @@ def validate_help_articles(articles: Iterable[dict]) -> list[str]:
         slug = str(article.get("slug") or "").strip()
         title = str(article.get("title") or "").strip()
         content = str(article.get("content_md") or "").strip()
+        if "\\n" in content or "\\r" in content:
+            content = content.replace("\\r\\n", "\n").replace("\\r", "\n").replace("\\n", "\n")
         article_type = str(article.get("article_type") or "").strip().lower()
 
         if not title:
@@ -60,8 +68,11 @@ def validate_help_articles(articles: Iterable[dict]) -> list[str]:
                 _normalize(match.group(1))
                 for match in re.finditer(r"^##\s+(.+)$", content, flags=re.M)
             ]
-            for required in REQUIRED_WORKFLOW_SECTIONS:
-                if required not in headings:
-                    errors.append(f"{slug} missing section: {required}")
+            has_modern_structure = all(required in headings for required in REQUIRED_WORKFLOW_SECTIONS)
+            has_legacy_structure = all(required in headings for required in LEGACY_WORKFLOW_SECTIONS)
+            if not has_modern_structure and not has_legacy_structure:
+                for required in REQUIRED_WORKFLOW_SECTIONS:
+                    if required not in headings:
+                        errors.append(f"{slug} missing section: {required}")
 
     return errors

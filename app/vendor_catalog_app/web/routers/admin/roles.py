@@ -17,11 +17,13 @@ from vendor_catalog_app.web.routers.admin.common import (
     ROLE_CODE_PATTERN,
     _admin_redirect_url,
 )
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/admin")
 
 
 @router.post("/grant-role")
+@require_permission("admin_role_manage")
 async def grant_role(request: Request):
     repo = get_repo()
     user = get_user_context(request)
@@ -60,6 +62,7 @@ async def grant_role(request: Request):
 
 
 @router.post("/change-role")
+@require_permission("admin_role_manage")
 async def change_role(request: Request):
     repo = get_repo()
     user = get_user_context(request)
@@ -111,6 +114,7 @@ async def change_role(request: Request):
 
 
 @router.post("/revoke-role")
+@require_permission("admin_role_manage")
 async def revoke_role(request: Request):
     repo = get_repo()
     user = get_user_context(request)
@@ -153,6 +157,7 @@ async def revoke_role(request: Request):
 
 
 @router.post("/grant-group-role")
+@require_permission("admin_role_manage")
 async def grant_group_role(request: Request):
     repo = get_repo()
     user = get_user_context(request)
@@ -194,6 +199,7 @@ async def grant_group_role(request: Request):
 
 
 @router.post("/change-group-role")
+@require_permission("admin_role_manage")
 async def change_group_role(request: Request):
     repo = get_repo()
     user = get_user_context(request)
@@ -248,6 +254,7 @@ async def change_group_role(request: Request):
 
 
 @router.post("/revoke-group-role")
+@require_permission("admin_role_manage")
 async def revoke_group_role(request: Request):
     repo = get_repo()
     user = get_user_context(request)
@@ -293,6 +300,7 @@ async def revoke_group_role(request: Request):
 
 
 @router.post("/roles/save")
+@require_permission("admin_role_manage")
 async def save_role(request: Request):
     repo = get_repo()
     user = get_user_context(request)

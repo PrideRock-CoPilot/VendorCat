@@ -94,6 +94,10 @@ ROLE_PERMISSIONS = {
         'feedback_submit',
         'report_submit',
         'report_email',
+        'admin_lookup_manage',
+        'admin_role_manage',
+        'admin_scope_manage',
+        'admin_testing_role',
         
         # View/audit permissions
         'audit_view',

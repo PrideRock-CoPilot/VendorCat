@@ -100,7 +100,9 @@ async def imports_preview(request: Request):
     return request.app.state.templates.TemplateResponse(request, "imports.html", context)
 
 
-@router.post("/imports/apply")@require_permission("import_apply")async def imports_apply(request: Request):
+@router.post("/imports/apply")
+@require_permission("import_apply")
+async def imports_apply(request: Request):
     imports_module = _imports_module()
     repo = imports_module.get_repo()
     user = imports_module.get_user_context(request)
