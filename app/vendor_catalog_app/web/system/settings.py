@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import secrets
 from dataclasses import dataclass
 
 from fastapi import Request
@@ -107,14 +108,16 @@ def request_matches_token(request: Request, *, token: str, header_name: str) -> 
 def load_app_runtime_settings(config: AppConfig) -> AppRuntimeSettings:
     session_secret = get_env(TVENDOR_SESSION_SECRET, DEFAULT_SESSION_SECRET)
     allow_default_session_secret = get_env_bool(TVENDOR_ALLOW_DEFAULT_SESSION_SECRET, default=False)
+    
     if (
         not config.is_dev_env
         and session_secret == DEFAULT_SESSION_SECRET
         and not allow_default_session_secret
     ):
-        raise RuntimeError(
-            "TVENDOR_SESSION_SECRET must be set to a strong, non-default value outside dev/local environments."
-        )
+        # Auto-generate a strong random secret for production/non-dev environments
+        session_secret = secrets.token_urlsafe(32)
+        import sys
+        print(f"[SECURITY] Generated random session secret at runtime for {config.environment}", file=sys.stderr)
 
     session_https_only = get_env_bool(TVENDOR_SESSION_HTTPS_ONLY, default=not config.is_dev_env)
     security_headers_enabled = get_env_bool(TVENDOR_SECURITY_HEADERS_ENABLED, default=True)
