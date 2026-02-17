@@ -12,13 +12,13 @@ from functools import lru_cache
 from typing import Any
 
 from vendor_catalog_app.core.env import (
-    TVENDOR_ALERTS_ENABLED,
     TVENDOR_ALERT_COOLDOWN_SEC,
     TVENDOR_ALERT_DB_AVG_MS,
     TVENDOR_ALERT_ERROR_RATE_PCT,
     TVENDOR_ALERT_MIN_REQUESTS,
     TVENDOR_ALERT_REQUEST_P95_MS,
     TVENDOR_ALERT_WINDOW_SEC,
+    TVENDOR_ALERTS_ENABLED,
     TVENDOR_METRICS_ENABLED,
     TVENDOR_METRICS_PROMETHEUS_ENABLED,
     TVENDOR_METRICS_PROMETHEUS_PATH,
@@ -31,7 +31,6 @@ from vendor_catalog_app.core.env import (
     get_env_float,
     get_env_int,
 )
-
 
 METRICS_LOGGER = logging.getLogger("vendor_catalog_app.metrics")
 ALERT_LOGGER = logging.getLogger("vendor_catalog_app.alerts")
@@ -170,9 +169,9 @@ class ObservabilityManager:
         self._db_errors_total: dict[tuple[str, str], int] = {}
         self._db_duration: dict[tuple[str, str], _HistogramState] = {}
 
-        self._alert_breaches_total: dict[str, int] = {name: 0 for name in _ALERT_NAMES}
-        self._alert_active: dict[str, int] = {name: 0 for name in _ALERT_NAMES}
-        self._alert_state: dict[str, bool] = {name: False for name in _ALERT_NAMES}
+        self._alert_breaches_total: dict[str, int] = dict.fromkeys(_ALERT_NAMES, 0)
+        self._alert_active: dict[str, int] = dict.fromkeys(_ALERT_NAMES, 0)
+        self._alert_state: dict[str, bool] = dict.fromkeys(_ALERT_NAMES, False)
         self._alert_last_log_ts: dict[str, float] = {}
         self._window: deque[_WindowSample] = deque()
 

@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 from vendor_catalog_app.infrastructure.local_db_bootstrap import ensure_local_db_ready
 from vendor_catalog_app.web.core.runtime import get_config, get_repo
 from vendor_catalog_app.web.system.settings import AppRuntimeSettings
-
 
 LOGGER = logging.getLogger(__name__)
 

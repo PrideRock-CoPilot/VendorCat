@@ -4,10 +4,10 @@
 
 <form method="get" action="/dashboard" class="card grid grid-3">
   <label>
-    Business Unit Scope
-    <select name="org">
+    Line of Business
+    <select name="lob">
       {% for option in orgs %}
-      <option value="{{ option }}" {% if option == selected_org %}selected{% endif %}>{{ "All Orgs" if option == "all" else option }}</option>
+      <option value="{{ option }}" {% if option == selected_lob %}selected{% endif %}>{{ "All Lines of Business" if option == "all" else option }}</option>
       {% endfor %}
     </select>
   </label>

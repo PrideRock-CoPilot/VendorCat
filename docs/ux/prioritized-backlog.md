@@ -42,7 +42,7 @@ Size:
   - User can select vendor/offering from search list.
   - Manual id typing is optional, not required.
 
-## UX-003: Add Revoke For User Roles And Org Scopes
+## UX-003: Add Revoke For User Roles And LOB Scopes
 - Priority: `P0`
 - Size: `M`
 - Area: `Admin`
@@ -50,7 +50,7 @@ Size:
 - Problem:
   - User role/scope tables do not expose complete lifecycle actions in-row.
 - Change:
-  - Add `Revoke` action in user role grant rows and org scope grant rows.
+  - Add `Revoke` action in user role grant rows and LOB scope grant rows.
 - Acceptance:
   - Active grants can be revoked from table without SQL or external tools.
   - Audit trail captures revoke actor and timestamp.

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from vendor_catalog_app.repository import (
     LOOKUP_TYPE_ASSIGNMENT_TYPE,
@@ -17,13 +17,13 @@ from vendor_catalog_app.repository import (
     LOOKUP_TYPE_WORKFLOW_STATUS,
 )
 
-
 LOGGER = logging.getLogger(__name__)
 
 ROLE_CODE_PATTERN = re.compile(r"^[a-z0-9_][a-z0-9_-]{2,63}$")
 LOOKUP_CODE_PATTERN = re.compile(r"^[a-z0-9_][a-z0-9_-]{1,63}$")
 ADMIN_SECTION_ACCESS = "access"
 ADMIN_SECTION_DEFAULTS = "defaults"
+ADMIN_SECTION_OWNERSHIP = "ownership"
 LOOKUP_STATUS_OPTIONS = {"all", "active", "historical", "future"}
 LOOKUP_TYPE_LABELS = {
     LOOKUP_TYPE_DOC_SOURCE: "Document Sources",
@@ -46,10 +46,12 @@ def _admin_redirect_url(
     lookup_status: str | None = None,
     as_of: str | None = None,
 ) -> str:
+    if section == ADMIN_SECTION_OWNERSHIP:
+        return f"/admin?section={ADMIN_SECTION_OWNERSHIP}"
     if section == ADMIN_SECTION_DEFAULTS:
         selected_lookup = lookup_type if lookup_type in LOOKUP_TYPE_LABELS else LOOKUP_TYPE_DOC_SOURCE
         selected_status = lookup_status if lookup_status in LOOKUP_STATUS_OPTIONS else "active"
-        selected_as_of = str(as_of or "").strip() or datetime.now(timezone.utc).date().isoformat()
+        selected_as_of = str(as_of or "").strip() or datetime.now(UTC).date().isoformat()
         return (
             f"/admin?section={ADMIN_SECTION_DEFAULTS}&lookup_type={selected_lookup}"
             f"&status={selected_status}&as_of={selected_as_of}"
@@ -59,7 +61,7 @@ def _admin_redirect_url(
 
 def _normalize_admin_section(raw: str | None) -> str:
     value = str(raw or "").strip().lower()
-    if value in {ADMIN_SECTION_ACCESS, ADMIN_SECTION_DEFAULTS}:
+    if value in {ADMIN_SECTION_ACCESS, ADMIN_SECTION_DEFAULTS, ADMIN_SECTION_OWNERSHIP}:
         return value
     return ADMIN_SECTION_ACCESS
 
@@ -92,7 +94,7 @@ def _normalize_as_of_date(raw: str | None) -> str:
             return datetime.fromisoformat(value).date().isoformat()
         except Exception:
             LOGGER.debug("Invalid as_of date '%s'; falling back to current UTC date.", value, exc_info=True)
-    return datetime.now(timezone.utc).date().isoformat()
+    return datetime.now(UTC).date().isoformat()
 
 
 def _date_value(value: object) -> str:

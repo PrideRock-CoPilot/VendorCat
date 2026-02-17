@@ -7,6 +7,7 @@
     <p>Offering-level details, mappings, and editable controls.</p>
   </div>
   <div class="button-group">
+    <a class="button-link subtle" href="/help/offerings-list-and-mappings">? Help</a>
     {% if can_edit and not locked_mode %}
     <a class="button-link" href="/vendors/{{ vendor_id }}/offerings/new?return_to={{ return_to|urlencode }}">+ New Offering</a>
     {% endif %}
@@ -112,7 +113,12 @@
         </select>
       </label>
       <label>Reason
-        <input type="text" name="reason" placeholder="Reason" required>
+        <select name="reason" required>
+          <option value="" selected disabled>Select reason</option>
+          {% for option in contract_mapping_reason_options %}
+          <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+          {% endfor %}
+        </select>
       </label>
       <div class="button-group">
         <button type="button" data-bulk-select-all="contract">Select All</button>
@@ -155,7 +161,12 @@
               <option value="{{ option.offering_id }}">{{ option.label }}</option>
               {% endfor %}
             </select>
-            <input type="text" name="reason" placeholder="Reason" required>
+            <select name="reason" required>
+              <option value="" selected disabled>Select reason</option>
+              {% for option in contract_mapping_reason_options %}
+              <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+              {% endfor %}
+            </select>
             <button type="submit">Map</button>
           </form>
           {% else %}
@@ -184,7 +195,12 @@
         </select>
       </label>
       <label>Reason
-        <input type="text" name="reason" placeholder="Reason" required>
+        <select name="reason" required>
+          <option value="" selected disabled>Select reason</option>
+          {% for option in demo_mapping_reason_options %}
+          <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+          {% endfor %}
+        </select>
       </label>
       <div class="button-group">
         <button type="button" data-bulk-select-all="demo">Select All</button>
@@ -227,7 +243,12 @@
               <option value="{{ option.offering_id }}">{{ option.label }}</option>
               {% endfor %}
             </select>
-            <input type="text" name="reason" placeholder="Reason" required>
+            <select name="reason" required>
+              <option value="" selected disabled>Select reason</option>
+              {% for option in demo_mapping_reason_options %}
+              <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+              {% endfor %}
+            </select>
             <button type="submit">Map</button>
           </form>
           {% else %}

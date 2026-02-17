@@ -5,16 +5,16 @@ from dataclasses import dataclass
 from vendor_catalog_app.core.config import AppConfig
 from vendor_catalog_app.core.security import (
     ADMIN_PORTAL_ROLES,
-    ROLE_ADMIN,
     CHANGE_APPROVAL_LEVELS,
     MAX_APPROVAL_LEVEL,
     MIN_CHANGE_APPROVAL_LEVEL,
-    can_approve_requests,
-    required_approval_level,
+    ROLE_ADMIN,
+    approval_level_for_roles,
     can_apply_change,
+    can_approve_requests,
     can_review_change,
     can_submit_change_requests,
-    approval_level_for_roles,
+    required_approval_level,
 )
 
 

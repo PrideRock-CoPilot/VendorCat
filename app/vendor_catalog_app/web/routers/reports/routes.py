@@ -6,7 +6,6 @@ from vendor_catalog_app.web.routers.reports.downloads import router as downloads
 from vendor_catalog_app.web.routers.reports.pages import router as pages_router
 from vendor_catalog_app.web.routers.reports.writes import router as writes_router
 
-
 router = APIRouter()
 router.include_router(pages_router)
 router.include_router(downloads_router)

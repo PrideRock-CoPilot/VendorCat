@@ -35,6 +35,7 @@
     <p>{{ vendor_display_name }} ({{ vendor_id }})</p>
   </div>
   <div class="button-group">
+    <a class="button-link subtle" href="/help/edit-offering-details">? Help</a>
     <a class="button-link subtle" href="{{ portfolio_back }}">Back To Offerings</a>
     <a class="button-link" href="{{ return_to }}">Back To List</a>
   </div>
@@ -258,7 +259,12 @@
       </select>
     </label>
     <label class="full">Reason
-      <input type="text" name="reason" placeholder="Why this update is needed" required>
+      <select name="reason" required>
+        <option value="" selected disabled>Select reason</option>
+        {% for option in offering_update_reason_options %}
+        <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+        {% endfor %}
+      </select>
     </label>
     <div><button type="submit">Save Offering</button></div>
   </form>
@@ -276,7 +282,12 @@
       <textarea name="implementation_notes" rows="3" placeholder="Rollout, dependencies, controls">{{ offering_profile.implementation_notes or '' }}</textarea>
     </label>
     <label class="full">Reason
-      <input type="text" name="reason" placeholder="Why this profile update is needed" required>
+      <select name="reason" required>
+        <option value="" selected disabled>Select reason</option>
+        {% for option in offering_profile_reason_options %}
+        <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+        {% endfor %}
+      </select>
     </label>
     <div><button type="submit">Save Operational Profile</button></div>
   </form>
@@ -343,7 +354,12 @@
         <textarea name="notes" rows="2" placeholder="Optional context"></textarea>
       </label>
       <label class="full">Reason
-        <input type="text" name="reason" placeholder="Why this invoice is being logged">
+        <select name="reason">
+          <option value="">Optional</option>
+          {% for option in offering_invoice_add_reason_options %}
+          <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+          {% endfor %}
+        </select>
       </label>
       <div><button type="submit">Add Invoice</button></div>
     </form>
@@ -368,7 +384,12 @@
         {% if can_edit and not locked_mode %}
         <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/invoices/{{ row.invoice_id }}/remove" class="inline-form">
           <input type="hidden" name="return_to" value="{{ return_to }}">
-          <input type="text" name="reason" placeholder="Reason">
+          <select name="reason">
+            <option value="">Optional</option>
+            {% for option in offering_invoice_remove_reason_options %}
+            <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+            {% endfor %}
+          </select>
           <button type="submit">Remove</button>
         </form>
         {% else %}
@@ -419,7 +440,12 @@
           <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/dataflows/remove" class="inline-form">
             <input type="hidden" name="return_to" value="{{ return_to }}">
             <input type="hidden" name="data_flow_id" value="{{ row.data_flow_id }}">
-            <input type="hidden" name="reason" value="Remove obsolete data feed">
+            <select name="reason" required>
+              <option value="" selected disabled>Select reason</option>
+              {% for option in offering_dataflow_remove_reason_options %}
+              <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+              {% endfor %}
+            </select>
             <button type="submit">Remove</button>
           </form>
           {% else %}
@@ -452,7 +478,12 @@
           <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/dataflows/remove" class="inline-form">
             <input type="hidden" name="return_to" value="{{ return_to }}">
             <input type="hidden" name="data_flow_id" value="{{ row.data_flow_id }}">
-            <input type="hidden" name="reason" value="Remove obsolete data feed">
+            <select name="reason" required>
+              <option value="" selected disabled>Select reason</option>
+              {% for option in offering_dataflow_remove_reason_options %}
+              <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+              {% endfor %}
+            </select>
             <button type="submit">Remove</button>
           </form>
           {% else %}
@@ -523,7 +554,12 @@
       <textarea name="notes" rows="3" placeholder="Schedule, SLA, dependencies, controls">{{ data_feed_form.notes }}</textarea>
     </label>
     <label>Reason
-      <input type="text" name="reason" value="{{ data_feed_form.reason }}" placeholder="{% if selected_data_flow %}Why this data feed is being updated{% else %}Why this data feed is being added{% endif %}" required>
+      <select name="reason" required>
+        <option value="" {% if not data_feed_form.reason %}selected{% endif %} disabled>Select reason</option>
+        {% for option in offering_dataflow_change_reason_options %}
+        <option value="{{ option }}" {% if data_feed_form.reason == option %}selected{% endif %}>{{ option|replace('_', ' ')|title }}</option>
+        {% endfor %}
+      </select>
     </label>
     <div class="button-group">
       <button type="submit">{% if selected_data_flow %}Save Data Feed{% else %}Add Data Feed{% endif %}</button>
@@ -537,8 +573,14 @@
 {% endif %}
 
 {% if section == "ownership" %}
-<div class="grid grid-2">
-  <section class="card section-divider">
+<section class="card section-divider">
+  <div class="button-group" data-offering-ownership-tabs role="tablist" aria-label="Offering ownership areas" style="margin-bottom:10px;">
+    <a href="#" class="button-link subtle active-tab" data-offering-ownership-tab="owners" role="tab" aria-selected="true">Owners</a>
+    <a href="#" class="button-link subtle" data-offering-ownership-tab="contacts" role="tab" aria-selected="false">Contacts</a>
+    <a href="#" class="button-link subtle" data-offering-ownership-tab="org" role="tab" aria-selected="false">Line of Business</a>
+  </div>
+
+  <div data-offering-ownership-panel="owners">
     <h2>Offering Owners</h2>
     {% if owner_integrity_warning_count > 0 %}
     <div class="owner-warning-banner">
@@ -578,9 +620,11 @@
         {% set owner_return_to = "/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "?section=ownership&return_to=" ~ (return_to|urlencode) ~ "&edit=1" %}
         <tr data-owner-filter-row data-owner-principal="{{ row.owner_user_principal|lower }}" data-owner-role="{{ row.owner_role|lower }}">
           <td>
-            <strong>{{ row.owner_user_principal }}</strong>
             {% if row.owner_identity_display_name %}
-            <div class="muted">{{ row.owner_identity_display_name }}</div>
+            <strong>{{ row.owner_identity_display_name }}</strong>
+            <div class="muted">{{ row.owner_user_principal }}</div>
+            {% else %}
+            <strong>{{ row.owner_user_principal }}</strong>
             {% endif %}
           </td>
           <td>{{ row.owner_role }}</td>
@@ -596,6 +640,7 @@
           </td>
           <td class="queue-row-actions">
             {% if can_edit and not locked_mode %}
+            {% if row.owner_identity_status == "active" %}
             <a
               class="button-link subtle"
               href="#"
@@ -604,12 +649,24 @@
               data-workspace-title="Edit Offering Owner"
               data-workspace-template="offering-owner-edit-template-{{ row.offering_owner_id }}"
             >Edit</a>
-            <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/owners/remove" class="queue-inline-action">
-              <input type="hidden" name="return_to" value="{{ owner_return_to }}">
-              <input type="hidden" name="offering_owner_id" value="{{ row.offering_owner_id }}">
-              <input type="text" name="reason" placeholder="Reason">
-              <button type="submit">Remove</button>
-            </form>
+            {% else %}
+            <a
+              class="button-link subtle"
+              href="#"
+              data-workspace-open
+              data-workspace-mode="drawer-right"
+              data-workspace-title="Reassign Owner"
+              data-workspace-template="offering-owner-reassign-single-template-{{ row.offering_owner_id }}"
+            >Reassign</a>
+            {% endif %}
+            <a
+              class="button-link"
+              href="#"
+              data-workspace-open
+              data-workspace-mode="drawer-right"
+              data-workspace-title="Confirm Owner Removal"
+              data-workspace-template="offering-owner-remove-template-{{ row.offering_owner_id }}"
+            >Remove</a>
             {% else %}
             -
             {% endif %}
@@ -636,43 +693,139 @@
       </section>
     </template>
     {% for row in offering_owners %}
+    {% if row.owner_identity_status == "active" %}
     <template id="offering-owner-edit-template-{{ row.offering_owner_id }}">
       <section>
         <h3>Edit Owner</h3>
         <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/owners/{{ row.offering_owner_id }}/update" class="grid grid-2 form-grid" data-overlay-dirty-watch="true">
           <input type="hidden" name="return_to" value="{{ owner_return_to }}">
-          {{ owner_principal_input("owner_user_principal", row.owner_user_principal, "Owner Principal", "user@company.com", true) }}
-          {{ select_input("owner_role", "Role", owner_role_options, row.owner_role or "business_owner", true) }}
-          <label class="full">Reason
-            <input type="text" name="reason" placeholder="Reason for owner update">
-          </label>
+          <div class="full">
+            <label>Owner
+              <input type="text" value="{{ row.owner_identity_display_name or row.owner_user_principal }}" disabled>
+            </label>
+          </div>
+          <div class="full">
+            {{ select_input("owner_role", "Role", owner_role_options, row.owner_role or "business_owner", true) }}
+          </div>
+          <div class="full">
+            <label>Reason
+              <select name="reason" required>
+                <option value="" selected disabled>Select reason</option>
+                {% for option in owner_role_update_reason_options %}
+                <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+                {% endfor %}
+              </select>
+            </label>
+          </div>
           <div class="form-actions"><button type="submit">Save Owner</button></div>
+        </form>
+      </section>
+    </template>
+    {% endif %}
+    <template id="offering-owner-remove-template-{{ row.offering_owner_id }}">
+      <section>
+        <h3>Remove Owner</h3>
+        <p class="muted" style="margin-top:4px;">{{ row.owner_user_principal }}</p>
+        <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/owners/remove" class="grid grid-1 form-grid" data-overlay-dirty-watch="true">
+          <input type="hidden" name="return_to" value="{{ owner_return_to }}">
+          <input type="hidden" name="offering_owner_id" value="{{ row.offering_owner_id }}">
+          <label>Removal Reason
+            <select name="reason_code" required>
+              <option value="">Select reason</option>
+              {% for option in owner_remove_reason_options %}
+              <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <div class="form-actions"><button type="submit">Confirm Remove</button></div>
+        </form>
+      </section>
+    </template>
+    <template id="offering-owner-reassign-single-template-{{ row.offering_owner_id }}">
+      <section>
+        <h3>Reassign This Owner Assignment</h3>
+        <p class="muted" style="margin-top:4px;">This updates only {{ offering.offering_name }}.</p>
+        <p class="muted" style="margin-top:4px;">
+          This owner has {{ row.owner_other_assignment_count }} other active assignment(s).
+          <a class="button-link subtle" href="/admin?section=ownership&amp;source_owner={{ row.owner_user_principal|urlencode }}">Open Reassign All</a>
+        </p>
+        <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/owners/{{ row.offering_owner_id }}/reassign" class="grid grid-1 form-grid" data-overlay-dirty-watch="true">
+          <input type="hidden" name="return_to" value="{{ owner_return_to }}">
+          {{ owner_principal_input("to_owner_user_principal", "", "Replacement Owner", "user@company.com", true) }}
+          <label>Reassignment Reason
+            <select name="reason_code" required>
+              <option value="">Select reason</option>
+              {% for option in owner_reassign_reason_options %}
+              <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <div class="form-actions"><button type="submit">Confirm Reassign This Owner</button></div>
         </form>
       </section>
     </template>
     {% endfor %}
     {% endif %}
-  </section>
+  </div>
 
-  <section class="card section-divider">
-    <h2>Offering Contacts</h2>
+  <div data-offering-ownership-panel="contacts" hidden>
+    {% set contact_return_to = "/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "?section=ownership&return_to=" ~ (return_to|urlencode) ~ "&edit=1" %}
+    <div class="section-header">
+      <div>
+        <h2>Offering Contacts</h2>
+      </div>
+      {% if can_edit and not locked_mode %}
+      <div class="button-group">
+        <a
+          class="button-link"
+          href="#"
+          data-workspace-open
+          data-workspace-mode="drawer-right"
+          data-workspace-title="Add Offering Contact"
+          data-workspace-template="offering-contact-add-template"
+        >Add Contact</a>
+      </div>
+      {% endif %}
+    </div>
+    {% set contact_filter_options = contact_type_options|default(["business", "account_manager", "support", "escalation", "security_specialist", "customer_success", "product_manager"], true) %}
+    <div class="grid grid-2" style="margin-bottom:10px;">
+      <label>Search Contact
+        <input type="text" id="contact-search-filter" placeholder="Name, email, or phone">
+      </label>
+      <label>Type Filter
+        <select id="contact-type-filter">
+          <option value="">all</option>
+          {% for option in contact_filter_options %}
+          <option value="{{ option }}">{{ option }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
     <table>
       <thead><tr><th>Name</th><th>Type</th><th>Email</th><th>Phone</th><th>Action</th></tr></thead>
       <tbody>
       {% for row in offering_contacts %}
-      <tr>
+      <tr
+        data-contact-filter-row
+        data-contact-name="{{ (row.full_name or '')|lower }}"
+        data-contact-email="{{ (row.email or '')|lower }}"
+        data-contact-phone="{{ (row.phone or '')|lower }}"
+        data-contact-type="{{ (row.contact_type or '')|lower }}"
+      >
         <td>{{ row.full_name }}</td>
         <td>{{ row.contact_type }}</td>
         <td>{{ row.email }}</td>
         <td>{{ row.phone }}</td>
         <td>
           {% if can_edit and not locked_mode %}
-          <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/contacts/remove" class="inline-form">
-            <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}?section=ownership&return_to={{ return_to|urlencode }}&edit=1">
-            <input type="hidden" name="offering_contact_id" value="{{ row.offering_contact_id }}">
-            <input type="text" name="reason" placeholder="Reason">
-            <button type="submit">Remove</button>
-          </form>
+          <a
+            class="button-link"
+            href="#"
+            data-workspace-open
+            data-workspace-mode="drawer-right"
+            data-workspace-title="Confirm Contact Removal"
+            data-workspace-template="offering-contact-remove-template-{{ row.offering_contact_id }}"
+          >Remove</a>
           {% endif %}
         </td>
       </tr>
@@ -682,15 +835,143 @@
       </tbody>
     </table>
     {% if can_edit and not locked_mode %}
-    <h3>Add Contact</h3>
-    {{ offering_contact_add_form(
-         post_url="/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "/contacts/add",
-         return_to="/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "?section=ownership&return_to=" ~ (return_to|urlencode) ~ "&edit=1",
-         submit_label="Add Contact"
-       ) }}
+    <template id="offering-contact-add-template">
+      <section>
+        <h3>Add Contact</h3>
+        {{ offering_contact_add_form(
+             post_url="/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "/contacts/add",
+             return_to=contact_return_to,
+             submit_label="Add Contact"
+           ) }}
+      </section>
+    </template>
+    {% for row in offering_contacts %}
+    <template id="offering-contact-remove-template-{{ row.offering_contact_id }}">
+      <section>
+        <h3>Remove Contact</h3>
+        <p class="muted" style="margin-top:4px;">{{ row.full_name or row.email or row.offering_contact_id }}</p>
+        <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/contacts/remove" class="grid grid-1 form-grid" data-overlay-dirty-watch="true">
+          <input type="hidden" name="return_to" value="{{ contact_return_to }}">
+          <input type="hidden" name="offering_contact_id" value="{{ row.offering_contact_id }}">
+          <label>Removal Reason
+            <select name="reason">
+              <option value="">Optional</option>
+              {% for option in contact_remove_reason_options %}
+              <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <div class="form-actions"><button type="submit">Confirm Remove</button></div>
+        </form>
+      </section>
+    </template>
+    {% endfor %}
     {% endif %}
-  </section>
-</div>
+  </div>
+
+  <div data-offering-ownership-panel="org" hidden>
+    <div class="section-header">
+      <div>
+        <h2>Line of Business</h2>
+        <p class="muted" style="margin:4px 0 0 0;">Single-value LOB from the admin-managed Offering LOB lookup list.</p>
+      </div>
+      {% if can_edit and not locked_mode %}
+      <div class="button-group">
+        <a
+          class="button-link"
+          href="#"
+          data-workspace-open
+          data-workspace-mode="drawer-right"
+          data-workspace-title="Set Offering Line of Business"
+          data-workspace-template="offering-lob-update-template"
+        >Set Line of Business</a>
+      </div>
+      {% endif %}
+    </div>
+    <table>
+      <thead><tr><th>Line of Business</th></tr></thead>
+      <tbody>
+      <tr><td>{{ offering.lob or "Not set" }}</td></tr>
+      </tbody>
+    </table>
+
+    {% if can_edit and not locked_mode %}
+    {% set offering_lob_return_to = "/vendors/" ~ vendor_id ~ "/offerings/" ~ offering.offering_id ~ "?section=ownership&return_to=" ~ (return_to|urlencode) ~ "&edit=1" %}
+    <template id="offering-lob-update-template">
+      <section>
+        <h3>Set Offering Line of Business</h3>
+        {% set selected_offering_lobs = [offering.lob] if offering.lob else [] %}
+        {% set unmanaged_offering_lobs = [] %}
+        {% for selected_lob in selected_offering_lobs %}
+        {% if selected_lob not in offering_lob_options %}
+        {% set _ = unmanaged_offering_lobs.append(selected_lob) %}
+        {% endif %}
+        {% endfor %}
+        <form method="post" action="/vendors/{{ vendor_id }}/offerings/{{ offering.offering_id }}/ownership/lob/update" class="grid grid-1 form-grid" data-overlay-dirty-watch="true">
+          <input type="hidden" name="return_to" value="{{ offering_lob_return_to }}">
+          <label>Search LOB
+            <input type="text" id="offering-lob-search-filter" placeholder="Type to filter options">
+          </label>
+          <div>
+            <span>Line of Business</span>
+            <div class="button-group" style="margin:8px 0 6px 0;">
+              <button type="button" class="button-link subtle" data-offering-select-all-lobs>Select All</button>
+              <button type="button" class="button-link subtle" data-offering-clear-all-lobs>Clear All</button>
+            </div>
+            <div id="offering-lob-checkboxes" style="border:1px solid var(--border); border-radius:8px; max-height:220px; overflow:auto; padding:8px; margin-top:6px;">
+              <div style="display:grid; grid-template-columns:64px 56px 1fr; align-items:center; gap:12px; margin:0 0 12px 0; font-size:13px; font-weight:700; color:#475569;">
+                <span style="white-space:nowrap;">Primary</span>
+                <span style="white-space:nowrap;">Active</span>
+                <span style="white-space:nowrap;">LOB</span>
+              </div>
+              {% for option in offering_lob_options %}
+              <div data-offering-lob-option data-lob-value="{{ option }}" style="display:grid; grid-template-columns:64px 56px 1fr; align-items:center; gap:12px; margin:0 0 6px 0; line-height:1.25;">
+                <input
+                  type="radio"
+                  name="primary_lob"
+                  value="{{ option }}"
+                  data-offering-inline-primary
+                    style="width:auto; min-width:0; margin:0; justify-self:center;"
+                  {% if option == (offering.lob or "") %}checked{% endif %}
+                >
+                <input
+                  type="checkbox"
+                  name="lobs"
+                  value="{{ option }}"
+                  data-offering-lob-checkbox
+                  style="width:auto; min-width:0; flex:0 0 auto; margin:0; justify-self:center;"
+                  {% if option in selected_offering_lobs %}checked{% endif %}
+                >
+                <span style="display:inline-block;">{{ option }}</span>
+              </div>
+              {% endfor %}
+              {% for option in unmanaged_offering_lobs %}
+              <div style="display:grid; grid-template-columns:64px 56px 1fr; align-items:center; gap:12px; margin:0 0 6px 0; line-height:1.25; opacity:0.8;">
+                <input type="radio" disabled style="width:auto; min-width:0; margin:0; justify-self:center; visibility:hidden;">
+                <input type="checkbox" checked disabled style="width:auto; min-width:0; flex:0 0 auto; margin:0; justify-self:center;">
+                <span style="display:inline-block;">{{ option }} (Current, unmanaged)</span>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          <label>Reason
+            <select name="reason_code" data-offering-reason-code>
+              {% for option in org_assignment_reason_options %}
+              <option value="{{ option }}" {% if option == "ownership_alignment" %}selected{% endif %}>{{ option|replace('_', ' ')|title }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label data-offering-reason-other-wrap style="display:none;">
+            Other reason
+            <input type="text" name="reason_other_detail" data-offering-reason-other placeholder="Enter reason" maxlength="200">
+          </label>
+          <div class="form-actions"><button type="submit">Save Line of Business</button></div>
+        </form>
+      </section>
+    </template>
+    {% endif %}
+  </div>
+</section>
 {% endif %}
 
 {% if section == "delivery" %}
@@ -721,7 +1002,12 @@
         <input type="date" name="end_date">
       </label>
       <label class="full">Reason
-        <input type="text" name="reason" placeholder="Why this contract is being added">
+        <select name="reason">
+          <option value="">Optional</option>
+          {% for option in contract_change_reason_options %}
+          <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+          {% endfor %}
+        </select>
       </label>
       <div><button type="submit">Add Contract To Offering</button></div>
     </form>
@@ -751,7 +1037,12 @@
               <option value="{{ option.offering_id }}" {% if option.offering_id == row.offering_id %}selected{% endif %}>{{ option.label }}</option>
               {% endfor %}
             </select>
-            <input type="text" name="reason" placeholder="Reason" required>
+            <select name="reason" required>
+              <option value="" selected disabled>Select reason</option>
+              {% for option in contract_mapping_reason_options %}
+              <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+              {% endfor %}
+            </select>
             <button type="submit">Move</button>
           </form>
           {% endif %}
@@ -776,7 +1067,12 @@
               <input type="date" name="start_date" value="{{ row.start_date or '' }}">
               <input type="date" name="end_date" value="{{ row.end_date or '' }}">
               <input type="text" name="annual_value" value="{{ row.annual_value or '' }}" placeholder="Annual Value">
-              <input type="text" name="reason" placeholder="Reason for update" required>
+              <select name="reason" required>
+                <option value="" selected disabled>Select reason</option>
+                {% for option in contract_change_reason_options %}
+                <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+                {% endfor %}
+              </select>
               <button type="submit">Save</button>
             </form>
           </details>
@@ -826,7 +1122,12 @@
               <option value="{{ option.offering_id }}" {% if option.offering_id == row.offering_id %}selected{% endif %}>{{ option.label }}</option>
               {% endfor %}
             </select>
-            <input type="text" name="reason" placeholder="Reason" required>
+            <select name="reason" required>
+              <option value="" selected disabled>Select reason</option>
+              {% for option in demo_mapping_reason_options %}
+              <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+              {% endfor %}
+            </select>
             <button type="submit">Move</button>
           </form>
           {% endif %}
@@ -906,7 +1207,12 @@
             {% endfor %}
           </select>
           <input type="date" name="closed_date" value="{{ row.closed_date or '' }}">
-          <input type="text" name="reason" placeholder="Reason" required>
+          <select name="reason" required>
+            <option value="" selected disabled>Select reason</option>
+            {% for option in offering_ticket_update_reason_options %}
+            <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+            {% endfor %}
+          </select>
           <button type="submit">Update</button>
         </form>
         {% endif %}
@@ -1017,27 +1323,242 @@
 {% if section == "ownership" %}
 <script>
 (function () {
+  const tabButtons = Array.from(document.querySelectorAll("[data-offering-ownership-tab]"));
+  const tabPanels = Array.from(document.querySelectorAll("[data-offering-ownership-panel]"));
+  if (tabButtons.length && tabPanels.length) {
+    const showTab = (tabName) => {
+      tabButtons.forEach((button) => {
+        if (!(button instanceof HTMLElement)) return;
+        const isActive = String(button.dataset.offeringOwnershipTab || "") === tabName;
+        button.classList.toggle("active-tab", isActive);
+        button.setAttribute("aria-selected", isActive ? "true" : "false");
+      });
+      tabPanels.forEach((panel) => {
+        if (!(panel instanceof HTMLElement)) return;
+        const isActive = String(panel.dataset.offeringOwnershipPanel || "") === tabName;
+        panel.hidden = !isActive;
+      });
+    };
+    tabButtons.forEach((button) => {
+      if (!(button instanceof HTMLElement)) return;
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        showTab(String(button.dataset.offeringOwnershipTab || "owners"));
+      });
+    });
+    showTab("owners");
+  }
+
   const searchInput = document.getElementById("owner-search-filter");
   const roleSelect = document.getElementById("owner-role-filter");
   const rows = Array.from(document.querySelectorAll("[data-owner-filter-row]"));
-  if (!(searchInput instanceof HTMLInputElement) || !(roleSelect instanceof HTMLSelectElement) || !rows.length) return;
+  if (searchInput instanceof HTMLInputElement && roleSelect instanceof HTMLSelectElement && rows.length) {
+    const applyOwnerFilters = () => {
+      const searchNeedle = String(searchInput.value || "").trim().toLowerCase();
+      const roleNeedle = String(roleSelect.value || "").trim().toLowerCase();
+      rows.forEach((row) => {
+        if (!(row instanceof HTMLElement)) return;
+        const principal = String(row.dataset.ownerPrincipal || "").toLowerCase();
+        const role = String(row.dataset.ownerRole || "").toLowerCase();
+        const text = String(row.textContent || "").toLowerCase();
+        const searchMatch = !searchNeedle || principal.includes(searchNeedle) || text.includes(searchNeedle);
+        const roleMatch = !roleNeedle || role === roleNeedle;
+        row.style.display = searchMatch && roleMatch ? "" : "none";
+      });
+    };
 
-  const applyFilters = () => {
-    const searchNeedle = String(searchInput.value || "").trim().toLowerCase();
-    const roleNeedle = String(roleSelect.value || "").trim().toLowerCase();
-    rows.forEach((row) => {
+    searchInput.addEventListener("input", applyOwnerFilters);
+    roleSelect.addEventListener("change", applyOwnerFilters);
+  }
+
+  const contactSearchInput = document.getElementById("contact-search-filter");
+  const contactTypeSelect = document.getElementById("contact-type-filter");
+  const contactRows = Array.from(document.querySelectorAll("[data-contact-filter-row]"));
+  if (contactSearchInput instanceof HTMLInputElement && contactTypeSelect instanceof HTMLSelectElement && contactRows.length) {
+    const applyContactFilters = () => {
+      const searchNeedle = String(contactSearchInput.value || "").trim().toLowerCase();
+      const typeNeedle = String(contactTypeSelect.value || "").trim().toLowerCase();
+      contactRows.forEach((row) => {
+        if (!(row instanceof HTMLElement)) return;
+        const name = String(row.dataset.contactName || "").toLowerCase();
+        const email = String(row.dataset.contactEmail || "").toLowerCase();
+        const phone = String(row.dataset.contactPhone || "").toLowerCase();
+        const type = String(row.dataset.contactType || "").toLowerCase();
+        const text = String(row.textContent || "").toLowerCase();
+        const searchMatch =
+          !searchNeedle
+          || name.includes(searchNeedle)
+          || email.includes(searchNeedle)
+          || phone.includes(searchNeedle)
+          || text.includes(searchNeedle);
+        const typeMatch = !typeNeedle || type === typeNeedle;
+        row.style.display = searchMatch && typeMatch ? "" : "none";
+      });
+    };
+
+    contactSearchInput.addEventListener("input", applyContactFilters);
+    contactTypeSelect.addEventListener("change", applyContactFilters);
+  }
+
+  const initOfferingLobPrimaryControls = (root) => {
+    if (!(root instanceof HTMLElement || root instanceof Document)) return;
+    const lobRows = Array.from(root.querySelectorAll("[data-offering-lob-option]"));
+    if (!lobRows.length) return;
+    if (root instanceof HTMLElement && root.dataset.offeringLobInit === "true") return;
+
+    const searchInput = root.querySelector("#offering-lob-search-filter");
+    const selectAllButton = root.querySelector("button[data-offering-select-all-lobs]");
+    const clearAllButton = root.querySelector("button[data-offering-clear-all-lobs]");
+    const reasonCodeSelect = root.querySelector("select[data-offering-reason-code]");
+    const reasonOtherWrap = root.querySelector("[data-offering-reason-other-wrap]");
+    const reasonOtherInput = root.querySelector("input[data-offering-reason-other]");
+    const checkboxes = Array.from(root.querySelectorAll("input[data-offering-lob-checkbox]"));
+    const primaryRadios = Array.from(root.querySelectorAll("input[data-offering-inline-primary]"));
+
+    root.addEventListener("pointerdown", (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const row = target.closest("[data-offering-lob-option]");
       if (!(row instanceof HTMLElement)) return;
-      const principal = String(row.dataset.ownerPrincipal || "").toLowerCase();
-      const role = String(row.dataset.ownerRole || "").toLowerCase();
-      const text = String(row.textContent || "").toLowerCase();
-      const searchMatch = !searchNeedle || principal.includes(searchNeedle) || text.includes(searchNeedle);
-      const roleMatch = !roleNeedle || role === roleNeedle;
-      row.style.display = searchMatch && roleMatch ? "" : "none";
+      const radio = row.querySelector("input[data-offering-inline-primary]");
+      if (radio instanceof HTMLInputElement) {
+        radio.dataset.wasChecked = radio.checked ? "true" : "false";
+      }
     });
+
+    const sync = () => {
+      let hasSelectedLob = false;
+      lobRows.forEach((row) => {
+        if (!(row instanceof HTMLElement)) return;
+        const checkbox = row.querySelector("input[data-offering-lob-checkbox]");
+        const radio = row.querySelector("input[data-offering-inline-primary]");
+        if (!(checkbox instanceof HTMLInputElement) || !(radio instanceof HTMLInputElement)) return;
+        const selected = checkbox.checked;
+        if (selected) hasSelectedLob = true;
+        radio.style.visibility = selected ? "visible" : "hidden";
+        radio.disabled = !selected;
+        if (radio.checked && !selected) {
+          radio.checked = false;
+        }
+      });
+      if (!hasSelectedLob) {
+        primaryRadios.forEach((radio) => {
+          if (radio instanceof HTMLInputElement) {
+            radio.checked = false;
+          }
+        });
+      }
+    };
+
+    const applyLobFilter = () => {
+      if (!(searchInput instanceof HTMLInputElement)) return;
+      const needle = String(searchInput.value || "").trim().toLowerCase();
+      lobRows.forEach((row) => {
+        if (!(row instanceof HTMLElement)) return;
+        const text = String(row.textContent || "").toLowerCase();
+        row.style.display = !needle || text.includes(needle) ? "" : "none";
+      });
+    };
+
+    const syncReasonOther = () => {
+      if (!(reasonCodeSelect instanceof HTMLSelectElement)) return;
+      const isOther = String(reasonCodeSelect.value || "").trim().toLowerCase() == "other";
+      if (reasonOtherWrap instanceof HTMLElement) {
+        reasonOtherWrap.style.display = isOther ? "" : "none";
+      }
+      if (reasonOtherInput instanceof HTMLInputElement) {
+        reasonOtherInput.required = isOther;
+        if (!isOther) {
+          reasonOtherInput.value = "";
+        }
+      }
+    };
+
+    root.addEventListener("change", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement)) return;
+      if (target.matches("input[data-offering-lob-checkbox]")) {
+        sync();
+        return;
+      }
+      if (target.matches("input[data-offering-inline-primary]")) {
+        if (target.checked) {
+          const matchingCheckbox = root.querySelector(
+            `input[data-offering-lob-checkbox][value="${CSS.escape(target.value)}"]`
+          );
+          if (matchingCheckbox instanceof HTMLInputElement) {
+            matchingCheckbox.checked = true;
+          }
+        }
+        sync();
+        return;
+      }
+    });
+
+    primaryRadios.forEach((radio) => {
+      if (!(radio instanceof HTMLInputElement)) return;
+      radio.addEventListener("click", (event) => {
+        if (radio.dataset.wasChecked !== "true") return;
+        event.preventDefault();
+        radio.checked = false;
+        sync();
+      });
+    });
+
+    if (selectAllButton instanceof HTMLElement) {
+      selectAllButton.addEventListener("click", () => {
+        checkboxes.forEach((checkbox) => {
+          if (checkbox instanceof HTMLInputElement) {
+            checkbox.checked = true;
+          }
+        });
+        sync();
+      });
+    }
+
+    if (clearAllButton instanceof HTMLElement) {
+      clearAllButton.addEventListener("click", () => {
+        checkboxes.forEach((checkbox) => {
+          if (checkbox instanceof HTMLInputElement) {
+            checkbox.checked = false;
+          }
+        });
+        primaryRadios.forEach((radio) => {
+          if (radio instanceof HTMLInputElement) {
+            radio.checked = false;
+          }
+        });
+        sync();
+      });
+    }
+
+    if (searchInput instanceof HTMLInputElement) {
+      searchInput.addEventListener("input", applyLobFilter);
+      applyLobFilter();
+    }
+
+    if (reasonCodeSelect instanceof HTMLSelectElement) {
+      reasonCodeSelect.addEventListener("change", syncReasonOther);
+      syncReasonOther();
+    }
+
+    sync();
+    if (root instanceof HTMLElement) {
+      root.dataset.offeringLobInit = "true";
+    }
   };
 
-  searchInput.addEventListener("input", applyFilters);
-  roleSelect.addEventListener("change", applyFilters);
+  initOfferingLobPrimaryControls(document);
+  const workspaceOverlay = document.getElementById("workspace-overlay");
+  if (workspaceOverlay instanceof HTMLElement) {
+    workspaceOverlay.addEventListener("workspace-overlay-opened", (event) => {
+      const detail = event.detail || {};
+      const contentRoot = detail.contentRoot;
+      if (contentRoot instanceof HTMLElement) {
+        initOfferingLobPrimaryControls(contentRoot);
+      }
+    });
+  }
 })();
 </script>
 {% endif %}

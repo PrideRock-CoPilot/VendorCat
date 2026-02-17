@@ -7,6 +7,7 @@ from vendor_catalog_app.backend.repository_mixins import (
     RepositoryAdminMixin,
     RepositoryCoreMixin,
     RepositoryDocumentsMixin,
+    RepositoryHelpMixin,
     RepositoryIdentityMixin,
     RepositoryLookupMixin,
     RepositoryOfferingMixin,
@@ -33,6 +34,7 @@ class VendorRepository(
     RepositoryOfferingMixin,
     RepositoryProjectMixin,
     RepositoryDocumentsMixin,
+    RepositoryHelpMixin,
     RepositoryWorkflowMixin,
     RepositoryLookupMixin,
     RepositoryAdminMixin,
@@ -61,3 +63,12 @@ class VendorRepository(
         )
         self._usage_event_lock = threading.Lock()
         self._usage_event_last_seen: dict[tuple[str, str, str], float] = {}
+
+    def cache_info(self):
+        class CacheInfo:
+            def __init__(self, size):
+                self.currsize = size
+        return CacheInfo(len(self._repo_cache._entries))
+
+    def cache_clear(self):
+        self._repo_cache.clear()

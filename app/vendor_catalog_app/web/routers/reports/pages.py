@@ -1,9 +1,14 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
+from fastapi.responses import RedirectResponse
 
+from vendor_catalog_app.web.core.activity import ensure_session_started, log_page_view
+from vendor_catalog_app.web.core.runtime import get_repo
+from vendor_catalog_app.web.core.template_context import base_template_context
+from vendor_catalog_app.web.core.user_context_service import get_user_context
+from vendor_catalog_app.web.http.flash import add_flash
 from vendor_catalog_app.web.routers.reports.common import *
-
 
 router = APIRouter()
 @router.get("/reports")
@@ -17,7 +22,8 @@ def reports_home(
     project_status: str = "all",
     outcome: str = "all",
     owner_principal: str = "",
-    org: str = "all",
+    lob: str = "all",
+    org: str | None = None,
     horizon_days: int = 180,
     limit: int = 500,
     cols: str = "",
@@ -54,8 +60,9 @@ def reports_home(
         limit = 500
 
     orgs = repo.available_orgs()
-    if org not in orgs:
-        org = "all"
+    selected_lob = str(org if org is not None and str(org).strip() else lob).strip() or "all"
+    if selected_lob not in orgs:
+        selected_lob = "all"
 
     vendor_options = _vendor_options(repo)
     valid_vendor_ids = {row["vendor_id"] for row in vendor_options}
@@ -104,7 +111,7 @@ def reports_home(
             project_status=project_status,
             outcome=outcome,
             owner_principal=owner_principal,
-            org=org,
+            lob=selected_lob,
             horizon_days=horizon_days,
             limit=limit,
         )
@@ -155,7 +162,7 @@ def reports_home(
             project_status=project_status,
             outcome=outcome,
             owner_principal=owner_principal,
-            org=org,
+            lob=selected_lob,
             horizon_days=horizon_days,
             limit=limit,
             cols=",".join(selected_columns),
@@ -189,7 +196,7 @@ def reports_home(
                     "project_status": project_status,
                     "outcome": outcome,
                     "owner_principal": owner_principal,
-                    "org": org,
+                    "lob": selected_lob,
                     "horizon_days": horizon_days,
                     "limit": limit,
                 },
@@ -205,7 +212,7 @@ def reports_home(
         project_status=project_status,
         outcome=outcome,
         owner_principal=owner_principal,
-        org=org,
+        lob=selected_lob,
         horizon_days=horizon_days,
         limit=limit,
         cols=",".join(selected_columns) if selected_columns else cols,
@@ -247,7 +254,7 @@ def reports_home(
                 "project_status": project_status,
                 "outcome": outcome,
                 "owner_principal": owner_principal,
-                "org": org,
+                "lob": selected_lob,
                 "horizon_days": horizon_days,
                 "limit": limit,
                 "view_mode": view_mode,

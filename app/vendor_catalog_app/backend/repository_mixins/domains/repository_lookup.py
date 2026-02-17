@@ -1,29 +1,13 @@
 from __future__ import annotations
 
-import json
 import logging
-import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import pandas as pd
 
-from vendor_catalog_app.infrastructure.db import DataConnectionError, DataExecutionError, DataQueryError
 from vendor_catalog_app.core.repository_constants import *
-from vendor_catalog_app.core.repository_errors import SchemaBootstrapRequiredError
-from vendor_catalog_app.core.security import (
-    CHANGE_APPROVAL_LEVELS,
-    ROLE_ADMIN,
-    ROLE_APPROVER,
-    ROLE_CHOICES,
-    ROLE_STEWARD,
-    ROLE_SYSTEM_ADMIN,
-    ROLE_VIEWER,
-    default_change_permissions_for_role,
-    default_role_definitions,
-    required_approval_level,
-)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -488,7 +472,7 @@ class RepositoryLookupMixin:
                 int(target.get("sort_order") or 999),
                 False,
                 now,
-                datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc),
+                datetime(9999, 12, 31, 23, 59, 59, tzinfo=UTC),
                 True,
                 True,
                 now,
@@ -529,7 +513,7 @@ class RepositoryLookupMixin:
                     "sort_order": idx,
                     "active_flag": True,
                     "valid_from_ts": str(row.get("valid_from_ts") or now.isoformat()),
-                    "valid_to_ts": str(row.get("valid_to_ts") or datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc).isoformat()),
+                    "valid_to_ts": str(row.get("valid_to_ts") or datetime(9999, 12, 31, 23, 59, 59, tzinfo=UTC).isoformat()),
                     "is_current": True,
                     "deleted_flag": False,
                 }

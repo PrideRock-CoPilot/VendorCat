@@ -556,6 +556,43 @@ CREATE TABLE IF NOT EXISTS {fq_schema}.app_document_link (
   updated_by STRING NOT NULL
 ) USING DELTA;
 
+CREATE TABLE IF NOT EXISTS {fq_schema}.vendor_help_article (
+  article_id STRING NOT NULL,
+  slug STRING NOT NULL,
+  title STRING NOT NULL,
+  section STRING NOT NULL,
+  article_type STRING NOT NULL,
+  role_visibility STRING NOT NULL,
+  content_md STRING NOT NULL,
+  owned_by STRING NOT NULL,
+  updated_at TIMESTAMP NOT NULL,
+  updated_by STRING NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  created_by STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS {fq_schema}.vendor_help_feedback (
+  feedback_id STRING NOT NULL,
+  article_id STRING,
+  article_slug STRING,
+  was_helpful BOOLEAN NOT NULL,
+  comment STRING,
+  user_principal STRING,
+  page_path STRING,
+  created_at TIMESTAMP NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS {fq_schema}.vendor_help_issue (
+  issue_id STRING NOT NULL,
+  article_id STRING,
+  article_slug STRING,
+  issue_title STRING NOT NULL,
+  issue_description STRING NOT NULL,
+  page_path STRING,
+  user_principal STRING,
+  created_at TIMESTAMP NOT NULL
+) USING DELTA;
+
 -- Security tables
 CREATE TABLE IF NOT EXISTS {fq_schema}.sec_user_role_map (
   user_principal STRING NOT NULL,

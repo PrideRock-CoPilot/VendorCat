@@ -27,7 +27,7 @@ The non-negotiable rules and processes that prevent drift.
 
 How the system is designed and why.
 
-- **[RBAC & Permissions](architecture/rbac-and-permissions.md)**: Roles, org-scoping, mutation patterns, common mistakes
+- **[RBAC & Permissions](architecture/rbac-and-permissions.md)**: Roles, LOB-scoping, mutation patterns, common mistakes
 - **[Data Ownership & Survivorship](architecture/data-ownership-and-survivorship.md)**: Entity ownership matrix, ingestion vs app edits, conflict resolution
 - **[Existing Architecture Docs](architecture/)**: Domain model, data model, security, ingestion, app architecture, NFRs
 

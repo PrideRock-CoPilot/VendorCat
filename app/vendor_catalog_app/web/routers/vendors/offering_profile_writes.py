@@ -4,41 +4,47 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
-from vendor_catalog_app.web.core.runtime import get_repo
-from vendor_catalog_app.web.core.user_context_service import get_user_context
+
 from vendor_catalog_app.web.http.flash import add_flash
 from vendor_catalog_app.web.routers.vendors.common import (
-    _safe_return_to,
-    _write_blocked,
+    _redirect_if_write_blocked,
+    _resolve_write_request_context,
 )
 from vendor_catalog_app.web.routers.vendors.constants import (
+    OFFERING_DATAFLOW_CHANGE_REASON_OPTIONS,
+    OFFERING_DATAFLOW_REMOVE_REASON_OPTIONS,
     OFFERING_DATA_METHOD_OPTIONS,
     OFFERING_NOTE_TYPES,
+    OFFERING_PROFILE_REASON_OPTIONS,
+    OFFERING_TICKET_UPDATE_REASON_OPTIONS,
     OFFERING_TICKET_PRIORITIES,
     OFFERING_TICKET_STATUSES,
     VENDOR_DEFAULT_RETURN_TO,
 )
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/vendors")
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/profile/save")
+@require_permission("offering_profile_edit")
 async def offering_profile_save_submit(request: Request, vendor_id: str, offering_id: str):
-    repo = get_repo()
-    user = get_user_context(request)
-    form = await request.form()
-    return_to = _safe_return_to(str(form.get("return_to", VENDOR_DEFAULT_RETURN_TO)))
+    repo, user, form, return_to = await _resolve_write_request_context(
+        request,
+        default_return_to=VENDOR_DEFAULT_RETURN_TO,
+    )
     source_section = str(form.get("source_section", "profile")).strip().lower()
     if source_section not in {"profile", "dataflow"}:
         source_section = "profile"
     reason = str(form.get("reason", "")).strip()
 
-    if _write_blocked(user):
-        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
-        return RedirectResponse(
-            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&return_to={quote(return_to, safe='')}",
-            status_code=303,
-        )
+    blocked_response = _redirect_if_write_blocked(
+        request,
+        user,
+        redirect_url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&return_to={quote(return_to, safe='')}",
+    )
+    if blocked_response is not None:
+        return blocked_response
     if not user.can_edit:
         add_flash(request, "You do not have edit permission.", "error")
         return RedirectResponse(
@@ -162,11 +168,12 @@ async def offering_profile_save_submit(request: Request, vendor_id: str, offerin
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/dataflows/add")
+@require_permission("offering_dataflow_create")
 async def add_offering_data_flow_submit(request: Request, vendor_id: str, offering_id: str):
-    repo = get_repo()
-    user = get_user_context(request)
-    form = await request.form()
-    return_to = _safe_return_to(str(form.get("return_to", VENDOR_DEFAULT_RETURN_TO)))
+    repo, user, form, return_to = await _resolve_write_request_context(
+        request,
+        default_return_to=VENDOR_DEFAULT_RETURN_TO,
+    )
     reason = str(form.get("reason", "")).strip()
     direction = str(form.get("direction", "")).strip().lower()
     flow_name = str(form.get("flow_name", "")).strip()
@@ -181,12 +188,13 @@ async def add_offering_data_flow_submit(request: Request, vendor_id: str, offeri
     notes = str(form.get("notes", "")).strip()
     source_section = "dataflow"
 
-    if _write_blocked(user):
-        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
-        return RedirectResponse(
-            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&return_to={quote(return_to, safe='')}",
-            status_code=303,
-        )
+    blocked_response = _redirect_if_write_blocked(
+        request,
+        user,
+        redirect_url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&return_to={quote(return_to, safe='')}",
+    )
+    if blocked_response is not None:
+        return blocked_response
     if not user.can_edit:
         add_flash(request, "You do not have edit permission.", "error")
         return RedirectResponse(
@@ -279,21 +287,23 @@ async def add_offering_data_flow_submit(request: Request, vendor_id: str, offeri
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/dataflows/remove")
+@require_permission("offering_dataflow_delete")
 async def remove_offering_data_flow_submit(request: Request, vendor_id: str, offering_id: str):
-    repo = get_repo()
-    user = get_user_context(request)
-    form = await request.form()
-    return_to = _safe_return_to(str(form.get("return_to", VENDOR_DEFAULT_RETURN_TO)))
+    repo, user, form, return_to = await _resolve_write_request_context(
+        request,
+        default_return_to=VENDOR_DEFAULT_RETURN_TO,
+    )
     reason = str(form.get("reason", "")).strip()
     data_flow_id = str(form.get("data_flow_id", "")).strip()
     source_section = "dataflow"
 
-    if _write_blocked(user):
-        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
-        return RedirectResponse(
-            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&return_to={quote(return_to, safe='')}",
-            status_code=303,
-        )
+    blocked_response = _redirect_if_write_blocked(
+        request,
+        user,
+        redirect_url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&return_to={quote(return_to, safe='')}",
+    )
+    if blocked_response is not None:
+        return blocked_response
     if not user.can_edit:
         add_flash(request, "You do not have edit permission.", "error")
         return RedirectResponse(
@@ -348,11 +358,12 @@ async def remove_offering_data_flow_submit(request: Request, vendor_id: str, off
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/dataflows/update")
+@require_permission("offering_dataflow_edit")
 async def update_offering_data_flow_submit(request: Request, vendor_id: str, offering_id: str):
-    repo = get_repo()
-    user = get_user_context(request)
-    form = await request.form()
-    return_to = _safe_return_to(str(form.get("return_to", VENDOR_DEFAULT_RETURN_TO)))
+    repo, user, form, return_to = await _resolve_write_request_context(
+        request,
+        default_return_to=VENDOR_DEFAULT_RETURN_TO,
+    )
     reason = str(form.get("reason", "")).strip()
     data_flow_id = str(form.get("data_flow_id", "")).strip()
     direction = str(form.get("direction", "")).strip().lower()
@@ -368,12 +379,13 @@ async def update_offering_data_flow_submit(request: Request, vendor_id: str, off
     notes = str(form.get("notes", "")).strip()
     source_section = "dataflow"
 
-    if _write_blocked(user):
-        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
-        return RedirectResponse(
-            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&return_to={quote(return_to, safe='')}",
-            status_code=303,
-        )
+    blocked_response = _redirect_if_write_blocked(
+        request,
+        user,
+        redirect_url=f"/vendors/{vendor_id}/offerings/{offering_id}?section={source_section}&return_to={quote(return_to, safe='')}",
+    )
+    if blocked_response is not None:
+        return blocked_response
     if not user.can_edit:
         add_flash(request, "You do not have edit permission.", "error")
         return RedirectResponse(
@@ -485,20 +497,22 @@ async def update_offering_data_flow_submit(request: Request, vendor_id: str, off
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/notes/add")
+@require_permission("offering_note_create")
 async def add_offering_note_submit(request: Request, vendor_id: str, offering_id: str):
-    repo = get_repo()
-    user = get_user_context(request)
-    form = await request.form()
-    return_to = _safe_return_to(str(form.get("return_to", VENDOR_DEFAULT_RETURN_TO)))
+    repo, user, form, return_to = await _resolve_write_request_context(
+        request,
+        default_return_to=VENDOR_DEFAULT_RETURN_TO,
+    )
     note_type = str(form.get("note_type", "general")).strip().lower() or "general"
     note_text = str(form.get("note_text", "")).strip()
 
-    if _write_blocked(user):
-        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
-        return RedirectResponse(
-            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=notes&return_to={quote(return_to, safe='')}",
-            status_code=303,
-        )
+    blocked_response = _redirect_if_write_blocked(
+        request,
+        user,
+        redirect_url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=notes&return_to={quote(return_to, safe='')}",
+    )
+    if blocked_response is not None:
+        return blocked_response
     if not user.can_edit:
         add_flash(request, "You do not have edit permission.", "error")
         return RedirectResponse(
@@ -552,11 +566,12 @@ async def add_offering_note_submit(request: Request, vendor_id: str, offering_id
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/tickets/add")
+@require_permission("offering_ticket_create")
 async def add_offering_ticket_submit(request: Request, vendor_id: str, offering_id: str):
-    repo = get_repo()
-    user = get_user_context(request)
-    form = await request.form()
-    return_to = _safe_return_to(str(form.get("return_to", VENDOR_DEFAULT_RETURN_TO)))
+    repo, user, form, return_to = await _resolve_write_request_context(
+        request,
+        default_return_to=VENDOR_DEFAULT_RETURN_TO,
+    )
     title = str(form.get("title", "")).strip()
     ticket_system = str(form.get("ticket_system", "")).strip()
     external_ticket_id = str(form.get("external_ticket_id", "")).strip()
@@ -565,12 +580,13 @@ async def add_offering_ticket_submit(request: Request, vendor_id: str, offering_
     opened_date = str(form.get("opened_date", "")).strip()
     notes = str(form.get("notes", "")).strip()
 
-    if _write_blocked(user):
-        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
-        return RedirectResponse(
-            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=tickets&return_to={quote(return_to, safe='')}",
-            status_code=303,
-        )
+    blocked_response = _redirect_if_write_blocked(
+        request,
+        user,
+        redirect_url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=tickets&return_to={quote(return_to, safe='')}",
+    )
+    if blocked_response is not None:
+        return blocked_response
     if not user.can_edit:
         add_flash(request, "You do not have edit permission.", "error")
         return RedirectResponse(
@@ -639,21 +655,23 @@ async def add_offering_ticket_submit(request: Request, vendor_id: str, offering_
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/tickets/{ticket_id}/status")
+@require_permission("offering_ticket_update")
 async def update_offering_ticket_status_submit(request: Request, vendor_id: str, offering_id: str, ticket_id: str):
-    repo = get_repo()
-    user = get_user_context(request)
-    form = await request.form()
-    return_to = _safe_return_to(str(form.get("return_to", VENDOR_DEFAULT_RETURN_TO)))
+    repo, user, form, return_to = await _resolve_write_request_context(
+        request,
+        default_return_to=VENDOR_DEFAULT_RETURN_TO,
+    )
     status = str(form.get("status", "")).strip().lower()
     closed_date = str(form.get("closed_date", "")).strip()
     reason = str(form.get("reason", "")).strip()
 
-    if _write_blocked(user):
-        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
-        return RedirectResponse(
-            url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=tickets&return_to={quote(return_to, safe='')}",
-            status_code=303,
-        )
+    blocked_response = _redirect_if_write_blocked(
+        request,
+        user,
+        redirect_url=f"/vendors/{vendor_id}/offerings/{offering_id}?section=tickets&return_to={quote(return_to, safe='')}",
+    )
+    if blocked_response is not None:
+        return blocked_response
     if not user.can_edit:
         add_flash(request, "You do not have edit permission.", "error")
         return RedirectResponse(

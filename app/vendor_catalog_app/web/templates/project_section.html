@@ -199,7 +199,12 @@
       </div>
     </label>
     <label>Reason
-      <input type="text" name="reason" placeholder="Reason (optional)">
+      <select name="reason">
+        <option value="">Optional</option>
+        {% for option in project_association_reason_options %}
+        <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+        {% endfor %}
+      </select>
     </label>
     <div style="display:flex; align-items:flex-end;">
       <button type="submit">Attach Offering</button>
@@ -208,7 +213,7 @@
   <form method="post" action="{{ add_vendor_action }}" data-auto-attach-vendor>
     <input type="hidden" name="return_to" value="/projects/{{ project_id }}/offerings">
     <input type="hidden" name="vendor_id" data-auto-vendor-id>
-    <input type="hidden" name="reason" value="Auto attach from vendor selection">
+    <input type="hidden" name="reason" value="{{ project_association_auto_reason }}">
   </form>
   <div class="muted">Search vendors and offerings on demand. Selecting a vendor auto-attaches it when not already linked.</div>
   <script id="project-linked-vendors" type="application/json">{{ linked_vendor_rows|tojson }}</script>

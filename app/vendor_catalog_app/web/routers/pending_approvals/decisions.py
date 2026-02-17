@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
+from fastapi.responses import RedirectResponse
 
+from vendor_catalog_app.web.core.runtime import get_repo
+from vendor_catalog_app.web.core.user_context_service import get_user_context
+from vendor_catalog_app.web.http.flash import add_flash
 from vendor_catalog_app.web.routers.pending_approvals.common import *
-
 
 router = APIRouter(prefix="/workflows")
 
@@ -11,6 +14,7 @@ router = APIRouter(prefix="/workflows")
 async def workflow_decision(request: Request, change_request_id: str):
     repo = get_repo()
     user = get_user_context(request)
+    check_permission = user.can_approve_requests
     form = await request.form()
     return_to = _safe_return_to(str(form.get("return_to", "/workflows")))
     decision = str(form.get("decision", "")).strip().lower()
@@ -18,6 +22,9 @@ async def workflow_decision(request: Request, change_request_id: str):
 
     if user.config.locked_mode:
         add_flash(request, "Application is in locked mode. Workflow decisions are disabled.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not check_permission:
+        add_flash(request, "You do not have permission to decide workflow requests.", "error")
         return RedirectResponse(url=return_to, status_code=303)
     decision_options = set(_workflow_status_options(repo))
     if decision not in decision_options:

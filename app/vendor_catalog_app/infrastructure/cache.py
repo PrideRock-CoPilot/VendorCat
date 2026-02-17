@@ -3,8 +3,8 @@ from __future__ import annotations
 import threading
 import time
 from collections import OrderedDict
-from typing import Callable, Generic, TypeVar
-
+from collections.abc import Callable
+from typing import Generic, TypeVar
 
 K = TypeVar("K")
 V = TypeVar("V")

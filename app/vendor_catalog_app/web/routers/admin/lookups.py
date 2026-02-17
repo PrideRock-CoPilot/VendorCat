@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+
 from vendor_catalog_app.web.core.runtime import get_repo
 from vendor_catalog_app.web.core.user_context_service import get_user_context
 from vendor_catalog_app.web.http.flash import add_flash
@@ -15,11 +16,13 @@ from vendor_catalog_app.web.routers.admin.common import (
     _normalize_lookup_type,
     _slug_lookup_code,
 )
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/admin")
 
 
 @router.post("/lookup/save")
+@require_permission("admin_lookup_manage")
 async def save_lookup_option(request: Request):
     repo = get_repo()
     user = get_user_context(request)
@@ -100,6 +103,7 @@ async def save_lookup_option(request: Request):
 
 
 @router.post("/lookup/delete")
+@require_permission("admin_lookup_manage")
 async def delete_lookup_option(request: Request):
     repo = get_repo()
     user = get_user_context(request)

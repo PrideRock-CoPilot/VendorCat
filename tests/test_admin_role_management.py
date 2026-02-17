@@ -343,3 +343,124 @@ def test_admin_defaults_section_resequences_sort_order(client: TestClient) -> No
     assert active_rows["sort_order"].tolist() == list(range(1, len(active_rows) + 1))
 
 
+def test_admin_ownership_reassignment_all_default_updates_vendor_offering_and_project(client: TestClient) -> None:
+    repo = get_repo()
+    source_owner = "owner@example.com"
+    replacement_owner = "pm@example.com"
+
+    vendor_owner_id = repo.add_vendor_owner(
+        vendor_id="vnd-001",
+        owner_user_principal=source_owner,
+        owner_role="business_owner",
+        actor_user_principal="admin@example.com",
+    )
+    offerings = repo.get_vendor_offerings("vnd-001")
+    assert not offerings.empty
+    offering_id = str(offerings.iloc[0]["offering_id"])
+    offering_owner_id = repo.add_offering_owner(
+        vendor_id="vnd-001",
+        offering_id=offering_id,
+        owner_user_principal=source_owner,
+        owner_role="business_owner",
+        actor_user_principal="admin@example.com",
+    )
+    project_id = repo.create_project(
+        vendor_id="vnd-001",
+        actor_user_principal="admin@example.com",
+        project_name="Ownership Reassign All",
+        owner_principal=source_owner,
+    )
+
+    ownership_page = client.get("/admin?section=ownership&source_owner=owner%40example.com")
+    assert ownership_page.status_code == 200
+    assert "Ownership Reassignment" in ownership_page.text
+
+    submit = client.post(
+        "/admin/ownership/reassign",
+        data={
+            "source_owner": source_owner,
+            "action_mode": "all_default",
+            "default_target_owner": replacement_owner,
+        },
+        follow_redirects=False,
+    )
+    assert submit.status_code == 303
+
+    reassigned_rows = repo.list_owner_reassignment_assignments(replacement_owner)
+    reassigned_keys = {
+        f"{str(row.get('assignment_type') or '').strip()}::{str(row.get('assignment_id') or '').strip()}"
+        for row in reassigned_rows
+    }
+    assert f"vendor_owner::{vendor_owner_id}" in reassigned_keys
+    assert f"offering_owner::{offering_owner_id}" in reassigned_keys
+    assert f"project_owner::{project_id}" in reassigned_keys
+
+    source_rows = repo.list_owner_reassignment_assignments(source_owner)
+    source_keys = {
+        f"{str(row.get('assignment_type') or '').strip()}::{str(row.get('assignment_id') or '').strip()}"
+        for row in source_rows
+    }
+    assert f"vendor_owner::{vendor_owner_id}" not in source_keys
+    assert f"offering_owner::{offering_owner_id}" not in source_keys
+    assert f"project_owner::{project_id}" not in source_keys
+
+
+def test_admin_ownership_reassignment_selected_per_row_supports_different_targets(client: TestClient) -> None:
+    repo = get_repo()
+    source_owner = "owner@example.com"
+
+    vendor_owner_id = repo.add_vendor_owner(
+        vendor_id="vnd-001",
+        owner_user_principal=source_owner,
+        owner_role="business_owner",
+        actor_user_principal="admin@example.com",
+    )
+    offerings = repo.get_vendor_offerings("vnd-001")
+    assert not offerings.empty
+    offering_id = str(offerings.iloc[0]["offering_id"])
+    offering_owner_id = repo.add_offering_owner(
+        vendor_id="vnd-001",
+        offering_id=offering_id,
+        owner_user_principal=source_owner,
+        owner_role="business_owner",
+        actor_user_principal="admin@example.com",
+    )
+
+    candidate_rows = repo.list_owner_reassignment_assignments(source_owner)
+    key_vendor = f"vendor_owner::{vendor_owner_id}"
+    key_offering = f"offering_owner::{offering_owner_id}"
+    candidate_keys = {
+        f"{str(row.get('assignment_type') or '').strip()}::{str(row.get('assignment_id') or '').strip()}"
+        for row in candidate_rows
+    }
+    assert key_vendor in candidate_keys
+    assert key_offering in candidate_keys
+
+    submit = client.post(
+        "/admin/ownership/reassign",
+        data={
+            "source_owner": source_owner,
+            "action_mode": "selected_per_row",
+            "selected_assignment_key": [key_vendor, key_offering],
+            f"target_for__{key_vendor}": "pm@example.com",
+            f"target_for__{key_offering}": "admin@example.com",
+        },
+        follow_redirects=False,
+    )
+    assert submit.status_code == 303
+
+    pm_rows = repo.list_owner_reassignment_assignments("pm@example.com")
+    pm_keys = {
+        f"{str(row.get('assignment_type') or '').strip()}::{str(row.get('assignment_id') or '').strip()}"
+        for row in pm_rows
+    }
+    assert key_vendor in pm_keys
+
+    admin_rows = repo.list_owner_reassignment_assignments("admin@example.com")
+    admin_keys = {
+        f"{str(row.get('assignment_type') or '').strip()}::{str(row.get('assignment_id') or '').strip()}"
+        for row in admin_rows
+    }
+    assert key_offering in admin_keys
+
+

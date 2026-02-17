@@ -7,6 +7,7 @@ import uuid
 from typing import Any
 
 import pandas as pd
+
 from vendor_catalog_app.core.security import (
     MAX_APPROVAL_LEVEL,
     MIN_CHANGE_APPROVAL_LEVEL,

@@ -8,7 +8,7 @@
 
 ## Security
 - Which user groups require exception-based access to restricted columns?
-- Is row-level scope determined only by org assignment, or also by geography/legal entity?
+- Is row-level scope determined only by LOB assignment, or also by geography/legal entity?
 - What is the formal approval chain for policy exceptions?
 
 ## Pipeline

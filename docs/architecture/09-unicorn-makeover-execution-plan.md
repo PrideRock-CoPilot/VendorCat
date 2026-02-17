@@ -71,13 +71,17 @@ Exit Criteria:
 1. UX Consistency Framework
    - Extract reusable table/pagination/filter partials.
    - Normalize page-size options and query param behavior.
-2. Demo Workspace Completion
+2. Dark Mode Implementation
+   - Add CSS variables for dark theme.
+   - Implement theme toggle button in header.
+   - Add JavaScript for theme switching and localStorage persistence.
+3. Demo Workspace Completion
    - Add reviewer assignment and role-based scoring visibility.
    - Add review export and score normalization audit.
-3. Performance Hardening
+4. Performance Hardening
    - Add route-level query budget thresholds.
    - Add cache invalidation map by write action.
-4. Data Stewardship Seed
+5. Data Stewardship Seed
    - Add required-field ruleset for vendor/offering/contract entities.
    - Add simple “Data Quality” admin panel.
 

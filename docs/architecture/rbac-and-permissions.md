@@ -1,6 +1,6 @@
 # RBAC and Permissions
 
-Role-Based Access Control (RBAC) for VendorCatalog. This document defines roles, permissions, org-scoping, and enforcement patterns.
+Role-Based Access Control (RBAC) for VendorCatalog. This document defines roles, permissions, LOB-scoping, and enforcement patterns.
 
 ## Permission Model Overview
 
@@ -8,7 +8,7 @@ VendorCatalog uses a **role-based** model where:
 1. Users are assigned **roles** (e.g., `vendor_admin`, `vendor_viewer`)
 2. Roles grant **change types** (e.g., `vendor_edit`, `vendor_delete`)
 3. Code checks `user.can_apply_change(change_type)` before mutations
-4. Org-scoping restricts users to their organization's vendors
+4. LOB-scoping restricts users to their line-of-business vendors
 
 ## Roles
 
@@ -23,7 +23,7 @@ VendorCatalog uses a **role-based** model where:
 - `user_create`, `user_edit`, `user_delete`, `role_assign`
 - `config_edit`, `audit_view`
 
-**Org scope**: None (all organizations)
+**LOB scope**: None (all lines of business)
 
 **Typical users**: IT admins, system owners
 
@@ -40,7 +40,7 @@ VendorCatalog uses a **role-based** model where:
 - `vendor_tag_create`, `vendor_tag_edit`
 - `audit_view` (own org only)
 
-**Org scope**: Single organization (e.g., "Finance")
+**LOB scope**: Single line of business (e.g., "Finance")
 
 **Typical users**: Procurement managers, department leads
 
@@ -55,7 +55,7 @@ VendorCatalog uses a **role-based** model where:
 - `vendor_view`, `vendor_contact_view`, `vendor_address_view`
 - `audit_view`
 
-**Org scope**: Single organization
+**LOB scope**: Single line of business
 
 **Typical users**: Finance approvers, compliance officers
 
@@ -72,7 +72,7 @@ VendorCatalog uses a **role-based** model where:
 - `vendor_contact_edit`, `vendor_address_edit`
 - `vendor_tag_create`, `vendor_tag_edit`
 
-**Org scope**: Single organization
+**LOB scope**: Single line of business
 
 **Typical users**: Data quality analysts, vendor coordinators
 
@@ -88,7 +88,7 @@ VendorCatalog uses a **role-based** model where:
 - `vendor_address_create`, `vendor_address_edit`
 - `vendor_tag_create`
 
-**Org scope**: Single organization
+**LOB scope**: Single line of business
 
 **Typical users**: Procurement specialists, vendor coordinators
 
@@ -102,7 +102,7 @@ VendorCatalog uses a **role-based** model where:
 - `vendor_view`, `vendor_contact_view`, `vendor_address_view`
 - `vendor_search`, `vendor_export`
 
-**Org scope**: Single organization
+**LOB scope**: Single line of business
 
 **Typical users**: Finance analysts, auditors, read-only stakeholders
 
@@ -116,7 +116,7 @@ VendorCatalog uses a **role-based** model where:
 - `vendor_view`, `vendor_contact_view`, `vendor_address_view`
 - `audit_view`, `audit_export`
 
-**Org scope**: Single organization (or all orgs for compliance auditor)
+**LOB scope**: Single line of business (or all LOBs for compliance auditor)
 
 **Typical users**: Internal audit, compliance team
 
@@ -137,7 +137,7 @@ Approval required for:
 - Payment terms change (Level 2)
 - Legal name change (Level 2)
 
-## Org-Scoping Mechanism
+## LOB-Scoping Mechanism
 
 ### Database Schema
 
@@ -168,17 +168,17 @@ All queries for vendor data must filter by `organization_id`:
 # Repository method
 def get_vendors_for_user(self, user: User):
     if user.role == 'system_admin':
-        # No org filter for system_admin
+        # No LOB filter for system_admin
         return self._execute_read("SELECT * FROM twvendor.core_vendor")
     else:
-        # Filter by user's org
+        # Filter by user's LOB
         return self._execute_read(
             "SELECT * FROM twvendor.core_vendor WHERE organization_id = ?",
             (user.organization_id,)
         )
 ```
 
-**Critical**: Every SELECT/UPDATE/DELETE on vendor tables must include org filter (except system_admin).
+**Critical**: Every SELECT/UPDATE/DELETE on vendor tables must include LOB filter (except system_admin).
 
 ## Permission Enforcement Patterns
 
@@ -215,9 +215,9 @@ async def update_vendor(vendor_id: int, request: Request, form_data: dict):
     user = request.state.user
     vendor = repo.get_vendor_by_id(vendor_id)
     
-    # Check org scope
+    # Check LOB scope
     if vendor.organization_id != user.organization_id and user.role != 'system_admin':
-        raise HTTPException(403, "Vendor belongs to different organization")
+        raise HTTPException(403, "Vendor belongs to different line of business")
     
     # Check permission
     if 'payment_terms' in form_data:
@@ -246,7 +246,7 @@ def delete_vendor(self, vendor_id: int, user: User):
     
     vendor = self.get_vendor_by_id(vendor_id)
     if vendor.organization_id != user.organization_id and user.role != 'system_admin':
-        raise PermissionError("Vendor belongs to different organization")
+        raise PermissionError("Vendor belongs to different line of business")
     
     self._execute_write("DELETE FROM twvendor.core_vendor WHERE vendor_id = ?", (vendor_id,))
 ```
@@ -323,7 +323,7 @@ def bootstrap_admin():
             username="admin",
             email="admin@example.com",
             role="system_admin",
-            organization_id=None  # No org scope
+            organization_id=None  # No LOB scope
         )
 ```
 
@@ -337,14 +337,14 @@ System admins can assign roles via `/admin/users` page:
 
 ## Common RBAC Mistakes
 
-### Mistake 1: Forgetting Org Scope Filter
+### Mistake 1: Forgetting LOB Scope Filter
 
 ```python
-# BAD: Returns vendors from all orgs
+# BAD: Returns vendors from all LOBs
 def get_vendors(self):
     return self._execute_read("SELECT * FROM twvendor.core_vendor")
 
-# GOOD: Filters by user's org
+# GOOD: Filters by user's LOB
 def get_vendors(self, user: UserContext):
     if user.role == 'system_admin':
         return self._execute_read("SELECT * FROM twvendor.core_vendor")
@@ -477,6 +477,153 @@ ROLE_PERMISSIONS = {
 }
 ```
 
+---
+
+## Real-World Examples (PR Bundle 2)
+
+The following endpoints demonstrate the RBAC pattern in production code:
+
+### Example 1: Add Vendor Contact
+
+**File**: `app/vendor_catalog_app/web/routers/vendors/vendor_detail_pages.py`
+
+```python
+from vendor_catalog_app.web.security.rbac import require_permission
+
+@router.post("/{vendor_id}/contacts/add")
+@require_permission("vendor_contact_create")
+async def add_vendor_contact_submit(request: Request, vendor_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    # ... Form validation ...
+    
+    # No manual permission check needed - decorator handles it
+    if user.can_apply_change("add_vendor_contact"):
+        contact_id = repo.add_vendor_contact(...)
+    else:
+        request_id = repo.create_vendor_change_request(...)
+    
+    # ... Flash message and redirect ...
+```
+
+**Key Points**:
+- `@require_permission("vendor_contact_create")` enforces permission before handler runs
+- No need for `if not user.can_edit:` check (decorator handles it)
+- Workflow logic (`can_apply_change`) determines direct vs. approval flow
+
+---
+
+### Example 2: Create Project
+
+**File**: `app/vendor_catalog_app/web/routers/vendors/projects.py`
+
+```python
+@router.post("/{vendor_id}/projects/new")
+@require_permission("project_create")
+async def project_new_submit(request: Request, vendor_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    # ... Project creation logic ...
+    
+    if user.can_apply_change("create_project"):
+        project_id = repo.create_project(...)
+    else:
+        request_id = repo.create_vendor_change_request(...)
+    # ... Return redirect ...
+```
+
+**Required Roles**: `vendor_admin`, `vendor_editor`, `system_admin`
+
+---
+
+### Example 3: Add Offering Invoice
+
+**File**: `app/vendor_catalog_app/web/routers/vendors/offering_writes.py`
+
+```python
+@router.post("/{vendor_id}/offerings/{offering_id}/invoices/add")
+@require_permission("offering_invoice_create")
+async def add_offering_invoice_submit(request: Request, vendor_id: str, offering_id: str):
+    # ... Invoice validation ...
+    
+    if user.can_apply_change("add_offering_invoice"):
+        invoice_id = repo.add_offering_invoice(...)
+    else:
+        request_id = repo.create_vendor_change_request(...)
+```
+
+**Required Roles**: `vendor_admin`, `vendor_editor`
+
+---
+
+### Example 4: Add Offering Owner
+
+**File**: `app/vendor_catalog_app/web/routers/vendors/offering_writes.py`
+
+```python
+@router.post("/{vendor_id}/offerings/{offering_id}/owners/add")
+@require_permission("offering_owner_create")
+async def add_offering_owner_submit(request: Request, vendor_id: str, offering_id: str):
+    # Permission enforced by decorator
+    if user.can_apply_change("add_offering_owner"):
+        owner_id = repo.add_offering_owner(...)
+    else:
+        request_id = repo.create_vendor_change_request(...)
+```
+
+---
+
+### Example 5: Add Offering Contact
+
+**File**: `app/vendor_catalog_app/web/routers/vendors/offering_writes.py`
+
+```python
+@router.post("/{vendor_id}/offerings/{offering_id}/contacts/add")
+@require_permission("offering_contact_create")
+async def add_offering_contact_submit(request: Request, vendor_id: str, offering_id: str):
+    # Decorator enforces permission, handler focuses on business logic
+    if user.can_apply_change("add_offering_contact"):
+        contact_id = repo.add_offering_contact(...)
+    else:
+        request_id = repo.create_vendor_change_request(...)
+```
+
+---
+
+### Permission Definitions
+
+These permissions are defined in `app/vendor_catalog_app/core/permissions.py`:
+
+```python
+ROLE_PERMISSIONS = {
+    'vendor_admin': [
+        'vendor_contact_create',
+        'project_create',
+        'offering_invoice_create',
+        'offering_owner_create',
+        'offering_contact_create',
+        # ... other permissions ...
+    ],
+    'vendor_editor': [
+        'vendor_contact_create',
+        'project_create',
+        'offering_invoice_create',
+        'offering_owner_create',
+        'offering_contact_create',
+        # ... other permissions ...
+    ],
+    # ... other roles ...
+}
+```
+
+**Workflow**: 
+- `vendor_editor` can create vendor contacts, projects, and offering data
+- `vendor_approver` may need to approve changes before they're applied
+- `vendor_viewer` and `vendor_auditor` cannot perform write operations
+
+---
+
 ## Testing RBAC
 
 ### Test Coverage
@@ -484,7 +631,7 @@ ROLE_PERMISSIONS = {
 Every mutation endpoint must have:
 1. **Happy path test**: Authorized user can perform action
 2. **Unauthorized test**: User without permission gets 403
-3. **Org scope test**: User from different org cannot access vendor
+3. **LOB scope test**: User from different LOB cannot access vendor
 
 Example:
 

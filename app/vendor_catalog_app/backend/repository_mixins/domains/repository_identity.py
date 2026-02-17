@@ -8,9 +8,9 @@ from typing import Any
 
 import pandas as pd
 
-from vendor_catalog_app.infrastructure.db import DataConnectionError, DataExecutionError, DataQueryError
 from vendor_catalog_app.core.repository_constants import UNKNOWN_USER_PRINCIPAL
 from vendor_catalog_app.core.repository_errors import SchemaBootstrapRequiredError
+from vendor_catalog_app.infrastructure.db import DataConnectionError, DataExecutionError, DataQueryError
 
 LOGGER = logging.getLogger(__name__)
 
@@ -23,6 +23,9 @@ class RepositoryIdentityMixin:
             self._local_table_columns("sec_user_role_map")
             self._local_table_columns("app_user_settings")
             self._local_table_columns("app_user_directory")
+            self._local_table_columns("vendor_help_article")
+            self._local_table_columns("vendor_help_feedback")
+            self._local_table_columns("vendor_help_issue")
             self._ensure_local_lookup_option_table()
             self._ensure_local_offering_columns()
             self._ensure_local_offering_extension_tables()
@@ -48,6 +51,9 @@ class RepositoryIdentityMixin:
             "app_user_settings",
             "app_user_directory",
             "app_lookup_option",
+            "vendor_help_article",
+            "vendor_help_feedback",
+            "vendor_help_issue",
         )
         missing_or_blocked: list[str] = []
         for table_name in required_tables:
@@ -292,7 +298,7 @@ class RepositoryIdentityMixin:
 
     def search_user_directory(self, q: str = "", limit: int = 20) -> pd.DataFrame:
         normalized_limit = max(1, min(int(limit or 20), 250))
-        columns = ["user_id", "login_identifier", "display_name", "label"]
+        columns = ["user_id", "login_identifier", "display_name", "email", "label"]
         cleaned_q = (q or "").strip()
         like_pattern = f"%{cleaned_q.lower()}%" if cleaned_q else ""
         df = self._query_file(

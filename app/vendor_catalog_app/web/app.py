@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
 import uuid
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
+
 from vendor_catalog_app.infrastructure.logging import setup_app_logging
 from vendor_catalog_app.infrastructure.observability import get_observability_manager
 from vendor_catalog_app.web.core.runtime import get_config

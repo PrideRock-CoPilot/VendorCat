@@ -5,7 +5,7 @@
   "vendor_id": "Vendor ID",
   "legal_name": "Legal Name",
   "lifecycle_state": "Lifecycle State",
-  "owner_org_id": "Owner Org ID",
+  "owner_org_id": "Line of Business",
   "risk_tier": "Risk Tier",
   "updated_at": "Updated At"
 } %}
@@ -25,7 +25,7 @@
     </select>
   </label>
   <label>
-    Owner Org
+    Line of Business
     <select name="owner">
       {% for option in owner_options %}
       <option value="{{ option }}" {% if option == filters.owner %}selected{% endif %}>{{ option }}</option>

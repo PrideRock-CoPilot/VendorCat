@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+
 from vendor_catalog_app.core.security import ROLE_CHOICES
 from vendor_catalog_app.web.core.runtime import get_repo, testing_role_override_enabled
 from vendor_catalog_app.web.core.user_context_service import (
@@ -17,10 +18,11 @@ router = APIRouter(prefix="/admin")
 async def set_testing_role(request: Request):
     repo = get_repo()
     user = get_user_context(request)
+    check_permission = user.has_admin_rights
     if not testing_role_override_enabled(user.config):
         add_flash(request, "Testing role override is disabled in this environment.", "error")
         return RedirectResponse(url="/dashboard", status_code=303)
-    if not user.has_admin_rights:
+    if not check_permission:
         add_flash(request, "Admin access required.", "error")
         return RedirectResponse(url="/dashboard", status_code=303)
 

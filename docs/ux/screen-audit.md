@@ -10,7 +10,7 @@ Evidence:
 
 | Flow | Clicks | Target | Pass |
 |---|---:|---:|---|
-| Create vendor with new owner org | 3 | <= 6 | Yes |
+| Create vendor with new line of business | 3 | <= 6 | Yes |
 | Create offering with LOB/service type | 4 | <= 6 | Yes |
 | Add invoice | 2 | <= 3 | Yes |
 | Create project with owner and links | 5 | <= 6 | Yes |
@@ -43,11 +43,11 @@ Summary:
 
 ## New Vendor
 - What works:
-  - New owner org path works in empty environments.
+  - New line-of-business path works in empty environments.
   - Good validation for required fields.
 - Improve:
-  - Add short inline examples for org format.
-  - Clarify `Owner Org ID` business meaning with one sentence.
+  - Add short inline examples for LOB format.
+  - Clarify `Line of Business` business meaning with one sentence.
 
 ## Vendor Summary
 - What works:
@@ -131,7 +131,7 @@ Summary:
   - Group role lifecycle is good.
 - Improve:
   - Major actions hidden in `<details>`.
-  - Add explicit revoke for user roles and org scopes in tables.
+  - Add explicit revoke for user roles and LOB scopes in tables.
   - Convert free-text principals to searchable inputs where possible.
 
 ## Pending Approvals

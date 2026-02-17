@@ -1,16 +1,12 @@
 from __future__ import annotations
 
-import csv
-import io
 import json
 import re
-import zipfile
-from datetime import datetime, timezone
 from urllib.parse import urlencode, urlparse, urlunparse
 
 import pandas as pd
-from fastapi import APIRouter, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi import APIRouter
+
 from vendor_catalog_app.core.env import (
     TVENDOR_DATABRICKS_REPORTS_ALLOW_EMBED,
     TVENDOR_DATABRICKS_REPORTS_ALLOWED_HOSTS,
@@ -18,11 +14,6 @@ from vendor_catalog_app.core.env import (
     get_env,
     get_env_bool,
 )
-from vendor_catalog_app.web.core.activity import ensure_session_started, log_page_view
-from vendor_catalog_app.web.core.runtime import get_repo
-from vendor_catalog_app.web.core.template_context import base_template_context
-from vendor_catalog_app.web.core.user_context_service import get_user_context
-from vendor_catalog_app.web.http.flash import add_flash
 
 router = APIRouter()
 
@@ -139,7 +130,7 @@ def _build_report_frame(
     project_status: str,
     outcome: str,
     owner_principal: str,
-    org: str,
+    lob: str,
     horizon_days: int,
     limit: int,
 ):
@@ -162,7 +153,7 @@ def _build_report_frame(
         frame = repo.report_contract_renewals(
             search_text=search,
             vendor_id=vendor,
-            org_id=org,
+            org_id=lob,
             horizon_days=horizon_days,
             limit=limit,
         )
@@ -369,7 +360,7 @@ def _report_query_payload(
     project_status: str,
     outcome: str,
     owner_principal: str,
-    org: str,
+    lob: str,
     horizon_days: int,
     limit: int,
     cols: str,
@@ -387,7 +378,7 @@ def _report_query_payload(
         "project_status": project_status,
         "outcome": outcome,
         "owner_principal": owner_principal,
-        "org": org,
+        "lob": lob,
         "horizon_days": horizon_days,
         "limit": limit,
         "cols": cols,

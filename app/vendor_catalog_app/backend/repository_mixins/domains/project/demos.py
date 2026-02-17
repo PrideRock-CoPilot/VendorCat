@@ -5,6 +5,7 @@ import uuid
 from typing import Any
 
 import pandas as pd
+
 from vendor_catalog_app.core.repository_constants import *
 
 LOGGER = logging.getLogger(__name__)
@@ -192,7 +193,7 @@ class RepositoryProjectDemoMixin:
         after.update(clean_updates)
         now = self._now()
         actor_ref = self._actor_ref(actor_user_principal)
-        set_clause = ", ".join([f"{k} = %s" for k in clean_updates.keys()])
+        set_clause = ", ".join([f"{k} = %s" for k in clean_updates])
         params = list(clean_updates.values()) + [now, actor_ref, project_demo_id, project_id, vendor_id]
         self._execute_file(
             "updates/update_project_demo.sql",

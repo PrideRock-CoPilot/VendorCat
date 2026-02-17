@@ -26,8 +26,8 @@ If you do not see the page you need, you may not have the right role yet.
 1. Click `+ New Vendor`.
 1. Fill `Legal Name`.
 1. Fill `Display Name` if needed.
-1. Pick `Owner Org ID`.
-1. If no org exists, pick `+ Add new org` and type a new org id.
+1. Pick `Line of Business (LOB)`.
+1. If no LOB exists, pick `+ Add new line of business` and type a new LOB value.
 1. Click `Create Vendor`.
 
 Done:
@@ -85,7 +85,7 @@ Done:
 
 1. Error: `Validation failed` when creating vendor.
    Fix:
-   Fill `Legal Name` and make sure owner org is selected or typed.
+   Fill `Legal Name` and make sure a line of business is selected or typed.
 1. Error: You cannot edit.
    Fix:
    Check role grants in `Admin`.

@@ -1,13 +1,23 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Admin Portal</h1>
+<div class="button-group" style="margin-bottom:12px;">
+  <a class="button-link subtle" href="/help/admin-portal-overview">? Help</a>
+</div>
 
 <section class="card section-nav-card">
   <div class="section-nav-links">
     <a class="{{ 'active' if admin_section == 'access' else '' }}" href="/admin?section=access">Roles &amp; Users</a>
+    <a class="{{ 'active' if admin_section == 'ownership' else '' }}" href="/admin?section=ownership">Ownership Reassignment</a>
     <a class="{{ 'active' if admin_section == 'defaults' else '' }}" href="/admin?section=defaults&amp;lookup_type={{ selected_lookup_type }}&amp;status={{ selected_lookup_status }}&amp;as_of={{ selected_as_of }}">Defaults</a>
   </div>
 </section>
+
+<datalist id="admin-user-principals">
+  {% for row in user_options %}
+  <option value="{{ row.login_identifier }}">{{ row.label }}</option>
+  {% endfor %}
+</datalist>
 
 {% if admin_section == 'defaults' %}
 <section class="card">
@@ -113,6 +123,78 @@
     </tfoot>
   </table>
 </section>
+{% elif admin_section == 'ownership' %}
+<section class="card">
+  <h2>Ownership Reassignment</h2>
+  <p>Select a source owner to see every active ownership assignment and reassign in bulk.</p>
+  <form method="get" action="/admin" class="inline-form" style="margin-top:8px;">
+    <input type="hidden" name="section" value="ownership">
+    <label>Source Owner
+      <input type="text" name="source_owner" list="admin-user-principals" value="{{ selected_owner_source }}" placeholder="user@company.com" required>
+    </label>
+    <button type="submit">Load Ownerships</button>
+  </form>
+</section>
+
+{% if selected_owner_source %}
+<section class="card">
+  <h2>Assignments for {{ selected_owner_source }}</h2>
+  <form method="post" action="/admin/ownership/reassign" style="margin-top:8px;">
+    <input type="hidden" name="source_owner" value="{{ selected_owner_source }}">
+    <div class="grid grid-2" style="margin-bottom:10px;">
+      <label>Default Replacement Owner
+        <input type="text" name="default_target_owner" list="admin-user-principals" placeholder="user@company.com">
+      </label>
+      <label>Action Mode
+        <select name="action_mode">
+          <option value="all_default">Reassign all rows to default owner</option>
+          <option value="selected_default">Reassign selected rows to default owner</option>
+          <option value="selected_per_row">Reassign selected rows using per-row owner (fallback to default)</option>
+        </select>
+      </label>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Select</th>
+          <th>Type</th>
+          <th>Vendor</th>
+          <th>Entity</th>
+          <th>Role</th>
+          <th>Current Owner</th>
+          <th>Per-Row Replacement</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in ownership_rows %}
+        <tr>
+          <td><input type="checkbox" name="selected_assignment_key" value="{{ row.assignment_key }}"></td>
+          <td>{{ row.entity_type }}</td>
+          <td>{{ row.vendor_display_name or row.vendor_id or '-' }}</td>
+          <td>
+            <div>{{ row.entity_name or row.entity_id }}</div>
+            <div class="muted">{{ row.entity_id }}</div>
+          </td>
+          <td>{{ row.owner_role }}</td>
+          <td>{{ row.owner_principal }}</td>
+          <td>
+            <input
+              type="text"
+              name="target_for__{{ row.assignment_key }}"
+              list="admin-user-principals"
+              placeholder="Optional per-row owner"
+            >
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7">No active ownership assignments found for this owner.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div style="margin-top:10px;"><button type="submit">Apply Reassignment</button></div>
+  </form>
+</section>
+{% endif %}
 {% else %}
 <section class="card">
   <h2>Role Catalog</h2>
@@ -190,12 +272,6 @@
   </details>
 </section>
 
-<datalist id="admin-user-principals">
-  {% for row in user_options %}
-  <option value="{{ row.login_identifier }}">{{ row.label }}</option>
-  {% endfor %}
-</datalist>
-
 <div class="grid grid-2">
   <section class="card">
     <h2>Role Grants</h2>
@@ -254,9 +330,9 @@
   </section>
 
   <section class="card">
-    <h2>Org Scope Grants</h2>
+    <h2>Line of Business Scope Grants</h2>
     <table>
-      <thead><tr><th>User</th><th>Org</th><th>Scope</th><th>Active</th><th>Granted At</th><th>Actions</th></tr></thead>
+      <thead><tr><th>User</th><th>Line of Business</th><th>Scope</th><th>Active</th><th>Granted At</th><th>Actions</th></tr></thead>
       <tbody>
         {% for row in scope_rows %}
         {% set is_active = row.active_flag in [True, 1, "1", "true", "True"] %}
@@ -284,10 +360,10 @@
         {% endfor %}
       </tbody>
     </table>
-    <h3 style="margin-top:10px;">Grant Org Scope</h3>
+    <h3 style="margin-top:10px;">Grant LOB Scope</h3>
     <form method="post" action="/admin/grant-scope" class="grid grid-1" style="margin-top:10px;">
       <label>User Principal<input type="text" name="target_user" required></label>
-      <label>Org ID<input type="text" name="org_id" required></label>
+      <label>Line of Business<input type="text" name="lob_id" required></label>
       <label>Scope Level
         <select name="scope_level">
           <option value="read">read</option>

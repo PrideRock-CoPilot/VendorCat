@@ -5,6 +5,7 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+
 from vendor_catalog_app.repository import UNKNOWN_USER_PRINCIPAL
 from vendor_catalog_app.web.core.activity import ensure_session_started, log_page_view
 from vendor_catalog_app.web.core.runtime import get_repo
@@ -13,17 +14,17 @@ from vendor_catalog_app.web.core.user_context_service import get_user_context
 from vendor_catalog_app.web.http.flash import add_flash
 from vendor_catalog_app.web.routers.demos.common import (
     DEMO_REVIEW_SUBMISSION_NOTE_TYPES,
-    DEMO_STAGE_NOTE_TYPE,
-    DEMO_STAGE_ORDER,
-    DEMO_SELECTION_OUTCOMES,
-    build_template_library_index,
     DEMO_REVIEW_TEMPLATE_LIBRARY_ENTITY,
     DEMO_REVIEW_TEMPLATE_LIBRARY_NOTE_TYPE,
     DEMO_REVIEW_TEMPLATE_NOTE_TYPES,
+    DEMO_SELECTION_OUTCOMES,
     DEMO_STAGE_LABELS,
+    DEMO_STAGE_NOTE_TYPE,
+    DEMO_STAGE_ORDER,
+    build_review_summary,
     build_scoring_cards,
     build_stage_history,
-    build_review_summary,
+    build_template_library_index,
     is_demo_session_open,
     parse_template_library_rows,
     parse_template_note,
