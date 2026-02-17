@@ -14,6 +14,7 @@ from vendor_catalog_app.web.core.template_context import base_template_context
 from vendor_catalog_app.web.core.user_context_service import get_user_context
 from vendor_catalog_app.web.http.flash import add_flash
 from vendor_catalog_app.web.routers.admin.common import (
+    ADMIN_SECTION_OWNERSHIP,
     LOOKUP_TYPE_LABELS,
     _date_value,
     _normalize_admin_section,
@@ -80,6 +81,14 @@ def admin(request: Request):
         as_of_ts=selected_as_of,
         status_filter=selected_lookup_status,
     ).to_dict("records")
+    selected_owner_source = str(request.query_params.get("source_owner") or "").strip()
+    ownership_rows: list[dict[str, object]] = []
+    if admin_section == ADMIN_SECTION_OWNERSHIP and selected_owner_source:
+        try:
+            ownership_rows = repo.list_owner_reassignment_assignments(selected_owner_source)
+        except Exception as exc:
+            add_flash(request, f"Could not load ownership assignments: {exc}", "error")
+            ownership_rows = []
     selected_lookup_rows: list[dict[str, object]] = []
     for row in selected_lookup_rows_raw:
         try:
@@ -128,6 +137,8 @@ def admin(request: Request):
             "selected_as_of": selected_as_of,
             "selected_lookup_rows": selected_lookup_rows,
             "next_lookup_sort_order": next_sort_order,
+            "selected_owner_source": selected_owner_source,
+            "ownership_rows": ownership_rows,
         },
     )
     return request.app.state.templates.TemplateResponse(request, "admin.html", context)

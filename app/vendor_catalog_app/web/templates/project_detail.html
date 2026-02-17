@@ -136,7 +136,12 @@
           <input type="hidden" name="demo_datetime_start" value="{{ row.demo_datetime_start }}">
           <input type="hidden" name="linked_offering_id" value="{{ row.linked_offering_id }}">
           <input type="hidden" name="notes" value="{{ row.notes }}">
-          <input type="text" name="reason" placeholder="Reason" required>
+          <select name="reason" required>
+            <option value="" selected disabled>Select reason</option>
+            {% for option in project_demo_reaudit_reason_options %}
+            <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+            {% endfor %}
+          </select>
           <button type="submit">Re-Audit</button>
         </form>
         <form method="post" action="{{ row._remove_action }}" class="inline-form">

@@ -16,7 +16,9 @@ from vendor_catalog_app.web.routers.vendors.common import (
     _write_blocked,
 )
 from vendor_catalog_app.web.routers.vendors.constants import (
+    CONTRACT_CHANGE_REASON_OPTIONS,
     CONTRACT_CANCEL_REASON_OPTIONS,
+    CONTRACT_MAPPING_REASON_OPTIONS,
     CONTRACT_STATUS_DEFAULT,
     CONTRACT_STATUS_OPTIONS,
     VENDOR_DEFAULT_RETURN_TO,
@@ -52,6 +54,7 @@ def vendor_contracts_page(request: Request, vendor_id: str, return_to: str = VEN
             "offering_options": offering_options,
             "contract_status_options": CONTRACT_STATUS_OPTIONS,
             "contract_cancel_reason_options": CONTRACT_CANCEL_REASON_OPTIONS,
+            "contract_change_reason_options": CONTRACT_CHANGE_REASON_OPTIONS,
         },
     )
     return request.app.state.templates.TemplateResponse(request, "vendor_section.html", context)
@@ -83,6 +86,9 @@ async def map_contract_submit(request: Request, vendor_id: str):
         return RedirectResponse(url=return_to, status_code=303)
     if offering_id and not repo.offering_belongs_to_vendor(vendor_id, offering_id):
         add_flash(request, "Selected offering does not belong to this vendor.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not reason:
+        add_flash(request, "Reason is required for mapping.", "error")
         return RedirectResponse(url=return_to, status_code=303)
 
     try:
@@ -276,6 +282,9 @@ async def update_vendor_contract_submit(request: Request, vendor_id: str, contra
         "end_date": str(form.get("end_date", "")).strip() or None,
         "annual_value": str(form.get("annual_value", "")).strip() or None,
     }
+    if not reason:
+        add_flash(request, "Reason is required for updates.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
 
     try:
         if user.can_apply_change("update_contract"):

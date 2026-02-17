@@ -63,7 +63,12 @@
     </div>
 
     <label class="full">Reason
-      <input type="text" name="reason" placeholder="Why this update is needed" required>
+      <select name="reason" required>
+        <option value="" selected disabled>Select reason</option>
+        {% for option in project_update_reason_options %}
+        <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+        {% endfor %}
+      </select>
     </label>
     <div><button type="submit">Save Project</button></div>
   </form>

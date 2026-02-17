@@ -59,3 +59,16 @@ def api_user_search(request: Request, q: str = "", limit: int = 20):
     rows = repo.search_user_directory(q=q, limit=_normalize_limit(limit)).to_dict("records")
     return JSONResponse({"items": rows})
 
+
+@router.get("/contacts/search")
+def api_contact_search(request: Request, vendor_id: str = "", q: str = "", limit: int = 20):
+    repo = get_repo()
+    user = get_user_context(request)
+    ensure_session_started(request, user)
+    rows = repo.search_contacts_typeahead(
+        vendor_id=vendor_id.strip() or None,
+        q=q,
+        limit=_normalize_limit(limit),
+    ).to_dict("records")
+    return JSONResponse({"items": rows})
+

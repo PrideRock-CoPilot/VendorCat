@@ -197,16 +197,48 @@ def _run_browser_flows(base_url: str) -> list[StepResult]:
             _goto(page, base_url, f"/vendors/{vendor_id}/ownership?return_to=%2Fvendors", expect_text="Ownership")
 
             owner_form = page.locator(f"form[action='/vendors/{vendor_id}/owners/add']").first
-            owner_form.locator("input[name='owner_user_principal']").fill(f"e2e.owner.{unique_suffix}@example.com")
+            display_name_input = owner_form.locator("input[name='owner_user_principal_display_name']").first
+            display_name_results = display_name_input.locator(
+                "xpath=following-sibling::div[contains(@class,'typeahead-results')]"
+            ).first
+            display_name_input.fill("admin")
+            display_name_results.locator("button.typeahead-option").first.wait_for(timeout=15000)
+            display_name_results.locator("button.typeahead-option", has_text="Admin User").first.click()
+
+            email_input = owner_form.locator("input[name='owner_user_principal']").first
+            email_results = email_input.locator(
+                "xpath=following-sibling::div[contains(@class,'typeahead-results')]"
+            ).first
+            email_value = str(email_input.input_value() or "").strip().lower()
+            display_value = str(display_name_input.input_value() or "").strip().lower()
+            if email_value != "admin@example.com":
+                raise RuntimeError(f"Owner email field not synced from display selection. value={email_value}")
+            if "admin" not in display_value:
+                raise RuntimeError(f"Owner display-name field not populated from selection. value={display_value}")
+
+            display_name_input.fill("")
+            email_input.fill("admin@example.com")
+            email_results.locator("button.typeahead-option").first.wait_for(timeout=15000)
+            email_results.locator("button.typeahead-option", has_text="Admin User").first.click()
+            display_after_email_pick = str(display_name_input.input_value() or "").strip().lower()
+            if "admin" not in display_after_email_pick:
+                raise RuntimeError(
+                    "Owner display-name field not synced from email selection. "
+                    f"value={display_after_email_pick}"
+                )
+
             _select_option_best_effort(page, f"form[action='/vendors/{vendor_id}/owners/add'] select[name='owner_role']", ["business_owner"])
             owner_form.locator("input[name='reason']").fill("E2E owner add")
             owner_form.locator("button:has-text('Add Owner')").click()
             page.wait_for_load_state("networkidle")
 
-            assign_form = page.locator(f"form[action='/vendors/{vendor_id}/org-assignments/add']").first
+            assign_action = f"/vendors/{vendor_id}/lob-assignments/add"
+            if page.locator(f"form[action='{assign_action}']").count() == 0:
+                assign_action = f"/vendors/{vendor_id}/org-assignments/add"
+            assign_form = page.locator(f"form[action='{assign_action}']").first
             assign_form.locator("input[name='org_id']").fill(f"E2E-ORG-{unique_suffix}")
-            _select_option_best_effort(page, f"form[action='/vendors/{vendor_id}/org-assignments/add'] select[name='assignment_type']", ["consumer"])
-            assign_form.locator("input[name='reason']").fill("E2E org assignment")
+            _select_option_best_effort(page, f"form[action='{assign_action}'] select[name='assignment_type']", ["consumer"])
+            assign_form.locator("input[name='reason']").fill("E2E LOB assignment")
             assign_form.locator("button:has-text('Add Assignment')").click()
             page.wait_for_load_state("networkidle")
 
@@ -220,6 +252,8 @@ def _run_browser_flows(base_url: str) -> list[StepResult]:
             page.wait_for_load_state("networkidle")
 
             body = page.content()
+            if "admin@example.com" not in body:
+                raise RuntimeError("Owner add did not render expected user principal.")
             if "E2E Contact" not in body:
                 raise RuntimeError("Ownership additions did not render expected contact row.")
             return "owner+assignment+contact added"
@@ -361,6 +395,29 @@ def _run_browser_flows(base_url: str) -> list[StepResult]:
                 raise RuntimeError("Added admin default option not rendered in table.")
             return label
 
+        def admin_ownership_reassign() -> str:
+            _goto(
+                page,
+                base_url,
+                "/admin?section=ownership&source_owner=admin%40example.com",
+                expect_text="Ownership Reassignment",
+            )
+            rows = page.locator("input[name='selected_assignment_key']")
+            if rows.count() == 0:
+                raise RuntimeError("No ownership rows available for admin source owner.")
+
+            rows.first.check()
+            page.locator("input[name='default_target_owner']").fill("pm@example.com")
+            page.locator("select[name='action_mode']").select_option("selected_default")
+            page.locator("button:has-text('Apply Reassignment')").first.click()
+            page.wait_for_load_state("networkidle")
+
+            body = page.text_content("body") or ""
+            if "Ownership reassignment complete." not in body:
+                raise RuntimeError("Ownership reassignment success message not shown.")
+            return "ownership reassignment applied"
+
+        run_step("admin_ownership_reassign", admin_ownership_reassign)
         run_step("admin_defaults_add_option", admin_defaults_add_option)
 
         def imports_page_smoke() -> str:

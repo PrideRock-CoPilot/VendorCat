@@ -3,7 +3,7 @@
 ## Bounded Contexts
 - Vendor Master: canonical identity and core attributes.
 - Compliance: certifications, tax, sanctions, and due diligence status.
-- Relationship: parent-subsidiary, ownership, and internal org assignments.
+- Relationship: parent-subsidiary, ownership, and internal LOB assignments.
 - Portfolio: vendor offerings and application inventory.
 - Workflow: onboarding, approvals, and change management.
 - Access: entitlement mappings and audit trails.
@@ -67,7 +67,7 @@
 - Current-state tables are paired with full history tables keyed by version.
 
 ## Data Stewardship Rules
-- Every active vendor must have required legal name, primary country, and owner org.
+- Every active vendor must have required legal name, primary country, and line of business.
 - Sensitive fields must have classification tags and controlled access paths.
 - Deactivated vendors remain queryable for audit with lifecycle end date.
 - Manual user edits never overwrite original source rows; they append new entity versions.

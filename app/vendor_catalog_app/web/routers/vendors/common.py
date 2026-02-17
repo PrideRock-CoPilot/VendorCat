@@ -3,6 +3,7 @@ from __future__ import annotations
 from urllib.parse import quote
 
 from fastapi import Request
+from fastapi.responses import RedirectResponse
 
 from vendor_catalog_app.core.defaults import (
     DEFAULT_ALLOWED_RETURN_TO_PREFIXES,
@@ -21,6 +22,38 @@ from vendor_catalog_app.web.routers.vendors.constants import (
     RISK_TIERS,
     VENDOR_SECTIONS,
 )
+
+
+def _resolve_directory_user_principal(
+    repo,
+    *,
+    principal_value: str | None,
+    display_name_value: str | None,
+    error_message: str,
+) -> str:
+    candidate = str(principal_value or "").strip() or str(display_name_value or "").strip()
+    if not candidate:
+        raise ValueError(error_message)
+    resolved = repo.resolve_user_login_identifier(candidate)
+    if not resolved:
+        raise ValueError(error_message)
+    return resolved
+
+
+def _normalize_contact_identity(
+    *,
+    full_name: str | None,
+    full_name_display: str | None,
+    email: str | None,
+) -> str:
+    name_value = str(full_name or "").strip()
+    display_value = str(full_name_display or "").strip()
+    email_value = str(email or "").strip()
+    if not name_value and display_value:
+        name_value = display_value
+    if not name_value and email_value:
+        name_value = email_value
+    return name_value
 
 
 def _safe_return_to(value: str | None) -> str:
@@ -111,6 +144,32 @@ def _project_demo_select_options(vendor_demos: list[dict]) -> list[dict]:
 
 def _write_blocked(user) -> bool:
     return bool(user.config.locked_mode)
+
+
+async def _resolve_write_request_context(
+    request: Request,
+    *,
+    default_return_to: str,
+):
+    from vendor_catalog_app.web.core.runtime import get_repo
+
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", default_return_to)))
+    return repo, user, form, return_to
+
+
+def _redirect_if_write_blocked(
+    request: Request,
+    user,
+    *,
+    redirect_url: str,
+):
+    if not _write_blocked(user):
+        return None
+    add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+    return RedirectResponse(url=redirect_url, status_code=303)
 
 
 def _request_scope_vendor_id(vendor_id: str | None) -> str:

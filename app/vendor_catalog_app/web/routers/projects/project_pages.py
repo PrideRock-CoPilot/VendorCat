@@ -20,6 +20,7 @@ from vendor_catalog_app.web.routers.projects.common import (
     _selected_offering_rows,
     _selected_vendor_rows,
 )
+from vendor_catalog_app.web.routers.vendors.constants import PROJECT_UPDATE_REASON_OPTIONS
 
 router = APIRouter(prefix="/projects")
 
@@ -232,6 +233,7 @@ def project_edit_form(request: Request, project_id: str, return_to: str = "/proj
             "return_to": _safe_return_to(return_to),
             "project_types": _project_type_options(repo),
             "project_statuses": PROJECT_STATUS_VALUES,
+            "project_update_reason_options": PROJECT_UPDATE_REASON_OPTIONS,
             "form_action": f"/projects/{project_id}/edit",
         },
     )

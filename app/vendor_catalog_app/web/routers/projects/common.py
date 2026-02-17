@@ -10,6 +10,12 @@ from vendor_catalog_app.web.core.runtime import get_repo
 from vendor_catalog_app.web.core.template_context import base_template_context
 from vendor_catalog_app.web.core.user_context_service import get_user_context
 from vendor_catalog_app.web.http.flash import add_flash
+from vendor_catalog_app.web.routers.vendors.constants import (
+    PROJECT_ASSOCIATION_AUTO_REASON,
+    PROJECT_ASSOCIATION_REASON_OPTIONS,
+    PROJECT_DEMO_REAUDIT_REASON_OPTIONS,
+    PROJECT_OWNER_CHANGE_REASON_OPTIONS,
+)
 from vendor_catalog_app.web.utils.doc_links import (
     extract_doc_fqdn,
     normalize_doc_tags,
@@ -64,6 +70,18 @@ def _dedupe_ordered(values: list[str]) -> list[str]:
             out.append(cleaned)
             seen.add(cleaned)
     return out
+
+
+def _resolve_owner_principal_input(repo, form) -> str | None:
+    owner_principal = str(form.get("owner_principal", "")).strip()
+    owner_display_name = str(form.get("owner_principal_display_name", "")).strip()
+    lookup = owner_principal or owner_display_name
+    if not lookup:
+        return None
+    resolved = repo.resolve_user_login_identifier(lookup)
+    if not resolved:
+        raise ValueError("Project owner must exist in the app user directory.")
+    return resolved
 
 
 def _selected_vendor_rows(repo, vendor_ids: list[str]) -> list[dict[str, str]]:
@@ -340,6 +358,10 @@ def _render_project_section(request: Request, base: dict, section: str):
             "owner_update_action": f"/projects/{project_id}/owner/update",
             "add_vendor_action": f"/projects/{project_id}/vendors/add",
             "add_offering_action": f"/projects/{project_id}/offerings/add",
+            "project_owner_change_reason_options": PROJECT_OWNER_CHANGE_REASON_OPTIONS,
+            "project_association_reason_options": PROJECT_ASSOCIATION_REASON_OPTIONS,
+            "project_association_auto_reason": PROJECT_ASSOCIATION_AUTO_REASON,
+            "project_demo_reaudit_reason_options": PROJECT_DEMO_REAUDIT_REASON_OPTIONS,
         },
     )
     return request.app.state.templates.TemplateResponse(request, "project_section.html", context)

@@ -385,6 +385,12 @@ input:focus, select:focus, textarea:focus {
   border-color: #38bdf8;
   box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.18);
 }
+form.validation-attempted input:invalid,
+form.validation-attempted select:invalid,
+form.validation-attempted textarea:invalid {
+  border-color: #f04438;
+  box-shadow: 0 0 0 2px rgba(240, 68, 56, 0.12);
+}
 .input-error {
   border-color: #f04438 !important;
   box-shadow: 0 0 0 2px rgba(240, 68, 56, 0.12);
@@ -1371,6 +1377,18 @@ body.dark-mode .button-link.subtle:hover {
 
 .typeahead-block {
   position: relative;
+}
+
+.owner-principal-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+  align-items: start;
+}
+
+.owner-principal-picker .muted {
+  grid-column: 1 / -1;
+  margin-top: -2px;
 }
 
 .typeahead-results {

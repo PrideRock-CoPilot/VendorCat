@@ -14,7 +14,7 @@
 
 ## Default Access Behavior
 - Users without explicit entitlement are restricted to limited read-only views.
-- Write operations require role grant plus org scope mapping.
+- Write operations require role grant plus LOB scope mapping.
 - Sensitive fields are masked unless role and purpose both permit access.
 
 ## Single-Schema Permission Model (`twvendor`)
@@ -29,7 +29,7 @@
 - `sec_role_permission(role_code, object_name, action_code, active_flag)`
 
 ## Row And Column Control
-- Row filtering by org scope from `sec_user_org_scope`.
+- Row filtering by LOB scope from `sec_user_org_scope`.
 - Masking for tax ID, banking, and personal contact fields.
 - Audit all access to restricted columns and admin permission changes.
 

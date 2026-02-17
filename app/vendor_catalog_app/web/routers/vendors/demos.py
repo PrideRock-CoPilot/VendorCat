@@ -15,6 +15,7 @@ from vendor_catalog_app.web.routers.vendors.common import (
     _write_blocked,
 )
 from vendor_catalog_app.web.routers.vendors.constants import VENDOR_DEFAULT_RETURN_TO
+from vendor_catalog_app.web.routers.vendors.constants import DEMO_MAPPING_REASON_OPTIONS
 from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/vendors")
@@ -73,6 +74,9 @@ async def map_demo_submit(request: Request, vendor_id: str):
         return RedirectResponse(url=return_to, status_code=303)
     if offering_id and not repo.offering_belongs_to_vendor(vendor_id, offering_id):
         add_flash(request, "Selected offering does not belong to this vendor.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not reason:
+        add_flash(request, "Reason is required for mapping.", "error")
         return RedirectResponse(url=return_to, status_code=303)
 
     try:

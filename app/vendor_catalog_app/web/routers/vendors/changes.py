@@ -23,6 +23,7 @@ from vendor_catalog_app.web.routers.vendors.constants import (
     LIFECYCLE_STATES,
     RISK_TIERS,
     VENDOR_DEFAULT_RETURN_TO,
+    VENDOR_PROFILE_CHANGE_REASON_OPTIONS,
 )
 from vendor_catalog_app.web.security.rbac import require_permission
 
@@ -79,6 +80,7 @@ def vendor_changes_page(request: Request, vendor_id: str, return_to: str = VENDO
             "recent_audit": repo.get_vendor_audit_events(vendor_id).head(5).to_dict("records"),
             "lifecycle_states": LIFECYCLE_STATES,
             "risk_tiers": RISK_TIERS,
+            "vendor_profile_change_reason_options": VENDOR_PROFILE_CHANGE_REASON_OPTIONS,
         },
     )
     return request.app.state.templates.TemplateResponse(request, "vendor_section.html", context)
@@ -148,17 +150,17 @@ async def vendor_direct_update(request: Request, vendor_id: str):
 
 
 @router.post("/{vendor_id}/change-request")
-@require_permission("vendor_change_request_create")
 async def vendor_change_request(request: Request, vendor_id: str):
     repo = get_repo()
     user = get_user_context(request)
+    check_permission = user.can_submit_requests
     form = await request.form()
     return_to = _safe_return_to(str(form.get("return_to", VENDOR_DEFAULT_RETURN_TO)))
 
     if _write_blocked(user):
         add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
         return RedirectResponse(url=f"/vendors/{vendor_id}/changes?return_to={quote(return_to, safe='')}", status_code=303)
-    if not user.can_submit_requests:
+    if not check_permission:
         add_flash(request, "You do not have permission to submit change requests.", "error")
         return RedirectResponse(url=f"/vendors/{vendor_id}/changes?return_to={quote(return_to, safe='')}", status_code=303)
 

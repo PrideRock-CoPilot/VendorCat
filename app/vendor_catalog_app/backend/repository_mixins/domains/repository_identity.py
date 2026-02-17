@@ -298,7 +298,7 @@ class RepositoryIdentityMixin:
 
     def search_user_directory(self, q: str = "", limit: int = 20) -> pd.DataFrame:
         normalized_limit = max(1, min(int(limit or 20), 250))
-        columns = ["user_id", "login_identifier", "display_name", "label"]
+        columns = ["user_id", "login_identifier", "display_name", "email", "label"]
         cleaned_q = (q or "").strip()
         like_pattern = f"%{cleaned_q.lower()}%" if cleaned_q else ""
         df = self._query_file(

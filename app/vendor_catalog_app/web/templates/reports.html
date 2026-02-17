@@ -57,7 +57,7 @@
     or filters.project_status != "all"
     or filters.outcome != "all"
     or filters.owner_principal
-    or filters.org != "all"
+    or filters.lob != "all"
     or filters.horizon_days != 180
     or filters.view_mode != "both" %}
   <details class="full" {% if show_advanced %}open{% endif %}>
@@ -92,10 +92,10 @@
         <input type="text" name="owner_principal" value="{{ filters.owner_principal }}" placeholder="bob.smith@example.com">
       </label>
       <label>
-        Org Scope
-        <select name="org">
+        Line of Business
+        <select name="lob">
           {% for option in orgs %}
-          <option value="{{ option }}" {% if option == filters.org %}selected{% endif %}>{{ "all" if option == "all" else option }}</option>
+          <option value="{{ option }}" {% if option == filters.lob %}selected{% endif %}>{{ "All Lines of Business" if option == "all" else option }}</option>
           {% endfor %}
         </select>
       </label>
@@ -207,7 +207,7 @@
       <input type="hidden" name="project_status" value="{{ filters.project_status }}">
       <input type="hidden" name="outcome" value="{{ filters.outcome }}">
       <input type="hidden" name="owner_principal" value="{{ filters.owner_principal }}">
-      <input type="hidden" name="org" value="{{ filters.org }}">
+      <input type="hidden" name="lob" value="{{ filters.lob }}">
       <input type="hidden" name="horizon_days" value="{{ filters.horizon_days }}">
       <input type="hidden" name="limit" value="{{ filters.limit }}">
       <input type="hidden" name="view_mode" value="{{ filters.view_mode }}">
@@ -331,7 +331,7 @@
     <input type="hidden" name="project_status" value="{{ filters.project_status }}">
     <input type="hidden" name="outcome" value="{{ filters.outcome }}">
     <input type="hidden" name="owner_principal" value="{{ filters.owner_principal }}">
-    <input type="hidden" name="org" value="{{ filters.org }}">
+    <input type="hidden" name="lob" value="{{ filters.lob }}">
     <input type="hidden" name="horizon_days" value="{{ filters.horizon_days }}">
     <input type="hidden" name="limit" value="{{ filters.limit }}">
     <input type="hidden" name="view_mode" value="{{ filters.view_mode }}">

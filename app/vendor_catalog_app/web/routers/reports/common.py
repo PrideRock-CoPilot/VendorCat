@@ -130,7 +130,7 @@ def _build_report_frame(
     project_status: str,
     outcome: str,
     owner_principal: str,
-    org: str,
+    lob: str,
     horizon_days: int,
     limit: int,
 ):
@@ -153,7 +153,7 @@ def _build_report_frame(
         frame = repo.report_contract_renewals(
             search_text=search,
             vendor_id=vendor,
-            org_id=org,
+            org_id=lob,
             horizon_days=horizon_days,
             limit=limit,
         )
@@ -360,7 +360,7 @@ def _report_query_payload(
     project_status: str,
     outcome: str,
     owner_principal: str,
-    org: str,
+    lob: str,
     horizon_days: int,
     limit: int,
     cols: str,
@@ -378,7 +378,7 @@ def _report_query_payload(
         "project_status": project_status,
         "outcome": outcome,
         "owner_principal": owner_principal,
-        "org": org,
+        "lob": lob,
         "horizon_days": horizon_days,
         "limit": limit,
         "cols": cols,

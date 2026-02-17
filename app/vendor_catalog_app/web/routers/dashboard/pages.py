@@ -27,10 +27,13 @@ def _dashboard_module():
 @router.get("/dashboard")
 def dashboard(
     request: Request,
-    org: str = "all",
+    lob: str = "all",
+    org: str | None = None,
     months: int = DEFAULT_DASHBOARD_MONTHS,
     horizon_days: int = DEFAULT_DASHBOARD_HORIZON_DAYS,
 ):
+    dashboard_module = _dashboard_module()
+    user = dashboard_module.get_user_context(request)
     if not has_seen_startup_splash_for_current_run(request):
         passthrough_params = dict(request.query_params)
         passthrough_params["splash"] = "1"
@@ -38,27 +41,26 @@ def dashboard(
         redirect_url = f"/dashboard?{redirect_query}" if redirect_query else "/dashboard"
         return render_startup_splash(request, redirect_url)
 
-    dashboard_module = _dashboard_module()
     repo = dashboard_module.get_repo()
-    user = dashboard_module.get_user_context(request)
     if not set(getattr(user, "roles", set()) or set()):
         return RedirectResponse(url="/access/request", status_code=303)
     dashboard_module.ensure_session_started(request, user)
     dashboard_module.log_page_view(request, user, "Dashboard")
 
     orgs = repo.available_orgs()
-    if org not in orgs:
-        org = "all"
+    selected_lob = str(org if org is not None and str(org).strip() else lob).strip() or "all"
+    if selected_lob not in orgs:
+        selected_lob = "all"
     months = clamp_months(months)
     horizon_days = clamp_horizon_days(horizon_days)
 
     kpis = repo.dashboard_kpis()
-    summary = repo.executive_summary(org_id=org, months=months, horizon_days=horizon_days)
-    by_category = repo.executive_spend_by_category(org_id=org, months=months)
-    trend = repo.executive_monthly_spend_trend(org_id=org, months=months)
-    top_vendors = repo.executive_top_vendors_by_spend(org_id=org, months=months, limit=10)
-    risk_dist = repo.executive_risk_distribution(org_id=org)
-    renewals = repo.executive_renewal_pipeline(org_id=org, horizon_days=horizon_days)
+    summary = repo.executive_summary(org_id=selected_lob, months=months, horizon_days=horizon_days)
+    by_category = repo.executive_spend_by_category(org_id=selected_lob, months=months)
+    trend = repo.executive_monthly_spend_trend(org_id=selected_lob, months=months)
+    top_vendors = repo.executive_top_vendors_by_spend(org_id=selected_lob, months=months, limit=10)
+    risk_dist = repo.executive_risk_distribution(org_id=selected_lob)
+    renewals = repo.executive_renewal_pipeline(org_id=selected_lob, horizon_days=horizon_days)
     recent_demos = repo.demo_outcomes().head(10)
     recent_cancellations = repo.contract_cancellations().head(10)
 
@@ -68,7 +70,7 @@ def dashboard(
         title="Dashboard",
         active_nav="dashboard",
         extra={
-            "selected_org": org,
+            "selected_lob": selected_lob,
             "months": months,
             "horizon_days": horizon_days,
             "orgs": orgs,

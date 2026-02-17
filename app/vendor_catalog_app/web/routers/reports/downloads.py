@@ -1,7 +1,17 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+import io
+import json
+import zipfile
+import csv
+from datetime import datetime, timezone
 
+from fastapi import APIRouter, Request
+from fastapi.responses import RedirectResponse, Response
+
+from vendor_catalog_app.web.core.runtime import get_repo
+from vendor_catalog_app.web.core.user_context_service import get_user_context
+from vendor_catalog_app.web.http.flash import add_flash
 from vendor_catalog_app.web.routers.reports.common import *
 
 router = APIRouter()
@@ -15,7 +25,8 @@ def reports_download(
     project_status: str = "all",
     outcome: str = "all",
     owner_principal: str = "",
-    org: str = "all",
+    lob: str = "all",
+    org: str | None = None,
     horizon_days: int = 180,
     limit: int = 500,
     cols: str = "",
@@ -44,8 +55,9 @@ def reports_download(
         limit = 500
 
     orgs = repo.available_orgs()
-    if org not in orgs:
-        org = "all"
+    selected_lob = str(org if org is not None and str(org).strip() else lob).strip() or "all"
+    if selected_lob not in orgs:
+        selected_lob = "all"
     horizon_days = max(30, min(horizon_days, 730))
 
     frame = _build_report_frame(
@@ -57,7 +69,7 @@ def reports_download(
         project_status=project_status,
         outcome=outcome,
         owner_principal=owner_principal,
-        org=org,
+        lob=selected_lob,
         horizon_days=horizon_days,
         limit=limit,
     )
@@ -72,7 +84,7 @@ def reports_download(
                 project_status=project_status,
                 outcome=outcome,
                 owner_principal=owner_principal,
-                org=org,
+                lob=selected_lob,
                 horizon_days=horizon_days,
                 limit=limit,
                 cols=cols,
@@ -123,7 +135,8 @@ def reports_download_powerbi(
     project_status: str = "all",
     outcome: str = "all",
     owner_principal: str = "",
-    org: str = "all",
+    lob: str = "all",
+    org: str | None = None,
     horizon_days: int = 180,
     limit: int = 500,
     cols: str = "",
@@ -152,8 +165,9 @@ def reports_download_powerbi(
         limit = 500
 
     orgs = repo.available_orgs()
-    if org not in orgs:
-        org = "all"
+    selected_lob = str(org if org is not None and str(org).strip() else lob).strip() or "all"
+    if selected_lob not in orgs:
+        selected_lob = "all"
     horizon_days = max(30, min(horizon_days, 730))
 
     frame = _build_report_frame(
@@ -165,7 +179,7 @@ def reports_download_powerbi(
         project_status=project_status,
         outcome=outcome,
         owner_principal=owner_principal,
-        org=org,
+        lob=selected_lob,
         horizon_days=horizon_days,
         limit=limit,
     )
@@ -180,7 +194,7 @@ def reports_download_powerbi(
                 project_status=project_status,
                 outcome=outcome,
                 owner_principal=owner_principal,
-                org=org,
+                lob=selected_lob,
                 horizon_days=horizon_days,
                 limit=limit,
                 cols=cols,
@@ -248,7 +262,7 @@ def reports_download_powerbi(
                 "project_status": project_status,
                 "outcome": outcome,
                 "owner_principal": owner_principal,
-                "org": org,
+                "lob": selected_lob,
                 "horizon_days": horizon_days,
                 "limit": limit,
             },

@@ -12,6 +12,10 @@ from vendor_catalog_app.web.routers.projects.common import (
     _safe_return_to,
     _safe_vendor_id,
 )
+from vendor_catalog_app.web.routers.vendors.constants import (
+    PROJECT_ASSOCIATION_AUTO_REASON,
+    PROJECT_ASSOCIATION_REASON_OPTIONS,
+)
 from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/projects")

@@ -23,6 +23,7 @@ ROLE_CODE_PATTERN = re.compile(r"^[a-z0-9_][a-z0-9_-]{2,63}$")
 LOOKUP_CODE_PATTERN = re.compile(r"^[a-z0-9_][a-z0-9_-]{1,63}$")
 ADMIN_SECTION_ACCESS = "access"
 ADMIN_SECTION_DEFAULTS = "defaults"
+ADMIN_SECTION_OWNERSHIP = "ownership"
 LOOKUP_STATUS_OPTIONS = {"all", "active", "historical", "future"}
 LOOKUP_TYPE_LABELS = {
     LOOKUP_TYPE_DOC_SOURCE: "Document Sources",
@@ -45,6 +46,8 @@ def _admin_redirect_url(
     lookup_status: str | None = None,
     as_of: str | None = None,
 ) -> str:
+    if section == ADMIN_SECTION_OWNERSHIP:
+        return f"/admin?section={ADMIN_SECTION_OWNERSHIP}"
     if section == ADMIN_SECTION_DEFAULTS:
         selected_lookup = lookup_type if lookup_type in LOOKUP_TYPE_LABELS else LOOKUP_TYPE_DOC_SOURCE
         selected_status = lookup_status if lookup_status in LOOKUP_STATUS_OPTIONS else "active"
@@ -58,7 +61,7 @@ def _admin_redirect_url(
 
 def _normalize_admin_section(raw: str | None) -> str:
     value = str(raw or "").strip().lower()
-    if value in {ADMIN_SECTION_ACCESS, ADMIN_SECTION_DEFAULTS}:
+    if value in {ADMIN_SECTION_ACCESS, ADMIN_SECTION_DEFAULTS, ADMIN_SECTION_OWNERSHIP}:
         return value
     return ADMIN_SECTION_ACCESS
 

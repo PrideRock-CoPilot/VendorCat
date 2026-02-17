@@ -28,6 +28,7 @@ from vendor_catalog_app.web.routers.imports.store import (
     load_preview_payload,
     save_preview_payload,
 )
+from vendor_catalog_app.web.routers.vendors.constants import IMPORT_MERGE_REASON_OPTIONS
 from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter()

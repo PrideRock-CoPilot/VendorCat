@@ -8,23 +8,26 @@ from fastapi.responses import RedirectResponse
 from vendor_catalog_app.core.defaults import DEFAULT_PROJECT_TYPE
 from vendor_catalog_app.web.core.runtime import get_repo
 from vendor_catalog_app.web.core.template_context import base_template_context
-from vendor_catalog_app.web.core.user_context_service import get_user_context
 from vendor_catalog_app.web.http.flash import add_flash
+from vendor_catalog_app.web.routers.projects.common import _resolve_owner_principal_input
 from vendor_catalog_app.web.routers.vendors.common import (
     _dedupe_ordered,
     _project_demo_select_options,
+    _redirect_if_write_blocked,
     _request_scope_vendor_id,
+    _resolve_write_request_context,
     _safe_return_to,
     _selected_project_offering_rows,
     _selected_project_vendor_rows,
     _vendor_base_context,
-    _write_blocked,
 )
 from vendor_catalog_app.web.routers.vendors.constants import (
+    PROJECT_DEMO_REAUDIT_REASON_OPTIONS,
     PROJECT_DEMO_OUTCOMES,
     PROJECT_DEMO_TYPES,
     PROJECT_STATUSES,
     PROJECT_TYPES_FALLBACK,
+    PROJECT_UPDATE_REASON_OPTIONS,
     VENDOR_DEFAULT_RETURN_TO,
 )
 from vendor_catalog_app.web.security.rbac import require_permission
@@ -91,12 +94,13 @@ def project_new_form(request: Request, vendor_id: str, return_to: str = VENDOR_D
     base = _vendor_base_context(repo, request, vendor_id, "projects", return_to)
     if base is None:
         return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
-    if _write_blocked(base["user"]):
-        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
-        return RedirectResponse(
-            url=f"/vendors/{vendor_id}/projects?return_to={quote(base['return_to'], safe='')}",
-            status_code=303,
-        )
+    blocked_response = _redirect_if_write_blocked(
+        request,
+        base["user"],
+        redirect_url=f"/vendors/{vendor_id}/projects?return_to={quote(base['return_to'], safe='')}",
+    )
+    if blocked_response is not None:
+        return blocked_response
     if not base["user"].can_edit:
         add_flash(request, "You do not have permission to create projects.", "error")
         return RedirectResponse(
@@ -127,17 +131,25 @@ def project_new_form(request: Request, vendor_id: str, return_to: str = VENDOR_D
 @router.post("/{vendor_id}/projects/new")
 @require_permission("project_create")
 async def project_new_submit(request: Request, vendor_id: str):
-    repo = get_repo()
-    user = get_user_context(request)
-    form = await request.form()
-    return_to = _safe_return_to(str(form.get("return_to", VENDOR_DEFAULT_RETURN_TO)))
+    repo, user, form, return_to = await _resolve_write_request_context(
+        request,
+        default_return_to=VENDOR_DEFAULT_RETURN_TO,
+    )
 
-    if _write_blocked(user):
-        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
-        return RedirectResponse(url=return_to, status_code=303)
+    blocked_response = _redirect_if_write_blocked(request, user, redirect_url=return_to)
+    if blocked_response is not None:
+        return blocked_response
 
     linked_offerings = _dedupe_ordered([str(x).strip() for x in form.getlist("linked_offerings") if str(x).strip()])
     linked_vendors = _dedupe_ordered([str(x).strip() for x in form.getlist("linked_vendors") if str(x).strip()])
+    try:
+        resolved_owner_principal = _resolve_owner_principal_input(repo, form)
+    except Exception as exc:
+        add_flash(request, str(exc), "error")
+        return RedirectResponse(
+            url=f"/vendors/{vendor_id}/projects/new?return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
     if vendor_id not in linked_vendors:
         linked_vendors.insert(0, vendor_id)
     if linked_offerings:
@@ -156,7 +168,7 @@ async def project_new_submit(request: Request, vendor_id: str):
             "status": _normalize_project_status(str(form.get("status", "draft"))),
             "start_date": str(form.get("start_date", "")).strip() or None,
             "target_date": str(form.get("target_date", "")).strip() or None,
-            "owner_principal": str(form.get("owner_principal", "")).strip() or None,
+            "owner_principal": resolved_owner_principal,
             "description": str(form.get("description", "")).strip() or None,
             "linked_offering_ids": linked_offerings,
         }
@@ -222,12 +234,13 @@ def project_edit_form(request: Request, vendor_id: str, project_id: str, return_
             url=f"/vendors/{vendor_id}/projects?return_to={quote(base['return_to'], safe='')}",
             status_code=303,
         )
-    if _write_blocked(base["user"]):
-        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
-        return RedirectResponse(
-            url=f"/projects/{project_id}/summary?return_to={quote(base['return_to'], safe='')}",
-            status_code=303,
-        )
+    blocked_response = _redirect_if_write_blocked(
+        request,
+        base["user"],
+        redirect_url=f"/projects/{project_id}/summary?return_to={quote(base['return_to'], safe='')}",
+    )
+    if blocked_response is not None:
+        return blocked_response
     if not base["user"].can_edit:
         add_flash(request, "You do not have permission to edit projects.", "error")
         return RedirectResponse(
@@ -257,6 +270,7 @@ def project_edit_form(request: Request, vendor_id: str, project_id: str, return_
             "return_to": base["return_to"],
             "project_types": _project_type_options(repo),
             "project_statuses": PROJECT_STATUSES,
+            "project_update_reason_options": PROJECT_UPDATE_REASON_OPTIONS,
             "form_action": f"/vendors/{vendor_id}/projects/{project_id}/edit",
         },
     )
@@ -266,18 +280,19 @@ def project_edit_form(request: Request, vendor_id: str, project_id: str, return_
 @router.post("/{vendor_id}/projects/{project_id}/edit")
 @require_permission("project_edit")
 async def project_edit_submit(request: Request, vendor_id: str, project_id: str):
-    repo = get_repo()
-    user = get_user_context(request)
-    form = await request.form()
-    return_to = _safe_return_to(str(form.get("return_to", VENDOR_DEFAULT_RETURN_TO)))
+    repo, user, form, return_to = await _resolve_write_request_context(
+        request,
+        default_return_to=VENDOR_DEFAULT_RETURN_TO,
+    )
     reason = str(form.get("reason", "")).strip()
 
-    if _write_blocked(user):
-        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
-        return RedirectResponse(
-            url=f"/projects/{project_id}/summary?return_to={quote(return_to, safe='')}",
-            status_code=303,
-        )
+    blocked_response = _redirect_if_write_blocked(
+        request,
+        user,
+        redirect_url=f"/projects/{project_id}/summary?return_to={quote(return_to, safe='')}",
+    )
+    if blocked_response is not None:
+        return blocked_response
     if not user.can_edit:
         add_flash(request, "You do not have permission to edit projects.", "error")
         return RedirectResponse(
@@ -287,6 +302,14 @@ async def project_edit_submit(request: Request, vendor_id: str, project_id: str)
 
     linked_offerings = _dedupe_ordered([str(x).strip() for x in form.getlist("linked_offerings") if str(x).strip()])
     linked_vendors = _dedupe_ordered([str(x).strip() for x in form.getlist("linked_vendors") if str(x).strip()])
+    try:
+        resolved_owner_principal = _resolve_owner_principal_input(repo, form)
+    except Exception as exc:
+        add_flash(request, str(exc), "error")
+        return RedirectResponse(
+            url=f"/projects/{project_id}/summary?return_to={quote(return_to, safe='')}",
+            status_code=303,
+        )
     if vendor_id not in linked_vendors:
         linked_vendors.insert(0, vendor_id)
     if linked_offerings:
@@ -302,7 +325,7 @@ async def project_edit_submit(request: Request, vendor_id: str, project_id: str)
         "status": str(form.get("status", "draft")),
         "start_date": str(form.get("start_date", "")).strip() or None,
         "target_date": str(form.get("target_date", "")).strip() or None,
-        "owner_principal": str(form.get("owner_principal", "")).strip() or None,
+        "owner_principal": resolved_owner_principal,
         "description": str(form.get("description", "")).strip() or None,
     }
 
@@ -360,12 +383,13 @@ def project_demo_new_form(request: Request, vendor_id: str, project_id: str, ret
             url=f"/vendors/{vendor_id}/projects?return_to={quote(base['return_to'], safe='')}",
             status_code=303,
         )
-    if _write_blocked(base["user"]):
-        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
-        return RedirectResponse(
-            url=f"/projects/{project_id}/demos?return_to={quote(base['return_to'], safe='')}",
-            status_code=303,
-        )
+    blocked_response = _redirect_if_write_blocked(
+        request,
+        base["user"],
+        redirect_url=f"/projects/{project_id}/demos?return_to={quote(base['return_to'], safe='')}",
+    )
+    if blocked_response is not None:
+        return blocked_response
     if not base["user"].can_edit:
         add_flash(request, "You do not have permission to add demos.", "error")
         return RedirectResponse(
@@ -397,14 +421,14 @@ def project_demo_new_form(request: Request, vendor_id: str, project_id: str, ret
 @router.post("/{vendor_id}/projects/{project_id}/demos/new")
 @require_permission("project_demo_create")
 async def project_demo_new_submit(request: Request, vendor_id: str, project_id: str):
-    repo = get_repo()
-    user = get_user_context(request)
-    form = await request.form()
-    return_to = _safe_return_to(str(form.get("return_to", VENDOR_DEFAULT_RETURN_TO)))
+    repo, user, form, return_to = await _resolve_write_request_context(
+        request,
+        default_return_to=VENDOR_DEFAULT_RETURN_TO,
+    )
 
-    if _write_blocked(user):
-        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
-        return RedirectResponse(url=return_to, status_code=303)
+    blocked_response = _redirect_if_write_blocked(request, user, redirect_url=return_to)
+    if blocked_response is not None:
+        return blocked_response
     if not user.can_edit:
         add_flash(request, "You do not have permission to add demos.", "error")
         return RedirectResponse(url=return_to, status_code=303)
@@ -471,15 +495,15 @@ async def project_demo_new_submit(request: Request, vendor_id: str, project_id: 
 @router.post("/{vendor_id}/projects/{project_id}/demos/map")
 @require_permission("project_demo_map")
 async def project_demo_map_submit(request: Request, vendor_id: str, project_id: str):
-    repo = get_repo()
-    user = get_user_context(request)
-    form = await request.form()
-    return_to = _safe_return_to(str(form.get("return_to", VENDOR_DEFAULT_RETURN_TO)))
+    repo, user, form, return_to = await _resolve_write_request_context(
+        request,
+        default_return_to=VENDOR_DEFAULT_RETURN_TO,
+    )
     vendor_demo_id = str(form.get("vendor_demo_id", "")).strip()
 
-    if _write_blocked(user):
-        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
-        return RedirectResponse(url=return_to, status_code=303)
+    blocked_response = _redirect_if_write_blocked(request, user, redirect_url=return_to)
+    if blocked_response is not None:
+        return blocked_response
     if not user.can_edit:
         add_flash(request, "You do not have permission to map demos.", "error")
         return RedirectResponse(url=return_to, status_code=303)
@@ -512,15 +536,15 @@ async def project_demo_map_submit(request: Request, vendor_id: str, project_id: 
 @router.post("/{vendor_id}/projects/{project_id}/demos/{demo_id}/update")
 @require_permission("project_demo_update")
 async def project_demo_update_submit(request: Request, vendor_id: str, project_id: str, demo_id: str):
-    repo = get_repo()
-    user = get_user_context(request)
-    form = await request.form()
-    return_to = _safe_return_to(str(form.get("return_to", VENDOR_DEFAULT_RETURN_TO)))
+    repo, user, form, return_to = await _resolve_write_request_context(
+        request,
+        default_return_to=VENDOR_DEFAULT_RETURN_TO,
+    )
     reason = str(form.get("reason", "")).strip()
 
-    if _write_blocked(user):
-        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
-        return RedirectResponse(url=return_to, status_code=303)
+    blocked_response = _redirect_if_write_blocked(request, user, redirect_url=return_to)
+    if blocked_response is not None:
+        return blocked_response
     if not user.can_edit:
         add_flash(request, "You do not have permission to update demos.", "error")
         return RedirectResponse(url=return_to, status_code=303)
@@ -580,14 +604,14 @@ async def project_demo_update_submit(request: Request, vendor_id: str, project_i
 @router.post("/{vendor_id}/projects/{project_id}/demos/{demo_id}/remove")
 @require_permission("project_demo_delete")
 async def project_demo_remove_submit(request: Request, vendor_id: str, project_id: str, demo_id: str):
-    repo = get_repo()
-    user = get_user_context(request)
-    form = await request.form()
-    return_to = _safe_return_to(str(form.get("return_to", VENDOR_DEFAULT_RETURN_TO)))
+    repo, user, form, return_to = await _resolve_write_request_context(
+        request,
+        default_return_to=VENDOR_DEFAULT_RETURN_TO,
+    )
 
-    if _write_blocked(user):
-        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
-        return RedirectResponse(url=return_to, status_code=303)
+    blocked_response = _redirect_if_write_blocked(request, user, redirect_url=return_to)
+    if blocked_response is not None:
+        return blocked_response
     if not user.can_edit:
         add_flash(request, "You do not have permission to remove demos.", "error")
         return RedirectResponse(url=return_to, status_code=303)
