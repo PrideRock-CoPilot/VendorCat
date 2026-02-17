@@ -10,6 +10,8 @@ command:
 env:
   - name: "TVENDOR_ENV"
     value: "prod"
+  - name: "TVENDOR_SESSION_SECRET"
+    value: "prod-session-secret-change-in-production"
   - name: "TVENDOR_USE_LOCAL_DB"
     value: "false"
   - name: "TVENDOR_LOCKED_MODE"
