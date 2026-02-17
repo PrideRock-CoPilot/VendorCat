@@ -9,7 +9,7 @@ SELECT
   first_name,
   last_name
 FROM {app_user_directory}
-WHERE coalesce(active_flag, true) = true
+WHERE coalesce(active_flag, 'A') IN ('A', 'active', 'true', '1')
   AND (
   %s = ''
   OR lower(coalesce(login_identifier, '')) LIKE %s

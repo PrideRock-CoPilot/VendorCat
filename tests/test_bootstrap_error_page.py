@@ -21,7 +21,7 @@ def test_dashboard_returns_setup_page_when_schema_bootstrap_is_missing(monkeypat
     def _raise_bootstrap(_request):
         raise SchemaBootstrapRequiredError(
             "Databricks schema is not initialized or access is blocked. "
-            "Run the bootstrap SQL manually before starting the app: setup/databricks/001_create_databricks_schema.sql."
+            "Run the bootstrap SQL manually before starting the app: setup/v1_schema/databricks/00_create_v1_schema.sql."
         )
 
     monkeypatch.setattr(dashboard_router, "get_user_context", _raise_bootstrap)
@@ -30,6 +30,6 @@ def test_dashboard_returns_setup_page_when_schema_bootstrap_is_missing(monkeypat
     response = client.get("/dashboard")
     assert response.status_code == 503
     assert "Bootstrap Diagnostics" in response.text
-    assert "setup/databricks/001_create_databricks_schema.sql" in response.text
+    assert "setup/v1_schema/databricks/00_create_v1_schema.sql" in response.text
     assert "/bootstrap-diagnostics" in response.text
     assert "/api/bootstrap-diagnostics" in response.text

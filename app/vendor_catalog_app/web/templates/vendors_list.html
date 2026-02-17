@@ -12,7 +12,7 @@
 <h1>Vendor 360</h1>
 
 <form method="get" action="/vendors" class="card grid grid-5">
-  <label>
+  <label title="Search a business owner like 'bob smith' to find all related vendors and offerings.">
     Search related data
     <input type="text" name="q" value="{{ filters.q }}" placeholder="Vendor, offering, contract, owner, contact, demo...">
   </label>
@@ -62,7 +62,6 @@
   <input type="hidden" name="show_settings" value="{{ 1 if show_settings else 0 }}">
   <div>
     <button type="submit">Apply Filters</button>
-    <p>Example: search a business owner like "bob smith" to find all related vendors and offerings.</p>
   </div>
 </form>
 
@@ -82,8 +81,7 @@
 
 <div class="section-header">
   <div>
-    <h2>Vendor List</h2>
-    <p>Click a vendor row to open the high-level overview. Use Offerings for deep-dive offering management.</p>
+    <h2 title="Click a vendor row to open the high-level overview. Use Offerings for deep-dive offering management.">Vendor List</h2>
   </div>
   <div class="button-group">
     {% if can_edit and not locked_mode %}

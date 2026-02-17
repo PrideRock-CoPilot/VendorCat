@@ -61,10 +61,16 @@ def bootstrap_diagnostics_authorized(request: Request, config) -> bool:
 
 
 def connection_context(config) -> dict[str, bool]:
+    warehouse_id_env = str(os.getenv("DATABRICKS_WAREHOUSE_ID", "")).strip()
+    warehouse_resource_keys = ("sql-warehouse", "sql_warehouse", "SQL_WAREHOUSE", "SQL-WAREHOUSE")
+    has_warehouse_resource = any(key in os.environ for key in warehouse_resource_keys)
+    
     return {
         "has_server_hostname": bool(config.databricks_server_hostname),
         "has_http_path": bool(config.databricks_http_path),
-        "has_warehouse_id_env": bool(str(os.getenv("DATABRICKS_WAREHOUSE_ID", "")).strip()),
+        "has_warehouse_id_env": bool(warehouse_id_env),
+        "has_warehouse_resource_binding": has_warehouse_resource,
+        "warehouse_id_value": warehouse_id_env[:20] + "..." if len(warehouse_id_env) > 20 else warehouse_id_env,
         "has_pat_token": bool(str(config.databricks_token or "").strip()),
         "has_client_credentials": bool(
             str(config.databricks_client_id or "").strip()
@@ -143,28 +149,47 @@ def diagnostic_recommendations(
     *,
     resolved_connection_context: dict[str, bool],
     connectivity_ok: bool,
+    connectivity_errors: list[str],
     object_probe_failures: list[str],
 ) -> list[str]:
     recs: list[str] = []
     if not resolved_connection_context["has_server_hostname"]:
-        recs.append("Set DATABRICKS_SERVER_HOSTNAME (or DATABRICKS_HOST).")
+        recs.append("❌ Set DATABRICKS_SERVER_HOSTNAME (or DATABRICKS_HOST).")
     if not resolved_connection_context["has_http_path"] and not resolved_connection_context["has_warehouse_id_env"]:
-        recs.append("Set DATABRICKS_HTTP_PATH or bind DATABRICKS_WAREHOUSE_ID via app.yaml valueFrom: sql-warehouse.")
+        if not resolved_connection_context.get("has_warehouse_resource_binding", False):
+            recs.append("❌ CRITICAL: No SQL warehouse configured. Add 'resources:' section to app.yaml with a warehouse binding.")
+            recs.append("   Example: resources:\n     - name: sql-warehouse\n       sqlWarehouse:\n         id: your-warehouse-id")
+        else:
+            recs.append("⚠️ Warehouse resource binding exists but warehouse ID not detected in environment.")
     if not resolved_connection_context["has_pat_token"] and not resolved_connection_context["has_client_credentials"]:
         recs.append(
-            "Use Databricks runtime OAuth (Databricks Apps), or configure DATABRICKS_CLIENT_ID + DATABRICKS_CLIENT_SECRET, or DATABRICKS_TOKEN."
+            "❌ No authentication configured. Use Databricks runtime OAuth (Databricks Apps), or configure DATABRICKS_CLIENT_ID + DATABRICKS_CLIENT_SECRET, or DATABRICKS_TOKEN."
         )
     if not connectivity_ok:
-        recs.append(
-            "If running in Databricks Apps, verify SQL warehouse resource binding exists and the app service principal has Can use on that warehouse."
-        )
-        recs.append(
-            "Verify Unity Catalog privileges for the app service principal: USE CATALOG, USE SCHEMA, and required table permissions."
-        )
+        for err in connectivity_errors:
+            if "warehouse" in err.lower() or "http_path" in err.lower():
+                recs.append("❌ WAREHOUSE ISSUE: " + err)
+                if not resolved_connection_context.get("has_warehouse_resource_binding", False):
+                    recs.append("   → Add warehouse resource binding to app.yaml (see above)")
+                else:
+                    recs.append("   → Verify the warehouse exists, is running, and the app service principal has CAN_USE permission")
+            elif "auth" in err.lower() or "token" in err.lower() or "credential" in err.lower():
+                recs.append("❌ AUTH ISSUE: " + err)
+            elif "permission" in err.lower() or "denied" in err.lower():
+                recs.append("❌ PERMISSION ISSUE: " + err)
+                recs.append("   → Grant the app service principal CAN_USE on the warehouse")
+                recs.append("   → Grant USE_CATALOG and USE_SCHEMA on Unity Catalog objects")
+            else:
+                recs.append("❌ " + err)
+        
+        if not any("warehouse" in err.lower() for err in connectivity_errors):
+            recs.append("⚠️ If running in Databricks Apps, verify SQL warehouse resource binding exists and the app service principal has CAN_USE on that warehouse.")
+        recs.append("⚠️ Verify Unity Catalog privileges: USE CATALOG, USE SCHEMA, and SELECT on required tables.")
     if object_probe_failures:
         recs.append(
-            "Run bootstrap SQL for this schema: setup/databricks/001_create_databricks_schema.sql."
+            "❌ Schema objects missing or inaccessible. Run V1 bootstrap notebook: setup/databricks/notebooks/v1_create_schema.ipynb"
         )
+        recs.append(f"   → Missing/Failed: {', '.join(object_probe_failures[:5])}{'...' if len(object_probe_failures) > 5 else ''}")
     return recs
 
 
@@ -181,6 +206,8 @@ def build_bootstrap_diagnostics_payload(repo, config, identity: dict[str, str]) 
                 f"has_server_hostname={resolved_connection_context['has_server_hostname']}",
                 f"has_http_path={resolved_connection_context['has_http_path']}",
                 f"has_warehouse_id_env={resolved_connection_context['has_warehouse_id_env']}",
+                f"warehouse_id_value={resolved_connection_context.get('warehouse_id_value', 'none')}",
+                f"has_warehouse_resource_binding={resolved_connection_context.get('has_warehouse_resource_binding', False)}",
                 f"has_client_credentials={resolved_connection_context['has_client_credentials']}",
                 f"has_pat_token={resolved_connection_context['has_pat_token']}",
             ],
@@ -267,6 +294,7 @@ def build_bootstrap_diagnostics_payload(repo, config, identity: dict[str, str]) 
     recommendations = diagnostic_recommendations(
         resolved_connection_context=resolved_connection_context,
         connectivity_ok=connectivity_ok,
+        connectivity_errors=connectivity_errors,
         object_probe_failures=object_probe_failures,
     )
     payload = {

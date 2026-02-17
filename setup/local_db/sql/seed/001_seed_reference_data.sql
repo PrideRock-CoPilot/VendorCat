@@ -30,6 +30,8 @@ DELETE FROM hist_vendor;
 DELETE FROM audit_entity_change;
 DELETE FROM audit_workflow_event;
 DELETE FROM audit_access_event;
+DELETE FROM change_event;
+DELETE FROM change_request;
 DELETE FROM core_vendor_demo_note;
 DELETE FROM core_vendor_demo_score;
 DELETE FROM core_vendor_demo;
@@ -52,6 +54,20 @@ DELETE FROM sec_user_role_map;
 DELETE FROM sec_group_role_map;
 DELETE FROM sec_role_permission;
 DELETE FROM sec_role_definition;
+
+-- Seed role definitions early because downstream tables enforce FK references.
+INSERT INTO sec_role_definition (role_code, role_name, description, approval_level, can_edit, can_report, can_direct_apply, active_flag, updated_at, updated_by) VALUES
+('vendor_admin', 'Vendor Admin', 'Full administrative access across all workflows and data changes.', 3, 1, 1, 1, 1, '2026-01-01 00:00:00', 'bootstrap'),
+('vendor_steward', 'Vendor Steward', 'Data steward with elevated review/apply rights for governed updates.', 2, 1, 1, 1, 1, '2026-01-01 00:00:00', 'bootstrap'),
+('vendor_editor', 'Vendor Editor', 'Contributor role for day-to-day edits and change submissions.', 1, 1, 1, 0, 1, '2026-01-01 00:00:00', 'bootstrap'),
+('vendor_viewer', 'Vendor Viewer', 'Read-only access to vendor inventory and metadata.', 0, 0, 0, 0, 1, '2026-01-01 00:00:00', 'bootstrap'),
+('vendor_auditor', 'Vendor Auditor', 'Read/report access for governance and audit functions.', 0, 0, 1, 0, 1, '2026-01-01 00:00:00', 'bootstrap');
+
+-- Seed user principals early because app_user_settings enforces FK to app_user_directory(login_identifier).
+INSERT INTO app_user_directory (user_id, login_identifier, email, network_id, employee_id, manager_id, first_name, last_name, display_name, active_flag, created_at, updated_at, last_seen_at) VALUES
+('usr-001', 'admin@example.com', 'admin@example.com', 'admin', 'E1001', 'E1000', 'Admin', 'User', 'Admin User', 1, '2026-01-01 00:00:00', '2026-02-03 10:00:00', '2026-02-03 10:00:00'),
+('usr-002', 'bob.smith@example.com', 'bob.smith@example.com', 'bsmith', 'E1002', 'E1001', 'Bob', 'Smith', 'Bob Smith', 1, '2026-01-01 00:00:00', '2026-02-03 10:00:00', '2026-02-03 10:00:00'),
+('usr-003', 'amy.johnson@example.com', 'amy.johnson@example.com', 'ajohnson', 'E1003', 'E1001', 'Amy', 'Johnson', 'Amy Johnson', 1, '2026-01-01 00:00:00', '2026-02-03 10:00:00', '2026-02-03 10:00:00');
 
 INSERT INTO src_ingest_batch (batch_id, source_system, source_object, extract_ts, loaded_ts, row_count, status) VALUES
 ('b-20260201-01', 'PeopleSoft', 'vendor', '2026-02-01 02:00:00', '2026-02-01 02:15:00', 1, 'loaded'),
@@ -208,6 +224,11 @@ INSERT INTO app_vendor_change_request (change_request_id, vendor_id, requestor_u
 ('cr-002', 'vnd-001', 'procurement@example.com', 'request_lifecycle_change', '{"state":"active"}', 'submitted', '2026-02-03 10:30:00', '2026-02-03 10:30:00'),
 ('cr-003', 'vnd-003', 'fin-ops@example.com', 'update_vendor_profile', '{"risk_tier":"high"}', 'approved', '2025-12-19 08:15:00', '2025-12-20 09:45:00');
 
+INSERT INTO change_request (request_id, entity_type, entity_id, change_type, payload_json, request_status, created_at, created_by) VALUES
+('cr-001', 'vendor', 'vnd-001', 'update_contact', '{"contact":"new escalation"}', 'approved', '2026-01-15 10:00:00', 'cloud-platform@example.com'),
+('cr-002', 'vendor', 'vnd-001', 'request_lifecycle_change', '{"state":"active"}', 'submitted', '2026-02-03 10:30:00', 'procurement@example.com'),
+('cr-003', 'vendor', 'vnd-003', 'update_vendor_profile', '{"risk_tier":"high"}', 'approved', '2025-12-19 08:15:00', 'fin-ops@example.com');
+
 INSERT INTO app_project (project_id, vendor_id, project_name, project_type, status, start_date, target_date, owner_principal, description, active_flag, created_at, created_by, updated_at, updated_by) VALUES
 ('prj-001', 'vnd-001', 'Defender Rollout FY26', 'implementation', 'active', '2026-01-05', '2026-06-30', 'bob.smith@example.com', 'Expand Defender controls across core workloads.', 1, '2026-01-05 09:00:00', 'admin@example.com', '2026-02-01 14:00:00', 'admin@example.com'),
 ('prj-002', 'vnd-001', 'Power Platform Evaluation', 'poc', 'blocked', '2026-01-20', '2026-03-31', 'amy.johnson@example.com', 'Evaluate business automation use cases.', 1, '2026-01-20 11:00:00', 'admin@example.com', '2026-02-03 10:30:00', 'admin@example.com');
@@ -283,7 +304,7 @@ INSERT INTO audit_workflow_event (workflow_event_id, workflow_type, workflow_id,
 
 INSERT INTO audit_access_event (access_event_id, actor_user_principal, action_type, target_user_principal, target_role, event_ts, notes) VALUES
 ('aac-001', 'admin@example.com', 'grant_role', 'editor@example.com', 'vendor_editor', '2026-01-29 08:00:00', 'Approved editor access.'),
-('aac-002', 'admin@example.com', 'grant_scope', 'editor@example.com', 'SALES-OPS:edit', '2026-01-29 08:05:00', 'Scoped to sales operations.');
+('aac-002', 'admin@example.com', 'grant_scope', 'editor@example.com', NULL, '2026-01-29 08:05:00', 'Scoped to sales operations.');
 
 INSERT INTO app_employee_directory (login_identifier, email, network_id, employee_id, manager_id, first_name, last_name, display_name, active_flag) VALUES
 ('admin@example.com', 'admin@example.com', 'admin', 'E1001', 'E1000', 'Admin', 'User', 'Admin User', 1),
@@ -297,7 +318,7 @@ INSERT INTO app_employee_directory (login_identifier, email, network_id, employe
 ('secops@example.com', 'secops@example.com', 'secops', 'E1009', 'E1001', 'SecOps', 'User', 'Secops User', 1),
 ('owner@example.com', 'owner@example.com', 'owner', 'E1010', 'E1001', 'Owner', 'User', 'Owner User', 1);
 
-INSERT INTO app_user_directory (user_id, login_identifier, email, network_id, employee_id, manager_id, first_name, last_name, display_name, active_flag, created_at, updated_at, last_seen_at) VALUES
+INSERT OR REPLACE INTO app_user_directory (user_id, login_identifier, email, network_id, employee_id, manager_id, first_name, last_name, display_name, active_flag, created_at, updated_at, last_seen_at) VALUES
 ('usr-001', 'admin@example.com', 'admin@example.com', 'admin', 'E1001', 'E1000', 'Admin', 'User', 'Admin User', 1, '2026-01-01 00:00:00', '2026-02-03 10:00:00', '2026-02-03 10:00:00'),
 ('usr-002', 'bob.smith@example.com', 'bob.smith@example.com', 'bsmith', 'E1002', 'E1001', 'Bob', 'Smith', 'Bob Smith', 1, '2026-01-01 00:00:00', '2026-02-03 10:00:00', '2026-02-03 10:00:00'),
 ('usr-003', 'amy.johnson@example.com', 'amy.johnson@example.com', 'ajohnson', 'E1003', 'E1001', 'Amy', 'Johnson', 'Amy Johnson', 1, '2026-01-01 00:00:00', '2026-02-03 10:00:00', '2026-02-03 10:00:00'),
@@ -379,7 +400,7 @@ INSERT INTO app_lookup_option (option_id, lookup_type, option_code, option_label
 ('lkp-offering_service_type-support', 'offering_service_type', 'support', 'Support', 7, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap'),
 ('lkp-offering_service_type-other', 'offering_service_type', 'other', 'Other', 8, 1, '2026-01-01 00:00:00', NULL, 1, 0, '2026-01-01 00:00:00', 'bootstrap');
 
-INSERT INTO sec_role_definition (role_code, role_name, description, approval_level, can_edit, can_report, can_direct_apply, active_flag, updated_at, updated_by) VALUES
+INSERT OR REPLACE INTO sec_role_definition (role_code, role_name, description, approval_level, can_edit, can_report, can_direct_apply, active_flag, updated_at, updated_by) VALUES
 ('vendor_admin', 'Vendor Admin', 'Full administrative access across all workflows and data changes.', 3, 1, 1, 1, 1, '2026-01-01 00:00:00', 'bootstrap'),
 ('vendor_steward', 'Vendor Steward', 'Data steward with elevated review/apply rights for governed updates.', 2, 1, 1, 1, 1, '2026-01-01 00:00:00', 'bootstrap'),
 ('vendor_editor', 'Vendor Editor', 'Contributor role for day-to-day edits and change submissions.', 1, 1, 1, 0, 1, '2026-01-01 00:00:00', 'bootstrap'),
@@ -448,7 +469,8 @@ INSERT INTO sec_role_permission (role_code, object_name, action_code, active_fla
 
 INSERT INTO sec_user_role_map (user_principal, role_code, active_flag, granted_by, granted_at, revoked_at) VALUES
 ('admin@example.com', 'vendor_admin', 1, 'bootstrap', '2026-01-01 00:00:00', NULL),
-('editor@example.com', 'vendor_editor', 1, 'admin@example.com', '2026-01-15 08:00:00', NULL);
+('editor@example.com', 'vendor_editor', 1, 'admin@example.com', '2026-01-15 08:00:00', NULL),
+('viewer@example.com', 'vendor_viewer', 1, 'admin@example.com', '2026-01-20 09:00:00', NULL);
 
 INSERT INTO sec_group_role_map (group_principal, role_code, active_flag, granted_by, granted_at, revoked_at) VALUES
 ('group:corp_security', 'vendor_auditor', 1, 'bootstrap', '2026-01-01 00:00:00', NULL),

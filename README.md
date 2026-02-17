@@ -85,7 +85,7 @@ http://localhost:8000/dashboard
 
 ## Database Schema
 Canonical full logical schema lives at:
-- `setup/local_db/sql/schema/001_schema.sql`
+- `setup/v1_schema/local_db/` (ordered schema scripts 00 -> 90)
 
 Current schema scope:
 - 41 tables

@@ -9,7 +9,7 @@ from fastapi.responses import PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from vendor_catalog_app.core.repository_errors import SchemaBootstrapRequiredError
+from vendor_catalog_app.core.repository_errors import EmployeeDirectoryError, SchemaBootstrapRequiredError
 from vendor_catalog_app.web.core.identity import resolve_databricks_request_identity
 from vendor_catalog_app.web.core.runtime import get_config, get_repo
 from vendor_catalog_app.web.http.errors import ApiError, api_error_response, is_api_request, normalize_exception
@@ -56,6 +56,28 @@ def register_exception_handlers(app: FastAPI, templates: Jinja2Templates) -> Non
             "bootstrap_required.html",
             {"request": request, "error_message": str(exc)},
             status_code=503,
+        )
+
+    @app.exception_handler(EmployeeDirectoryError)
+    async def _employee_directory_exception_handler(request: Request, exc: EmployeeDirectoryError):
+        if is_api_request(request):
+            return api_error_response(
+                request,
+                status_code=403,
+                code="EMPLOYEE_DIRECTORY_NOT_FOUND",
+                message=str(exc),
+                details={"login_identifier": exc.login_identifier, "guidance": exc.details},
+            )
+        return templates.TemplateResponse(
+            request,
+            "user_directory_error.html",
+            {
+                "request": request,
+                "login_identifier": exc.login_identifier,
+                "error_message": str(exc),
+                "guidance": exc.details,
+            },
+            status_code=403,
         )
 
     @app.exception_handler(ApiError)

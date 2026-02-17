@@ -8,7 +8,7 @@ DEFAULT_DEV_SCHEMA = "twvendor"
 DEFAULT_ALLOWED_WRITE_VERBS_CSV = "INSERT,UPDATE"
 DEFAULT_ALLOWED_WRITE_VERBS = ("INSERT", "UPDATE")
 DEFAULT_LOCAL_DB_PATH = "setup/local_db/twvendor_local.db"
-DEFAULT_SCHEMA_BOOTSTRAP_SQL_PATH = "setup/databricks/001_create_databricks_schema.sql"
+DEFAULT_SCHEMA_BOOTSTRAP_SQL_PATH = "setup/v1_schema/databricks/00_create_v1_schema.sql"
 DEFAULT_SESSION_SECRET = "vendor-catalog-dev-secret"
 
 # Security/header defaults

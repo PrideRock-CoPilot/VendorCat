@@ -3,7 +3,7 @@
 This folder documents the full Vendor Catalog data model and how to evolve it safely.
 
 ## Canonical Schema Sources
-- Local full logical schema: `setup/local_db/sql/schema/001_schema.sql`
+- Local V1 schema scripts: `setup/v1_schema/local_db/`
 - Databricks bootstrap SQL: `docs/architecture/sql/`
 
 ## Scope

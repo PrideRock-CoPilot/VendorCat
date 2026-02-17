@@ -7,7 +7,11 @@ if "%TVENDOR_ENV_FILE%"=="" set "TVENDOR_ENV_FILE=setup\config\tvendor.env"
 if exist "%TVENDOR_ENV_FILE%" (
   echo Loading environment from %TVENDOR_ENV_FILE%
   for /f "usebackq tokens=1* delims==" %%A in (`findstr /R /V "^[ ]*# ^[ ]*$" "%TVENDOR_ENV_FILE%"`) do (
-    if not defined %%A set "%%A=%%B"
+    if /I "%TVENDOR_ENV_FORCE%"=="true" (
+      set "%%A=%%B"
+    ) else (
+      if not defined %%A set "%%A=%%B"
+    )
   )
 )
 
@@ -29,7 +33,7 @@ if "%TVENDOR_SCHEMA%"=="" set "TVENDOR_SCHEMA=twvendor"
 if "%TVENDOR_LOCKED_MODE%"=="" set "TVENDOR_LOCKED_MODE=false"
 if "%TVENDOR_OPEN_BROWSER%"=="" set "TVENDOR_OPEN_BROWSER=true"
 if "%TVENDOR_LOCAL_DB_AUTO_RESET%"=="" set "TVENDOR_LOCAL_DB_AUTO_RESET=true"
-if "%TVENDOR_LOCAL_DB_SEED%"=="" set "TVENDOR_LOCAL_DB_SEED=false"
+if "%TVENDOR_LOCAL_DB_SEED%"=="" set "TVENDOR_LOCAL_DB_SEED=true"
 if "%TVENDOR_LOCAL_DB_SEED_PROFILE%"=="" set "TVENDOR_LOCAL_DB_SEED_PROFILE=baseline"
 if "%TVENDOR_LOCAL_DB_REBUILD_MODE%"=="" set "TVENDOR_LOCAL_DB_REBUILD_MODE=always"
 if "%PORT%"=="" set "PORT=8000"

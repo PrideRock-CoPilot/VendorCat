@@ -1099,6 +1099,205 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
+  const _dashboardPalette = [
+    "#0f766e",
+    "#1d4ed8",
+    "#14b8a6",
+    "#0b5a7f",
+    "#334155",
+    "#7c3aed",
+    "#ea580c",
+    "#16a34a",
+  ];
+
+  const parseDashboardSeries = (sourceId) => {
+    const source = document.getElementById(String(sourceId || ""));
+    if (!(source instanceof HTMLScriptElement)) return [];
+    try {
+      const parsed = JSON.parse(source.textContent || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const formatDashboardValue = (value, prefix = "") => {
+    const number = Number(value || 0);
+    if (!Number.isFinite(number)) return `${prefix}0`;
+    return `${prefix}${new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(number)}`;
+  };
+
+  const renderDashboardDonut = (target) => {
+    if (!(target instanceof HTMLElement)) return;
+    const sourceId = target.dataset.sourceId || "";
+    const labelField = target.dataset.labelField || "label";
+    const valueField = target.dataset.valueField || "value";
+    const prefix = target.dataset.prefix || "";
+    const emptyText = target.dataset.emptyText || "No data";
+    const series = parseDashboardSeries(sourceId)
+      .map((row) => ({
+        label: String(row?.[labelField] ?? "Unknown"),
+        value: Number(row?.[valueField] ?? 0),
+      }))
+      .filter((row) => Number.isFinite(row.value) && row.value > 0);
+
+    target.innerHTML = "";
+    if (!series.length) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = emptyText;
+      target.appendChild(empty);
+      return;
+    }
+
+    const total = series.reduce((acc, item) => acc + item.value, 0);
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 220 220");
+    svg.setAttribute("class", "dashboard-chart-svg");
+    const radius = 80;
+    const cx = 110;
+    const cy = 110;
+    const circumference = 2 * Math.PI * radius;
+    let offset = 0;
+
+    series.forEach((item, index) => {
+      const pct = item.value / total;
+      const segment = document.createElementNS(ns, "circle");
+      segment.setAttribute("cx", String(cx));
+      segment.setAttribute("cy", String(cy));
+      segment.setAttribute("r", String(radius));
+      segment.setAttribute("fill", "none");
+      segment.setAttribute("stroke", _dashboardPalette[index % _dashboardPalette.length]);
+      segment.setAttribute("stroke-width", "24");
+      segment.setAttribute("stroke-dasharray", `${(pct * circumference).toFixed(2)} ${circumference.toFixed(2)}`);
+      segment.setAttribute("stroke-dashoffset", `${(-offset).toFixed(2)}`);
+      segment.setAttribute("transform", `rotate(-90 ${cx} ${cy})`);
+      segment.setAttribute("title", `${item.label}: ${formatDashboardValue(item.value, prefix)} (${(pct * 100).toFixed(1)}%)`);
+      svg.appendChild(segment);
+      offset += pct * circumference;
+    });
+
+    const centerValue = document.createElementNS(ns, "text");
+    centerValue.setAttribute("x", String(cx));
+    centerValue.setAttribute("y", "106");
+    centerValue.setAttribute("text-anchor", "middle");
+    centerValue.setAttribute("class", "dashboard-chart-center-value");
+    centerValue.textContent = formatDashboardValue(total, prefix);
+    svg.appendChild(centerValue);
+
+    const centerLabel = document.createElementNS(ns, "text");
+    centerLabel.setAttribute("x", String(cx));
+    centerLabel.setAttribute("y", "126");
+    centerLabel.setAttribute("text-anchor", "middle");
+    centerLabel.setAttribute("class", "dashboard-chart-center-label");
+    centerLabel.textContent = "total";
+    svg.appendChild(centerLabel);
+
+    target.appendChild(svg);
+  };
+
+  const renderDashboardLine = (target) => {
+    if (!(target instanceof HTMLElement)) return;
+    const sourceId = target.dataset.sourceId || "";
+    const labelField = target.dataset.labelField || "label";
+    const valueField = target.dataset.valueField || "value";
+    const prefix = target.dataset.prefix || "";
+    const emptyText = target.dataset.emptyText || "No data";
+    const series = parseDashboardSeries(sourceId)
+      .map((row) => ({
+        label: String(row?.[labelField] ?? ""),
+        value: Number(row?.[valueField] ?? 0),
+      }))
+      .filter((row) => Number.isFinite(row.value));
+
+    target.innerHTML = "";
+    if (!series.length) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = emptyText;
+      target.appendChild(empty);
+      return;
+    }
+
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 520 220");
+    svg.setAttribute("class", "dashboard-chart-svg dashboard-chart-svg-line");
+    const max = Math.max(...series.map((point) => point.value), 1);
+    const min = Math.min(...series.map((point) => point.value), 0);
+    const span = Math.max(max - min, 1);
+    const left = 36;
+    const right = 12;
+    const top = 16;
+    const bottom = 34;
+    const width = 520 - left - right;
+    const height = 220 - top - bottom;
+
+    const points = series.map((point, index) => {
+      const x = left + (series.length === 1 ? width / 2 : (index / (series.length - 1)) * width);
+      const y = top + (1 - (point.value - min) / span) * height;
+      return { ...point, x, y };
+    });
+
+    const axis = document.createElementNS(ns, "line");
+    axis.setAttribute("x1", String(left));
+    axis.setAttribute("x2", String(left + width));
+    axis.setAttribute("y1", String(top + height));
+    axis.setAttribute("y2", String(top + height));
+    axis.setAttribute("class", "dashboard-chart-axis");
+    svg.appendChild(axis);
+
+    const polyline = document.createElementNS(ns, "polyline");
+    polyline.setAttribute("fill", "none");
+    polyline.setAttribute("class", "dashboard-chart-line");
+    polyline.setAttribute(
+      "points",
+      points.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(" "),
+    );
+    svg.appendChild(polyline);
+
+    points.forEach((point, index) => {
+      const dot = document.createElementNS(ns, "circle");
+      dot.setAttribute("cx", point.x.toFixed(2));
+      dot.setAttribute("cy", point.y.toFixed(2));
+      dot.setAttribute("r", "3.5");
+      dot.setAttribute("class", "dashboard-chart-dot");
+      dot.setAttribute("title", `${point.label}: ${formatDashboardValue(point.value, prefix)}`);
+      svg.appendChild(dot);
+
+      if (index === 0 || index === points.length - 1 || index % 2 === 0) {
+        const tick = document.createElementNS(ns, "text");
+        tick.setAttribute("x", point.x.toFixed(2));
+        tick.setAttribute("y", String(top + height + 16));
+        tick.setAttribute("text-anchor", "middle");
+        tick.setAttribute("class", "dashboard-chart-tick");
+        tick.textContent = point.label;
+        svg.appendChild(tick);
+      }
+    });
+
+    const peak = points.reduce((acc, point) => (point.value > acc.value ? point : acc), points[0]);
+    const peakLabel = document.createElementNS(ns, "text");
+    peakLabel.setAttribute("x", peak.x.toFixed(2));
+    peakLabel.setAttribute("y", String(Math.max(peak.y - 10, top + 10)));
+    peakLabel.setAttribute("text-anchor", "middle");
+    peakLabel.setAttribute("class", "dashboard-chart-peak");
+    peakLabel.textContent = formatDashboardValue(peak.value, prefix);
+    svg.appendChild(peakLabel);
+
+    target.appendChild(svg);
+  };
+
+  const initDashboardCharts = (scope = document) => {
+    scope.querySelectorAll("[data-dashboard-donut]").forEach((node) => {
+      renderDashboardDonut(node);
+    });
+    scope.querySelectorAll("[data-dashboard-line]").forEach((node) => {
+      renderDashboardLine(node);
+    });
+  };
+
   applyTooltips(document);
   initCsrfForms(document);
   initDocLinkForms(document);
@@ -1108,6 +1307,7 @@ document.addEventListener("DOMContentLoaded", () => {
   initClickableRows(document);
   initResponsiveTables(document);
   initHelpCenter(document);
+  initDashboardCharts(document);
 
   const observer = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
@@ -1122,6 +1322,7 @@ document.addEventListener("DOMContentLoaded", () => {
           initClickableRows(node);
           initResponsiveTables(node);
           initHelpCenter(node);
+          initDashboardCharts(node);
         }
       });
     });

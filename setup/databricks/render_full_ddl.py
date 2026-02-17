@@ -81,7 +81,7 @@ def main() -> int:
     parts: list[str] = []
     parts.append(
         "-- AUTO-GENERATED FILE. Do not edit directly.\n"
-        "-- Source templates: setup/databricks/001_create_databricks_schema.sql"
+        "-- Source templates: setup/v1_schema/databricks/*.sql"
     )
     parts.append(_render_template(base_ddl, context))
 

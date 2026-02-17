@@ -2,6 +2,9 @@
 
 This directory stores executable SQL used by the application runtime.
 
+This catalog has been rebuilt for the V1 clean-deployment data layer baseline.
+Previous SQL catalog revisions are archived under `archive/sql_catalog/`.
+
 Folders:
 - `reporting/`: read/report/dashboard SQL
 - `ingestion/`: ingestion lookup SQL

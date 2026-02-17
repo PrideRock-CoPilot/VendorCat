@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -22,6 +24,32 @@ from vendor_catalog_app.web.system.metrics import register_prometheus_metrics_ro
 from vendor_catalog_app.web.system.settings import load_app_runtime_settings
 
 
+def _extract_role_from_json(payload_json_str: str | dict) -> str:
+    """Extract role from change request payload JSON."""
+    try:
+        if isinstance(payload_json_str, dict):
+            payload = payload_json_str
+        else:
+            payload = json.loads(payload_json_str) if payload_json_str else {}
+        return payload.get("role", "Unknown")
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        return "Unknown"
+
+
+def _format_date(dt_obj) -> str:
+    """Format datetime object for template display."""
+    if not dt_obj:
+        return ""
+    if isinstance(dt_obj, str):
+        try:
+            dt_obj = datetime.fromisoformat(dt_obj.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            return str(dt_obj)
+    if isinstance(dt_obj, datetime):
+        return dt_obj.strftime("%B %d, %Y at %I:%M %p")
+    return str(dt_obj)
+
+
 def create_app() -> FastAPI:
     setup_app_logging()
     config = get_config()
@@ -33,6 +61,11 @@ def create_app() -> FastAPI:
 
     base_dir = Path(__file__).resolve().parent
     templates = Jinja2Templates(directory=str(base_dir / "templates"))
+    
+    # Register custom Jinja2 filters
+    templates.env.filters["extract_role"] = _extract_role_from_json
+    templates.env.filters["format_date"] = _format_date
+    
     app.state.templates = templates
 
     register_security_headers_middleware(app, settings)

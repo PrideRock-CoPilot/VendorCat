@@ -44,7 +44,7 @@
       {% if field_errors.get('owner_org_choice') %}<span class="field-error">{{ field_errors.get('owner_org_choice') }}</span>{% endif %}
     </label>
     <label id="new_owner_org_wrap" class="{% if form_values.owner_org_choice != '__new__' %}hidden{% endif %}">New Line of Business
-      <input type="text" id="new_owner_org_id" name="new_owner_org_id" value="{{ form_values.new_owner_org_id }}" class="{% if field_errors.get('new_owner_org_id') %}input-error{% endif %}" placeholder="Example: HR-OPS">
+      <input type="text" id="new_owner_org_id" name="new_owner_org_id" value="{{ form_values.new_owner_org_id }}" class="{% if field_errors.get('new_owner_org_id') %}input-error{% endif %}" placeholder="HR-OPS">
       {% if field_errors.get('new_owner_org_id') %}<span class="field-error">{{ field_errors.get('new_owner_org_id') }}</span>{% endif %}
     </label>
     <label>Risk Tier

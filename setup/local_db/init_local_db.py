@@ -162,6 +162,15 @@ def _sql_files_from_dir(directory: Path) -> list[Path]:
     return files
 
 
+def _v1_schema_files_from_repo() -> list[Path]:
+    repo_root = Path(__file__).resolve().parents[2]
+    v1_dir = repo_root / "setup" / "v1_schema" / "local_db"
+    files = sorted([item for item in v1_dir.iterdir() if item.is_file() and item.suffix.lower() == ".sql"])
+    if not files:
+        raise FileNotFoundError(f"No V1 schema SQL files found in: {v1_dir}")
+    return files
+
+
 def _apply_sql_files(conn: sqlite3.Connection, files: Iterable[Path]) -> int:
     count = 0
     for sql_file in files:
@@ -249,7 +258,16 @@ def main() -> None:
             raise FileNotFoundError(f"Schema SQL not found: {schema_path}")
         schema_files = [schema_path]
     else:
-        schema_files = _sql_files_from_dir(sql_root / "schema")
+        schema_dir = sql_root / "schema"
+        try:
+            schema_files = _sql_files_from_dir(schema_dir)
+        except FileNotFoundError as exc:
+            if "No SQL files found" not in str(exc):
+                raise
+            schema_files = _v1_schema_files_from_repo()
+            print(
+                f"No legacy schema scripts found in {schema_dir}; using V1 schema scripts from setup/v1_schema/local_db"
+            )
 
     seed_files: list[Path] = []
     if not args.skip_seed:

@@ -290,7 +290,7 @@ def offering_detail_page(
         add_flash(
             request,
             (
-                "Offering operations tables are not available. Run setup/databricks/001_create_databricks_schema.sql "
+                "Offering operations tables are not available. Run setup/v1_schema/databricks SQL scripts (00->90) "
                 f"for this Databricks schema. Details: {exc}"
             ),
             "error",

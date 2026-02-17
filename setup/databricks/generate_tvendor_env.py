@@ -225,7 +225,7 @@ def _build_env_text(
             "TVENDOR_ALLOWED_WRITE_VERBS=INSERT,UPDATE",
             "",
             "# Standalone schema bootstrap SQL (manual run only)",
-            "TVENDOR_SCHEMA_BOOTSTRAP_SQL=setup/databricks/001_create_databricks_schema.sql",
+            "TVENDOR_SCHEMA_BOOTSTRAP_SQL=setup/v1_schema/databricks/00_create_v1_schema.sql",
             "",
         ]
     )

@@ -1,0 +1,10 @@
+sync:
+  exclude:
+    - README.md
+    - app.dev_local.yaml
+    - __init__.py
+    - "**/__pycache__/**"
+    - "**/*.pyc"
+    - "**/*.pyo"
+    - "**/*.pyd"
+

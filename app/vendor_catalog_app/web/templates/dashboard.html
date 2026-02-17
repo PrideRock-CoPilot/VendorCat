@@ -2,7 +2,7 @@
 {% block content %}
 <h1>Executive Overview</h1>
 
-<form method="get" action="/dashboard" class="card grid grid-3">
+<form method="get" action="/dashboard" class="card grid grid-3 dashboard-filter-bar">
   <label>
     Line of Business
     <select name="lob">
@@ -32,41 +32,104 @@
   </div>
 </form>
 
-<section class="metrics">
+<section class="metrics dashboard-kpi-row">
+  <div class="metric metric-priority"><span>Spend ({{ months }}m)</span><strong>${{ "{:,.0f}".format(summary.total_spend_window) }}</strong></div>
+  <div class="metric metric-priority"><span>High/Critical Risk</span><strong>{{ summary.high_risk_vendors|int }}</strong></div>
+  <div class="metric metric-priority"><span>Renewals Due</span><strong>{{ summary.renewals_due_count|int }}</strong></div>
   <div class="metric"><span>Active Vendors</span><strong>{{ kpis.active_vendors }}</strong></div>
   <div class="metric"><span>Active Offerings</span><strong>{{ kpis.active_offerings }}</strong></div>
-  <div class="metric"><span>Spend ({{ months }}m)</span><strong>${{ "{:,.0f}".format(summary.total_spend_window) }}</strong></div>
-  <div class="metric"><span>High/Critical Risk</span><strong>{{ summary.high_risk_vendors|int }}</strong></div>
-  <div class="metric"><span>Renewals Due</span><strong>{{ summary.renewals_due_count|int }}</strong></div>
   <div class="metric"><span>Not-Selected Demo Rate</span><strong>{{ "{:.1f}%".format(summary.not_selected_demo_rate * 100) }}</strong></div>
 </section>
 
-<div class="grid grid-2">
+<section class="card dashboard-alerts-card">
+  <h2>Executive Alerts</h2>
+  <div class="dashboard-alerts-grid">
+    {% for alert in executive_alerts %}
+    <article class="dashboard-alert dashboard-alert-{{ alert.tone }}">
+      <div class="dashboard-alert-title">{{ alert.title }}</div>
+      <p>{{ alert.detail }}</p>
+      <a class="button-link subtle" href="{{ alert.href }}">{{ alert.action }}</a>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<div class="grid grid-2 dashboard-visual-grid">
   <section class="card">
     <h2>Spend By Category</h2>
-    <table>
-      <thead><tr><th>Category</th><th>Total Spend</th></tr></thead>
-      <tbody>
+    <div class="dashboard-chart-block" data-dashboard-donut data-source-id="dashboard-by-category-json" data-value-field="total_spend" data-label-field="category" data-prefix="$" data-empty-text="No category spend data"></div>
+    <script id="dashboard-by-category-json" type="application/json">{{ by_category | tojson }}</script>
+    <div class="dashboard-chart-legend">
       {% for row in by_category %}
-      <tr><td>{{ row.category }}</td><td>${{ "{:,.0f}".format(row.total_spend) }}</td></tr>
+      <div class="dashboard-chart-legend-row">
+        <span class="dashboard-chart-legend-label">{{ row.category or 'Unknown' }}</span>
+        <span class="dashboard-chart-legend-value">${{ "{:,.0f}".format(row.total_spend or 0) }}</span>
+      </div>
       {% else %}
-      <tr><td colspan="2">No data</td></tr>
+      <p class="muted">No data</p>
       {% endfor %}
-      </tbody>
-    </table>
+    </div>
   </section>
+
   <section class="card">
     <h2>Monthly Spend Trend</h2>
-    <table>
-      <thead><tr><th>Month</th><th>Spend</th></tr></thead>
-      <tbody>
+    <div class="dashboard-chart-block" data-dashboard-line data-source-id="dashboard-trend-json" data-value-field="total_spend" data-label-field="month" data-prefix="$" data-empty-text="No spend trend data"></div>
+    <script id="dashboard-trend-json" type="application/json">{{ trend | tojson }}</script>
+    <div class="dashboard-chart-legend dashboard-chart-legend-compact">
       {% for row in trend %}
-      <tr><td>{{ row.month }}</td><td>${{ "{:,.0f}".format(row.total_spend) }}</td></tr>
+      <div class="dashboard-chart-legend-row">
+        <span class="dashboard-chart-legend-label">{{ row.month }}</span>
+        <span class="dashboard-chart-legend-value">${{ "{:,.0f}".format(row.total_spend or 0) }}</span>
+      </div>
       {% else %}
-      <tr><td colspan="2">No data</td></tr>
+      <p class="muted">No data</p>
       {% endfor %}
-      </tbody>
-    </table>
+    </div>
+  </section>
+</div>
+
+<div class="grid grid-2 dashboard-visual-grid">
+  <section class="card">
+    <h2>Renewal Focus ({{ horizon_days }} days)</h2>
+    <div class="dashboard-renewal-snapshot">
+      <div class="metric metric-mini"><span>Next 30 Days</span><strong>{{ renewals_30_count }}</strong></div>
+      <div class="metric metric-mini"><span>Next 60 Days</span><strong>{{ renewals_60_count }}</strong></div>
+      <div class="metric metric-mini"><span>30-Day Value</span><strong>${{ "{:,.0f}".format(renewals_30_value) }}</strong></div>
+    </div>
+    {% if renewals %}
+    <div class="dashboard-renewal-preview">
+      <h3>Upcoming In Focus</h3>
+      <ul>
+        {% for row in renewals[:3] %}
+        <li>
+          <a href="/contracts?tab=expiring&q={{ row.contract_id }}">{{ row.vendor_name or row.vendor_id or 'Unknown vendor' }}</a>
+          <span class="muted"> · {{ row.renewal_date }}{% if row.days_to_renewal is not none %} ({{ row.days_to_renewal|int }} days){% endif %}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      <a class="button-link subtle" href="/contracts?tab=expiring">View all renewals</a>
+    </div>
+    {% else %}
+    <p class="muted">No renewals in the selected horizon.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Risk Distribution</h2>
+    <div class="dashboard-chart-block" data-dashboard-donut data-source-id="dashboard-risk-json" data-value-field="vendor_count" data-label-field="risk_tier" data-empty-text="No risk distribution data"></div>
+    <script id="dashboard-risk-json" type="application/json">{{ risk_dist | tojson }}</script>
+    <div class="dashboard-chart-legend">
+      {% for row in risk_dist %}
+      {% set count = row.vendor_count or 0 %}
+      {% set width_pct = (count / risk_total * 100) if risk_total > 0 else 0 %}
+      <div class="dashboard-chart-legend-row">
+        <span class="dashboard-chart-legend-label">{{ row.risk_tier or 'unknown' }}</span>
+        <span class="dashboard-chart-legend-value">{{ count }}{% if risk_total > 0 %} ({{ "{:.0f}".format(width_pct) }}%){% endif %}</span>
+      </div>
+      {% else %}
+      <p class="muted">No data</p>
+      {% endfor %}
+    </div>
   </section>
 </div>
 
@@ -77,84 +140,19 @@
       <thead><tr><th>Vendor</th><th>Risk</th><th>Total Spend</th></tr></thead>
       <tbody>
       {% for row in top_vendors %}
-      <tr><td>{{ row.vendor_name }}</td><td>{{ row.risk_tier }}</td><td>${{ "{:,.0f}".format(row.total_spend) }}</td></tr>
+      {% set risk_key = (row.risk_tier or 'unknown')|lower %}
+      <tr>
+        <td>{{ row.vendor_name }}</td>
+        <td><span class="risk-pill risk-pill-{{ risk_key }}">{{ row.risk_tier or 'unknown' }}</span></td>
+        <td>${{ "{:,.0f}".format(row.total_spend) }}</td>
+      </tr>
       {% else %}
       <tr><td colspan="3">No data</td></tr>
       {% endfor %}
       </tbody>
     </table>
   </section>
-  <section class="card">
-    <h2>Risk Distribution</h2>
-    <table>
-      <thead><tr><th>Risk Tier</th><th>Vendor Count</th></tr></thead>
-      <tbody>
-      {% for row in risk_dist %}
-      <tr><td>{{ row.risk_tier }}</td><td>{{ row.vendor_count }}</td></tr>
-      {% else %}
-      <tr><td colspan="2">No data</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </section>
-</div>
 
-<div class="grid grid-2">
-  <section class="card">
-    <h2>Renewal Pipeline ({{ horizon_days }} days)</h2>
-    <table>
-      <thead>
-        <tr><th>Contract</th><th>Vendor</th><th>Renewal Date</th><th>Annual Value</th><th>Status</th></tr>
-      </thead>
-      <tbody>
-      {% for row in renewals %}
-      <tr>
-        <td>{{ row.contract_id }}</td>
-        <td>{{ row.vendor_name or row.vendor_id }}</td>
-        <td>{{ row.renewal_date }}</td>
-        <td>${{ "{:,.0f}".format(row.annual_value or 0) }}</td>
-        <td>{{ row.renewal_status }}</td>
-      </tr>
-      {% else %}
-      <tr><td colspan="5">No renewals in horizon</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </section>
-  <section class="card">
-    <h2>Recent Demo Outcomes</h2>
-    <table>
-      <thead><tr><th>Demo</th><th>Vendor</th><th>Outcome</th><th>Score</th></tr></thead>
-      <tbody>
-      {% for row in recent_demos %}
-      <tr><td>{{ row.demo_id }}</td><td>{{ row.vendor_id }}</td><td>{{ row.selection_outcome }}</td><td>{{ row.overall_score }}</td></tr>
-      {% else %}
-      <tr><td colspan="4">No demo data</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </section>
-</div>
-
-<div class="grid grid-2">
-  <section class="card">
-    <h2>Recent Contract Cancellations</h2>
-    <table>
-      <thead><tr><th>Contract</th><th>Vendor</th><th>Cancelled At</th><th>Reason</th></tr></thead>
-      <tbody>
-      {% for row in recent_cancellations %}
-      <tr>
-        <td>{{ row.contract_id }}</td>
-        <td>{{ row.vendor_id }}</td>
-        <td>{{ row.cancelled_at }}</td>
-        <td>{{ row.reason_code }}</td>
-      </tr>
-      {% else %}
-      <tr><td colspan="4">No recent cancellations</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </section>
   <section class="card">
     <h2>Operational Shortcuts</h2>
     <p class="muted">Jump directly to high-frequency workflows.</p>
@@ -165,4 +163,10 @@
     </div>
   </section>
 </div>
+
+<section class="card">
+  <h2>Detailed Data</h2>
+  <p class="muted">Detailed renewal, demo, and cancellation outputs are available in Reports when needed.</p>
+  <a class="button-link subtle" href="/reports">Open Reports</a>
+</section>
 {% endblock %}

@@ -34,6 +34,46 @@ INSERT INTO vendor_help_article (
   'seed:system'
 );
 
+INSERT INTO vendor_help_feedback (
+  feedback_id,
+  article_id,
+  article_slug,
+  was_helpful,
+  comment,
+  user_principal,
+  page_path,
+  created_at
+) VALUES (
+  'hfb-001',
+  'help-001',
+  'quick-start',
+  1,
+  'Helpful walkthrough for onboarding.',
+  'viewer@example.com',
+  '/help/quick-start',
+  '2026-02-10 10:00:00'
+);
+
+INSERT INTO vendor_help_issue (
+  issue_id,
+  article_id,
+  article_slug,
+  issue_title,
+  issue_description,
+  page_path,
+  user_principal,
+  created_at
+) VALUES (
+  'his-001',
+  'help-001',
+  'quick-start',
+  'Need refresh for screenshot labels',
+  'Navigation labels changed in latest UI update.',
+  '/help/quick-start',
+  'editor@example.com',
+  '2026-02-10 10:05:00'
+);
+
 INSERT INTO vendor_help_article (
   article_id,
   slug,

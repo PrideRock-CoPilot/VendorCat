@@ -18,7 +18,7 @@ $argsList = @(
     $sourcePath
     $WorkspacePath
     "--profile"
-    "sso_profile"
+    "sso"
     "--include-from"
     $includeFile
     "--exclude-from"

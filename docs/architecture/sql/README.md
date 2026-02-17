@@ -19,4 +19,4 @@ These scripts provide a Databricks-oriented bootstrap path for the `twvendor` mo
 ## Notes
 - This folder is the Databricks bootstrap view of the model.
 - Canonical full local logical schema (with indexes and local constraints) is:
-  - `setup/local_db/sql/schema/001_schema.sql`
+  - `setup/v1_schema/local_db/`

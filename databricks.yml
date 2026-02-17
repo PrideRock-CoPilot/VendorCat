@@ -1,0 +1,14 @@
+sync:
+  exclude:
+    # Exclude dev/build files
+    - README.md
+    - app.dev_local.yaml
+    - "**/__pycache__/**"
+    - "**/*.pyc"
+    - "**/*.pyo"
+    - "**/*.pyd"
+    - "**/.pytest_cache/**"
+    - "**/.mypy_cache/**"
+    - "**/.ruff_cache/**"
+    - "**/.DS_Store"
+    - vendor_catalog_app/sql/README.md

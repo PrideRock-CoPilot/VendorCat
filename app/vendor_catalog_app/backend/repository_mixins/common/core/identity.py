@@ -9,6 +9,7 @@ import pandas as pd
 
 from vendor_catalog_app.core.env import TVENDOR_USER_DIRECTORY_TOUCH_TTL_SEC, get_env
 from vendor_catalog_app.core.repository_constants import UNKNOWN_USER_PRINCIPAL
+from vendor_catalog_app.core.repository_errors import EmployeeDirectoryError
 from vendor_catalog_app.infrastructure.db import DataConnectionError, DataExecutionError
 
 LOGGER = logging.getLogger(__name__)
@@ -218,8 +219,10 @@ class RepositoryCoreIdentityMixin:
             # Dev launcher convenience mode: local-only runs can bootstrap ad-hoc users.
             require_employee_directory = False
         if require_employee_directory and directory_identity is None:
-            raise ValueError(
-                "User must exist in vw_employee_directory before being used in the application."
+            raise EmployeeDirectoryError(
+                login_identifier,
+                details="Add the user to vw_employee_directory or enable forwarded identity headers "
+                "(TVENDOR_TRUST_FORWARDED_IDENTITY_HEADERS=true) so the app resolves the correct user."
             )
 
         now = self._now()

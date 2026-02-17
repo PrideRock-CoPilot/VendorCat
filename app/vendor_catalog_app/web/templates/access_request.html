@@ -253,6 +253,92 @@
       box-shadow: none;
     }
 
+    .ar-pending-requests {
+      margin-bottom: 28px;
+      padding: 18px 20px;
+      border-radius: 12px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+    }
+
+    .ar-pending-requests h3 {
+      margin: 0 0 16px 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: #1e293b;
+    }
+
+    .ar-pending-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .ar-pending-item {
+      padding: 12px 14px;
+      border-radius: 8px;
+      background: #fff;
+      border: 1px solid #cbd5e1;
+      font-size: 13px;
+    }
+
+    .ar-pending-role,
+    .ar-pending-status,
+    .ar-pending-date,
+    .ar-pending-notes {
+      margin-bottom: 6px;
+      color: #475569;
+    }
+
+    .ar-pending-item:last-child .ar-pending-role,
+    .ar-pending-item:last-child .ar-pending-status,
+    .ar-pending-item:last-child .ar-pending-date,
+    .ar-pending-item:last-child .ar-pending-notes {
+      margin-bottom: 0;
+    }
+
+    .ar-pending-status strong {
+      color: #0f172a;
+    }
+
+    .status-badge {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+
+    .status-pending {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .status-approved {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .status-rejected {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .status-in_progress {
+      background: #e0f2fe;
+      color: #0c4a6e;
+    }
+
+    .ar-pending-notes {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid #e2e8f0;
+      font-style: italic;
+      color: #64748b;
+    }
+
     @media (max-width: 980px) {
       .ar-shell {
         grid-template-columns: 1fr;
@@ -319,6 +405,36 @@
           <div class="flash {{ flash.level }}">{{ flash.message }}</div>
           {% endfor %}
         {% endif %}
+        
+        {% if pending_requests %}
+        <div class="ar-pending-requests">
+          <h3>📋 Your Pending Requests</h3>
+          <div class="ar-pending-list">
+            {% for req in pending_requests %}
+            <div class="ar-pending-item">
+              <div class="ar-pending-role">
+                <strong>Role:</strong> {{ req.requested_payload_json | extract_role }}
+              </div>
+              <div class="ar-pending-status">
+                <strong>Status:</strong> 
+                <span class="status-badge status-{{ req.status_code | lower | replace('_', '-') }}">
+                  {{ req.status_label or (req.status_code | replace('_', ' ') | title) }}
+                </span>
+              </div>
+              <div class="ar-pending-date">
+                <strong>Submitted:</strong> {{ req.created_at | format_date }}
+              </div>
+              {% if req.requestor_notes_latest %}
+              <div class="ar-pending-notes">
+                <strong>Latest Update:</strong> {{ req.requestor_notes_latest }}
+              </div>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        
         <form method="post" action="/access/request" class="ar-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <label for="requested_role">Requested Role

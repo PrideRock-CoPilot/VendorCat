@@ -2,69 +2,207 @@ command:
   - "python"
   - "main.py"
 
-# Edit only these values per environment:
-# - TVENDOR_CATALOG
-# - TVENDOR_SCHEMA
-# Optional override if your environment does not use app resource binding:
-# - DATABRICKS_WAREHOUSE_ID (or DATABRICKS_HTTP_PATH)
+resources:
+  - name: sql-warehouse
+    sqlWarehouse:
+      id: 955428814f623a0e
+
+# App configuration by section. Defaults are commented out for production clarity.
+# Defaults are defined in app/vendor_catalog_app/core/defaults.py and core/config.py.
 env:
+  # Core environment
   - name: "TVENDOR_ENV"
     value: "prod"
   - name: "TVENDOR_SESSION_SECRET"
     value: "prod-session-secret-change-in-production"
-  - name: "TVENDOR_USE_LOCAL_DB"
-    value: "false"
-  - name: "TVENDOR_LOCKED_MODE"
-    value: "false"
-  - name: "TVENDOR_DEV_ALLOW_ALL_ACCESS"
-    value: "false"
   - name: "TVENDOR_CATALOG"
     value: "a1_dlk"
   - name: "TVENDOR_SCHEMA"
     value: "twvendor"
-  - name: "TVENDOR_ENFORCE_PROD_SQL_POLICY"
-    value: "true"
-  - name: "TVENDOR_ALLOWED_WRITE_VERBS"
-    value: "INSERT,UPDATE"
-  - name: "TVENDOR_LOG_LEVEL"
-    value: "INFO"
-  - name: "TVENDOR_LOG_JSON"
-    value: "false"
-  - name: "TVENDOR_LOG_CAPTURE_ROOT"
-    value: "false"
-  - name: "TVENDOR_STARTUP_SPLASH_MIN_DELAY_MS"
-    value: "2000"
-  - name: "TVENDOR_STARTUP_SPLASH_MAX_DELAY_MS"
-    value: "5000"
-  - name: "TVENDOR_LOADING_OVERLAY_MIN_DELAY_MS"
-    value: "2000"
-  - name: "TVENDOR_LOADING_OVERLAY_MAX_DELAY_MS"
-    value: "5000"
-  - name: "TVENDOR_LOADING_OVERLAY_SHOW_DELAY_MS"
-    value: "220"
-  - name: "TVENDOR_LOADING_OVERLAY_SLOW_STATUS_MS"
-    value: "5000"
-  - name: "TVENDOR_LOADING_OVERLAY_SAFETY_MS"
-    value: "12000"
-  - name: "TVENDOR_PERF_LOG_ENABLED"
-    value: "true"
-  - name: "TVENDOR_PERF_RESPONSE_HEADER"
-    value: "true"
-  - name: "TVENDOR_SQL_TRACE_ENABLED"
-    value: "true"
-  - name: "TVENDOR_SLOW_QUERY_MS"
-    value: "250"
-  - name: "TVENDOR_SQL_TRACE_MAX_LEN"
-    value: "220"
-  - name: "TVENDOR_USAGE_LOG_ENABLED"
-    value: "false"
-  - name: "TVENDOR_USAGE_LOG_MIN_INTERVAL_SEC"
-    value: "300"
-  - name: "TVENDOR_USER_DIRECTORY_TOUCH_TTL_SEC"
-    value: "900"
-  - name: "TVENDOR_IDENTITY_SYNC_TTL_SEC"
-    value: "1800"
-  - name: "TVENDOR_TRUST_FORWARDED_IDENTITY_HEADERS"
-    value: "true"
+  # - name: "TVENDOR_FQ_SCHEMA"
+  #   value: "catalog.schema" # default: unset
+  # - name: "TVENDOR_USE_LOCAL_DB"
+  #   value: "false" # default: true in dev/local
+  # - name: "TVENDOR_LOCAL_DB_PATH"
+  #   value: "setup/local_db/twvendor_local.db"
+  # - name: "TVENDOR_LOCKED_MODE"
+  #   value: "false"
+  # - name: "TVENDOR_ENFORCE_PROD_SQL_POLICY"
+  #   value: "true"
+  # - name: "TVENDOR_ALLOWED_WRITE_VERBS"
+  #   value: "INSERT,UPDATE"
+  # - name: "TVENDOR_SCHEMA_BOOTSTRAP_SQL"
+  #   value: "setup/v1_schema/databricks/00_create_v1_schema.sql"
+  # - name: "TVENDOR_SQL_PRELOAD_ON_STARTUP"
+  #   value: "false"
+
+  # Databricks connectivity and auth
+  # Provide either DATABRICKS_HTTP_PATH or DATABRICKS_WAREHOUSE_ID.
+  - name: "DATABRICKS_SERVER_HOSTNAME"
+    value: "dbc-e26a2f07-7a87.cloud.databricks.com"
+  - name: "DATABRICKS_HTTP_PATH"
+    value: "/sql/1.0/warehouses/955428814f623a0e" # explicit fallback if binding is not injected
   - name: "DATABRICKS_WAREHOUSE_ID"
     valueFrom: "sql-warehouse"
+  # - name: "DATABRICKS_TOKEN"
+  #   value: "dapi..."
+  # - name: "DATABRICKS_CLIENT_ID"
+  #   value: "00000000-0000-0000-0000-000000000000"
+  # - name: "DATABRICKS_CLIENT_SECRET"
+  #   value: "secret"
+
+  # Diagnostics
+  - name: "TVENDOR_BOOTSTRAP_DIAGNOSTICS_ENABLED"
+    value: "true" # default: true in dev, false in prod
+  # - name: "TVENDOR_BOOTSTRAP_DIAGNOSTICS_TOKEN"
+  #   value: "your-token" # default: unset
+
+  # Session, security, identity
+  # - name: "TVENDOR_ALLOW_DEFAULT_SESSION_SECRET"
+  #   value: "false"
+  # - name: "TVENDOR_SESSION_HTTPS_ONLY"
+  #   value: "true" # default: true in prod
+  # - name: "TVENDOR_CSRF_ENABLED"
+  #   value: "true" # default: true in prod
+  # - name: "TVENDOR_SECURITY_HEADERS_ENABLED"
+  #   value: "true"
+  # - name: "TVENDOR_CSP_ENABLED"
+  #   value: "true"
+  # - name: "TVENDOR_CSP_POLICY"
+  #   value: "default-src 'self'; ..."
+  - name: "TVENDOR_TRUST_FORWARDED_IDENTITY_HEADERS"
+    value: "true" # enable forwarded identity from Databricks Apps
+  # - name: "TVENDOR_FORWARDED_GROUP_HEADERS"
+  #   value: "x-..." # default: from core/security.py
+  # - name: "TVENDOR_ALLOW_TEST_ROLE_OVERRIDE"
+  #   value: "false" # default: true in dev
+  # - name: "TVENDOR_DEV_ALLOW_ALL_ACCESS"
+  #   value: "false" # default: false
+  # - name: "TVENDOR_TEST_USER"
+  #   value: "dev_admin@example.com" # dev-only
+  # - name: "TVENDOR_IDENTITY_SYNC_TTL_SEC"
+  #   value: "300"
+  # - name: "TVENDOR_POLICY_SNAPSHOT_TTL_SEC"
+  #   value: "300"
+  # - name: "TVENDOR_USER_DIRECTORY_TOUCH_TTL_SEC"
+  #   value: "900"
+
+  # Performance and error handling
+  # - name: "TVENDOR_PERF_LOG_ENABLED"
+  #   value: "false"
+  # - name: "TVENDOR_PERF_RESPONSE_HEADER"
+  #   value: "true"
+  # - name: "TVENDOR_REQUEST_ID_HEADER_ENABLED"
+  #   value: "true"
+  # - name: "TVENDOR_SLOW_QUERY_MS"
+  #   value: "750"
+  # - name: "TVENDOR_SQL_TRACE_ENABLED"
+  #   value: "false"
+  # - name: "TVENDOR_SQL_TRACE_MAX_LEN"
+  #   value: "180"
+  - name: "TVENDOR_ERROR_INCLUDE_DETAILS"
+    value: "true" # include error details during troubleshooting
+
+  # Logging
+  - name: "TVENDOR_LOG_LEVEL"
+    value: "DEBUG" # verbose logs for troubleshooting
+  - name: "TVENDOR_LOG_JSON"
+    value: "true"
+  - name: "TVENDOR_LOG_CAPTURE_ROOT"
+    value: "true"
+
+  # DB caching and pooling
+  # - name: "TVENDOR_QUERY_CACHE_ENABLED"
+  #   value: "true"
+  # - name: "TVENDOR_QUERY_CACHE_TTL_SEC"
+  #   value: "120"
+  # - name: "TVENDOR_QUERY_CACHE_MAX_ENTRIES"
+  #   value: "256"
+  # - name: "TVENDOR_DB_POOL_ENABLED"
+  #   value: "true"
+  # - name: "TVENDOR_DB_POOL_MAX_SIZE"
+  #   value: "8"
+  # - name: "TVENDOR_DB_POOL_ACQUIRE_TIMEOUT_SEC"
+  #   value: "15"
+  # - name: "TVENDOR_DB_POOL_IDLE_TTL_SEC"
+  #   value: "600"
+  # - name: "TVENDOR_REPO_CACHE_ENABLED"
+  #   value: "true"
+  # - name: "TVENDOR_REPO_CACHE_TTL_SEC"
+  #   value: "120"
+  # - name: "TVENDOR_REPO_CACHE_MAX_ENTRIES"
+  #   value: "512"
+
+  # Usage logging
+  # - name: "TVENDOR_USAGE_LOG_ENABLED"
+  #   value: "false" # default: true in dev
+  # - name: "TVENDOR_USAGE_LOG_MIN_INTERVAL_SEC"
+  #   value: "120"
+
+  # Observability and metrics
+  # - name: "TVENDOR_METRICS_ENABLED"
+  #   value: "true"
+  # - name: "TVENDOR_METRICS_PROMETHEUS_ENABLED"
+  #   value: "true"
+  # - name: "TVENDOR_METRICS_PROMETHEUS_PATH"
+  #   value: "/api/metrics"
+  # - name: "TVENDOR_METRICS_ALLOW_UNAUTHENTICATED"
+  #   value: "true" # default: true in dev
+  # - name: "TVENDOR_METRICS_AUTH_TOKEN"
+  #   value: "token"
+  # - name: "TVENDOR_STATSD_ENABLED"
+  #   value: "false"
+  # - name: "TVENDOR_STATSD_HOST"
+  #   value: "127.0.0.1"
+  # - name: "TVENDOR_STATSD_PORT"
+  #   value: "8125"
+  # - name: "TVENDOR_STATSD_PREFIX"
+  #   value: "tvendor"
+  # - name: "TVENDOR_ALERTS_ENABLED"
+  #   value: "true"
+  # - name: "TVENDOR_ALERT_WINDOW_SEC"
+  #   value: "300"
+  # - name: "TVENDOR_ALERT_MIN_REQUESTS"
+  #   value: "20"
+  # - name: "TVENDOR_ALERT_COOLDOWN_SEC"
+  #   value: "300"
+  # - name: "TVENDOR_ALERT_REQUEST_P95_MS"
+  #   value: "0.0"
+  # - name: "TVENDOR_ALERT_ERROR_RATE_PCT"
+  #   value: "0.0"
+  # - name: "TVENDOR_ALERT_DB_AVG_MS"
+  #   value: "0.0"
+
+  # UI timing and loading
+  # - name: "TVENDOR_STARTUP_SPLASH_MIN_DELAY_MS"
+  #   value: "2000"
+  # - name: "TVENDOR_STARTUP_SPLASH_MAX_DELAY_MS"
+  #   value: "5000"
+  # - name: "TVENDOR_LOADING_OVERLAY_MIN_DELAY_MS"
+  #   value: "2000"
+  # - name: "TVENDOR_LOADING_OVERLAY_MAX_DELAY_MS"
+  #   value: "5000"
+  # - name: "TVENDOR_LOADING_OVERLAY_SHOW_DELAY_MS"
+  #   value: "220"
+  # - name: "TVENDOR_LOADING_OVERLAY_SLOW_STATUS_MS"
+  #   value: "5000"
+  # - name: "TVENDOR_LOADING_OVERLAY_SAFETY_MS"
+  #   value: "12000"
+
+  # Databricks reports embedding
+  # - name: "TVENDOR_DATABRICKS_REPORTS_JSON"
+  #   value: "{\"reports\": []}"
+  # - name: "TVENDOR_DATABRICKS_REPORTS_ALLOW_EMBED"
+  #   value: "false"
+  # - name: "TVENDOR_DATABRICKS_REPORTS_ALLOWED_HOSTS"
+  #   value: ""
+
+  # Local DB bootstrap
+  # - name: "TVENDOR_LOCAL_DB_AUTO_INIT"
+  #   value: "true"
+  # - name: "TVENDOR_LOCAL_DB_RESET_ON_START"
+  #   value: "false"
+  # - name: "TVENDOR_LOCAL_DB_SEED"
+  #   value: "false"
+  # - name: "TVENDOR_LOCAL_DB_SEED_PROFILE"
+  #   value: "baseline"

@@ -11,7 +11,6 @@ from vendor_catalog_app.web.core.runtime import get_repo
 from vendor_catalog_app.web.core.template_context import base_template_context
 from vendor_catalog_app.web.core.user_context_service import get_user_context
 from vendor_catalog_app.web.http.flash import add_flash
-from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/access")
 
@@ -35,6 +34,21 @@ def access_request_page(request: Request):
     ensure_session_started(request, user)
     log_page_view(request, user, "Request Access")
     requested_role_options = _allowed_role_options(repo)
+    
+    # Fetch pending access requests for this user
+    pending_requests = []
+    if identity_is_valid:
+        try:
+            pending_requests = repo.list_vendor_change_requests(
+                change_type="request_access",
+                requestor_user_principal=user_principal,
+                status_filter="pending",
+                limit=10,
+            ) or []
+        except Exception:
+            # If query fails, just show the form without pending requests
+            pending_requests = []
+    
     context = base_template_context(
         request=request,
         context=user,
@@ -54,13 +68,13 @@ def access_request_page(request: Request):
                     "In Databricks Apps, verify forwarded identity headers are available."
                 )
             ),
+            "pending_requests": pending_requests,
         },
     )
     return request.app.state.templates.TemplateResponse(request, "access_request.html", context)
 
 
 @router.post("/request")
-@require_permission("access_request")
 async def submit_access_request(request: Request):
     repo = get_repo()
     user = get_user_context(request)

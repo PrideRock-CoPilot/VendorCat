@@ -3,7 +3,7 @@
 <div class="help-layout">
   <aside class="help-nav" aria-label="Help navigation">
     <form method="get" action="/help" class="help-search">
-      <label>
+      <label title="Use search to jump to role-specific steps.">
         Search Help
         <input type="text" name="q" value="{{ search_query or '' }}" placeholder="Search help topics" aria-label="Search help">
       </label>
@@ -58,7 +58,6 @@
           <li><a href="/help/troubleshooting-common-issues">Troubleshooting common issues</a></li>
           <li><a href="/help/demo-outcomes-overview">Track demo outcomes</a></li>
         </ul>
-        <p class="muted">Tip: Use search to jump to role-specific steps.</p>
       </div>
       <div class="help-article-body">
         {{ article_html | safe }}

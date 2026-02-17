@@ -29,6 +29,7 @@ How the system is designed and why.
 
 - **[RBAC & Permissions](architecture/rbac-and-permissions.md)**: Roles, LOB-scoping, mutation patterns, common mistakes
 - **[Data Ownership & Survivorship](architecture/data-ownership-and-survivorship.md)**: Entity ownership matrix, ingestion vs app edits, conflict resolution
+- **[V1 Functional Parity Execution Plan](architecture/14-v1-functional-parity-execution-plan.md)**: No-data-migration plan to preserve all current functionality during V1 build-out
 - **[Existing Architecture Docs](architecture/)**: Domain model, data model, security, ingestion, app architecture, NFRs
 
 ### Operations (Running the System)
@@ -39,6 +40,8 @@ How to build, test, deploy, and monitor the system.
 - **[Migrations & Schema](operations/migrations-and-schema.md)**: Migration workflow, version tracking, Databricks optimization
 - **[Observability & Audit](operations/observability-and-audit.md)**: Logging, metrics, audit retention, alerting
 - **[Security Checklist](operations/security-checklist.md)**: URL validation, XSS, secrets, rate limiting, dependency updates
+- **[Current Application Capabilities, Gaps, and Enhancements](operations/current-application-capabilities-gaps-and-enhancements.md)**: Consolidated current-state and enhancement roadmap
+- **[V1 Functional Parity Checklist](operations/v1-functional-parity-checklist.md)**: Cutover checklist to prevent functionality regressions
 
 ### Roadmap
 
