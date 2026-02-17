@@ -42,6 +42,14 @@ REPORT_TYPES = {
         "label": "Budget vs Actual (Invoices)",
         "description": "Offering-level estimated monthly budget compared with actual invoice run-rate and alert status.",
     },
+    "vendor_warnings": {
+        "label": "Vendor Warnings",
+        "description": "Data-quality and operational warnings recorded against vendors for tracking and governance.",
+    },
+    "vendor_data_quality_overview": {
+        "label": "Vendor Data Quality Overview",
+        "description": "Vendor-level counts and max dates across warning, contract, demo, invoice, ticket, and data-flow tables.",
+    },
 }
 
 VENDOR_LIFECYCLE_STATES = ["all", "draft", "submitted", "in_review", "approved", "active", "suspended", "retired"]
@@ -62,6 +70,8 @@ CHART_PRESETS = {
     "demo_outcomes": {"kind": "bar", "x": "selection_outcome", "y": ROW_COUNT_METRIC},
     "owner_coverage": {"kind": "bar", "x": "owner_principal", "y": ROW_COUNT_METRIC},
     "offering_budget_variance": {"kind": "bar", "x": "offering_name", "y": "variance_amount"},
+    "vendor_warnings": {"kind": "bar", "x": "warning_category", "y": ROW_COUNT_METRIC},
+    "vendor_data_quality_overview": {"kind": "bar", "x": "vendor_display_name", "y": "open_warning_count"},
 }
 
 DATABRICKS_SELECTED_REPORT_PARAM = "dbx_report"
@@ -170,6 +180,20 @@ def _build_report_frame(
             vendor_id=vendor,
             lifecycle_state=lifecycle_state,
             horizon_days=horizon_days,
+            limit=limit,
+        )
+    elif report_type == "vendor_warnings":
+        frame = repo.report_vendor_warnings(
+            search_text=search,
+            vendor_id=vendor,
+            lifecycle_state=lifecycle_state,
+            limit=limit,
+        )
+    elif report_type == "vendor_data_quality_overview":
+        frame = repo.report_vendor_data_quality_overview(
+            search_text=search,
+            vendor_id=vendor,
+            lifecycle_state=lifecycle_state,
             limit=limit,
         )
     else:

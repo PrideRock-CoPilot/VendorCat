@@ -250,8 +250,22 @@ IMPORT_MERGE_REASON_OPTIONS = [
     "other",
 ]
 
+VENDOR_WARNING_CATEGORY_OPTIONS = [
+    "bad_data",
+    "wrong_file_version",
+    "difficult_to_process",
+    "schema_mismatch",
+    "missing_required_fields",
+    "stale_feed",
+    "other",
+]
+
+VENDOR_WARNING_SEVERITY_OPTIONS = ["low", "medium", "high", "critical"]
+VENDOR_WARNING_STATUS_OPTIONS = ["open", "monitoring", "resolved", "dismissed"]
+
 VENDOR_SECTIONS = [
     ("summary", "Summary"),
+    ("warnings", "Warnings"),
     ("ownership", "Ownership"),
     ("projects", "Projects"),
     ("offerings", "Offerings"),

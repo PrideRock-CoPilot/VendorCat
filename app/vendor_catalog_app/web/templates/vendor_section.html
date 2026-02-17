@@ -4,6 +4,7 @@
 {% block content %}
 {% set section_labels = {
   "summary": "Summary",
+  "warnings": "Warnings",
   "ownership": "Ownership",
   "contracts": "Contracts",
   "demos": "Demos",
@@ -218,6 +219,113 @@
       </tbody>
     </table>
   </details>
+</section>
+{% endif %}
+
+{% if section == "warnings" %}
+<section class="card section-divider">
+  <div class="section-header">
+    <div>
+      <h2>Vendor Warnings</h2>
+      <p>Track data quality and operational warning conditions for this vendor.</p>
+    </div>
+    <div class="button-group">
+      <span class="button-link subtle">Open/Monitoring: {{ open_warning_count }}</span>
+      <span class="button-link subtle">Total: {{ warning_count }}</span>
+    </div>
+  </div>
+
+  {% if can_edit and not locked_mode %}
+  <form method="post" action="/vendors/{{ vendor_id }}/warnings/add" class="grid grid-3" style="margin-bottom:12px;">
+    <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/warnings">
+    <label>
+      Warning Category
+      <select name="warning_category" required>
+        {% for option in warning_category_options %}
+        <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Severity
+      <select name="severity" required>
+        {% for option in warning_severity_options %}
+        <option value="{{ option }}">{{ option|title }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Detected At
+      <input type="datetime-local" name="detected_at">
+    </label>
+    <label class="full">
+      Warning Title
+      <input type="text" name="warning_title" maxlength="200" placeholder="Data freshness lag, wrong file version, schema mismatch..." required>
+    </label>
+    <label class="full">
+      Detail
+      <textarea name="warning_detail" rows="2" placeholder="Describe impact, affected records, and mitigation steps."></textarea>
+    </label>
+    <label>
+      Source Table
+      <input type="text" name="source_table" placeholder="core_vendor_offering">
+    </label>
+    <label>
+      Source Version
+      <input type="text" name="source_version" placeholder="v2026.02.17">
+    </label>
+    <label>
+      File Name
+      <input type="text" name="file_name" placeholder="vendor_extract_2026-02-17.csv">
+    </label>
+    <div><button type="submit">Add Warning</button></div>
+  </form>
+  {% endif %}
+
+  <table>
+    <thead>
+      <tr>
+        <th>Detected</th>
+        <th>Status</th>
+        <th>Severity</th>
+        <th>Category</th>
+        <th>Title</th>
+        <th>Source</th>
+        <th>Details</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in warning_rows %}
+      <tr>
+        <td>{{ row.detected_at or row.created_at }}</td>
+        <td>{{ row.warning_status }}</td>
+        <td>{{ row.severity }}</td>
+        <td>{{ row.warning_category }}</td>
+        <td>{{ row.warning_title }}</td>
+        <td>{{ row.source_table or "-" }}{% if row.source_version %} ({{ row.source_version }}){% endif %}{% if row.file_name %}<br><small>{{ row.file_name }}</small>{% endif %}</td>
+        <td>{{ row.warning_detail or "-" }}</td>
+        <td>
+          {% if can_edit and not locked_mode %}
+          <form method="post" action="/vendors/{{ vendor_id }}/warnings/{{ row.warning_id }}/resolve" class="inline-form">
+            <input type="hidden" name="return_to" value="/vendors/{{ vendor_id }}/warnings">
+            <select name="warning_status">
+              {% for option in warning_status_options %}
+              <option value="{{ option }}" {% if option == (row.warning_status or "") %}selected{% endif %}>{{ option|replace('_', ' ')|title }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit">Update</button>
+          </form>
+          {% else %}
+          -
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8">No warnings recorded for this vendor.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </section>
 {% endif %}
 

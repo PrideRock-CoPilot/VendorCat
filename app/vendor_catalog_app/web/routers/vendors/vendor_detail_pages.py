@@ -23,6 +23,9 @@ from vendor_catalog_app.web.routers.vendors.common import (
 from vendor_catalog_app.web.routers.vendors.constants import VENDOR_DEFAULT_RETURN_TO
 from vendor_catalog_app.web.routers.vendors.constants import (
     CONTACT_ADD_REASON_OPTIONS,
+    VENDOR_WARNING_CATEGORY_OPTIONS,
+    VENDOR_WARNING_SEVERITY_OPTIONS,
+    VENDOR_WARNING_STATUS_OPTIONS,
     ORG_ASSIGNMENT_REASON_OPTIONS,
     OWNER_ADD_REASON_OPTIONS,
 )
@@ -113,6 +116,40 @@ def vendor_summary_page(request: Request, vendor_id: str, return_to: str = VENDO
             "spend_trend_points": trend_points,
             "spend_trend_plot_rows": spend_trend_plot_rows,
             "raw_fields": raw_fields,
+        },
+    )
+    return request.app.state.templates.TemplateResponse(request, "vendor_section.html", context)
+
+
+@router.get("/{vendor_id}/warnings")
+def vendor_warnings_page(request: Request, vendor_id: str, return_to: str = VENDOR_DEFAULT_RETURN_TO):
+    repo = get_repo()
+    base = _vendor_base_context(repo, request, vendor_id, "warnings", return_to)
+    if base is None:
+        return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
+
+    warnings_rows = repo.list_vendor_warnings(vendor_id, status="all").to_dict("records")
+    open_statuses = {"open", "monitoring"}
+    open_warning_count = sum(1 for row in warnings_rows if str(row.get("warning_status") or "").strip().lower() in open_statuses)
+
+    context = base_template_context(
+        request=request,
+        context=base["user"],
+        title=f"{base['display_name']} - Warnings",
+        active_nav="vendors",
+        extra={
+            "section": "warnings",
+            "vendor_id": vendor_id,
+            "vendor_display_name": base["display_name"],
+            "return_to": base["return_to"],
+            "vendor_nav": base["vendor_nav"],
+            "summary": base["summary"],
+            "warning_rows": warnings_rows,
+            "warning_count": len(warnings_rows),
+            "open_warning_count": open_warning_count,
+            "warning_category_options": VENDOR_WARNING_CATEGORY_OPTIONS,
+            "warning_severity_options": VENDOR_WARNING_SEVERITY_OPTIONS,
+            "warning_status_options": VENDOR_WARNING_STATUS_OPTIONS,
         },
     )
     return request.app.state.templates.TemplateResponse(request, "vendor_section.html", context)
@@ -281,6 +318,114 @@ async def update_vendor_ownership_lob_submit(request: Request, vendor_id: str):
         )
     except Exception as exc:
         add_flash(request, f"Could not update Line of Business: {exc}", "error")
+    return RedirectResponse(url=return_to, status_code=303)
+
+
+@router.post("/{vendor_id}/warnings/add")
+@require_permission("vendor_edit")
+async def add_vendor_warning_submit(request: Request, vendor_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", f"/vendors/{vendor_id}/warnings")))
+
+    warning_category = str(form.get("warning_category", "")).strip().lower()
+    severity = str(form.get("severity", "")).strip().lower()
+    warning_title = str(form.get("warning_title", "")).strip()
+    warning_detail = str(form.get("warning_detail", "")).strip()
+    source_table = str(form.get("source_table", "")).strip()
+    source_version = str(form.get("source_version", "")).strip()
+    file_name = str(form.get("file_name", "")).strip()
+    detected_at = str(form.get("detected_at", "")).strip()
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+
+    if warning_category not in set(VENDOR_WARNING_CATEGORY_OPTIONS):
+        add_flash(request, "Warning category is invalid.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if severity not in set(VENDOR_WARNING_SEVERITY_OPTIONS):
+        add_flash(request, "Warning severity is invalid.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not warning_title:
+        add_flash(request, "Warning title is required.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+
+    try:
+        warning_id = repo.create_vendor_warning(
+            vendor_id=vendor_id,
+            actor_user_principal=user.user_principal,
+            warning_category=warning_category,
+            severity=severity,
+            warning_title=warning_title,
+            warning_detail=warning_detail,
+            source_table=source_table,
+            source_version=source_version,
+            file_name=file_name,
+            detected_at=detected_at,
+        )
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_warnings",
+            event_type="add_vendor_warning",
+            payload={
+                "vendor_id": vendor_id,
+                "warning_id": warning_id,
+                "warning_category": warning_category,
+                "severity": severity,
+            },
+        )
+        add_flash(request, f"Warning added: {warning_id}", "success")
+    except Exception as exc:
+        add_flash(request, f"Could not add warning: {exc}", "error")
+
+    return RedirectResponse(url=return_to, status_code=303)
+
+
+@router.post("/{vendor_id}/warnings/{warning_id}/resolve")
+@require_permission("vendor_edit")
+async def resolve_vendor_warning_submit(request: Request, vendor_id: str, warning_id: str):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    return_to = _safe_return_to(str(form.get("return_to", f"/vendors/{vendor_id}/warnings")))
+    warning_status = str(form.get("warning_status", "resolved")).strip().lower() or "resolved"
+
+    if _write_blocked(user):
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not user.can_edit:
+        add_flash(request, "You do not have edit permission.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if warning_status not in set(VENDOR_WARNING_STATUS_OPTIONS):
+        add_flash(request, "Warning status is invalid.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+
+    try:
+        repo.resolve_vendor_warning(
+            vendor_id=vendor_id,
+            warning_id=warning_id,
+            actor_user_principal=user.user_principal,
+            new_status=warning_status,
+        )
+        repo.log_usage_event(
+            user_principal=user.user_principal,
+            page_name="vendor_warnings",
+            event_type="resolve_vendor_warning",
+            payload={
+                "vendor_id": vendor_id,
+                "warning_id": warning_id,
+                "warning_status": warning_status,
+            },
+        )
+        add_flash(request, "Warning status updated.", "success")
+    except Exception as exc:
+        add_flash(request, f"Could not update warning: {exc}", "error")
+
     return RedirectResponse(url=return_to, status_code=303)
 
 

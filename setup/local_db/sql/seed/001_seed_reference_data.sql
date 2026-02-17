@@ -14,6 +14,7 @@ DELETE FROM app_onboarding_task;
 DELETE FROM app_onboarding_request;
 DELETE FROM app_document_link;
 DELETE FROM app_vendor_change_request;
+DELETE FROM app_vendor_warning;
 DELETE FROM app_note;
 DELETE FROM app_offering_data_flow;
 DELETE FROM app_offering_ticket;
@@ -87,6 +88,15 @@ INSERT INTO core_vendor (vendor_id, legal_name, display_name, lifecycle_state, o
 ('vnd-001', 'Microsoft Corporation', 'Microsoft', 'active', 'IT-ENT', 'medium', 'PeopleSoft', 'ps-v-1001', 'b-20260201-01', '2026-02-01 02:00:00', '2026-02-01 10:00:00', 'seed:system'),
 ('vnd-002', 'Salesforce, Inc.', 'Salesforce', 'active', 'SALES-OPS', 'low', 'Zycus', 'zy-v-7721', 'b-20260129-01', '2026-01-29 01:30:00', '2026-01-29 09:15:00', 'seed:system'),
 ('vnd-003', 'Example Legacy Vendor LLC', 'Legacy Vendor', 'retired', 'FIN-AP', 'high', 'Spreadsheet', 'xls-row-44', 'b-20251220-01', '2025-12-20 08:00:00', '2025-12-20 16:30:00', 'seed:system');
+
+INSERT INTO app_vendor_warning (
+  warning_id, vendor_id, warning_category, severity, warning_status, warning_title, warning_detail,
+  source_table, source_version, file_name, detected_at, resolved_at,
+  created_at, created_by, updated_at, updated_by
+) VALUES
+('warn-001', 'vnd-001', 'data_quality', 'high', 'open', 'Stale vendor extract detected', 'Latest source extract is older than 14 days for primary vendor feed.', 'src_peoplesoft_vendor_raw', 'v2026.02', 'peoplesoft_vendor_extract_20260115.csv', '2026-02-01 08:00:00', NULL, '2026-02-01 08:05:00', 'seed:system', '2026-02-01 08:05:00', 'seed:system'),
+('warn-002', 'vnd-002', 'compliance', 'medium', 'open', 'Missing support contact domain validation', 'Support contact email domain does not match approved corporate vendor domains.', 'core_vendor_contact', 'v2026.01', 'vendor_contact_audit_20260129.csv', '2026-01-29 10:20:00', NULL, '2026-01-29 10:25:00', 'seed:system', '2026-01-29 10:25:00', 'seed:system'),
+('warn-003', 'vnd-003', 'operational', 'low', 'resolved', 'Legacy owner assignment inactive', 'Primary legacy owner account was inactive and reassigned.', 'core_vendor_business_owner', 'v2025.12', 'legacy_owner_review_20251220.csv', '2025-12-20 12:00:00', '2025-12-21 09:30:00', '2025-12-20 12:10:00', 'seed:system', '2025-12-21 09:30:00', 'seed:system');
 
 INSERT INTO core_vendor_identifier (vendor_identifier_id, vendor_id, identifier_type, identifier_value, is_primary, country_code, updated_at, updated_by) VALUES
 ('vid-001', 'vnd-001', 'duns', '123456789', 1, 'US', '2026-02-01 10:00:00', 'seed:system'),

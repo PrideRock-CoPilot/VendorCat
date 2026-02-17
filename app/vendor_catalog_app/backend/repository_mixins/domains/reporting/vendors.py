@@ -344,6 +344,171 @@ class RepositoryReportingVendorsMixin:
             core_vendor_demo=self._table("core_vendor_demo"),
         )
 
+    def list_vendor_warnings(self, vendor_id: str, *, status: str = "all") -> pd.DataFrame:
+        normalized_status = str(status or "all").strip().lower()
+        status_filter_disabled = "1=1" if normalized_status in {"", "all"} else "1=0"
+        status_value = normalized_status if normalized_status not in {"", "all"} else "open"
+        return self._query_file(
+            "ingestion/select_vendor_warnings.sql",
+            params=(vendor_id, status_value),
+            status_filter_disabled=status_filter_disabled,
+            columns=[
+                "warning_id",
+                "vendor_id",
+                "warning_category",
+                "severity",
+                "warning_status",
+                "warning_title",
+                "warning_detail",
+                "source_table",
+                "source_version",
+                "file_name",
+                "detected_at",
+                "resolved_at",
+                "created_at",
+                "created_by",
+                "updated_at",
+                "updated_by",
+            ],
+            app_vendor_warning=self._table("app_vendor_warning"),
+        )
+
+    def create_vendor_warning(
+        self,
+        *,
+        vendor_id: str,
+        actor_user_principal: str,
+        warning_category: str,
+        severity: str,
+        warning_title: str,
+        warning_detail: str | None = None,
+        source_table: str | None = None,
+        source_version: str | None = None,
+        file_name: str | None = None,
+        detected_at: str | None = None,
+    ) -> str:
+        profile = self.get_vendor_profile(vendor_id)
+        if profile.empty:
+            raise ValueError("Vendor not found.")
+
+        category_value = str(warning_category or "").strip().lower()
+        if not category_value:
+            raise ValueError("Warning category is required.")
+        severity_value = str(severity or "").strip().lower()
+        if severity_value not in {"low", "medium", "high", "critical"}:
+            raise ValueError("Severity must be one of: low, medium, high, critical.")
+        title_value = str(warning_title or "").strip()
+        if not title_value:
+            raise ValueError("Warning title is required.")
+
+        detected_value = str(detected_at or "").strip()
+        detected_ts = None
+        if detected_value:
+            parsed_detected = pd.to_datetime(detected_value, errors="coerce", utc=True)
+            if pd.isna(parsed_detected):
+                raise ValueError("Detected date must be a valid date/time.")
+            detected_ts = parsed_detected.to_pydatetime()
+
+        warning_id = self._new_id("vwrn")
+        now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
+        status_value = "open"
+
+        row = {
+            "warning_id": warning_id,
+            "vendor_id": vendor_id,
+            "warning_category": category_value,
+            "severity": severity_value,
+            "warning_status": status_value,
+            "warning_title": title_value,
+            "warning_detail": str(warning_detail or "").strip() or None,
+            "source_table": str(source_table or "").strip() or None,
+            "source_version": str(source_version or "").strip() or None,
+            "file_name": str(file_name or "").strip() or None,
+            "detected_at": detected_ts.isoformat() if detected_ts else None,
+            "resolved_at": None,
+            "created_at": now.isoformat(),
+            "created_by": actor_ref,
+            "updated_at": now.isoformat(),
+            "updated_by": actor_ref,
+        }
+
+        self._execute_file(
+            "inserts/create_vendor_warning.sql",
+            params=(
+                warning_id,
+                vendor_id,
+                row["warning_category"],
+                row["severity"],
+                row["warning_status"],
+                row["warning_title"],
+                row["warning_detail"],
+                row["source_table"],
+                row["source_version"],
+                row["file_name"],
+                detected_ts,
+                None,
+                now,
+                actor_ref,
+                now,
+                actor_ref,
+            ),
+            app_vendor_warning=self._table("app_vendor_warning"),
+        )
+        self._write_audit_entity_change(
+            entity_name="app_vendor_warning",
+            entity_id=warning_id,
+            action_type="insert",
+            actor_user_principal=actor_user_principal,
+            before_json=None,
+            after_json=row,
+            request_id=None,
+        )
+        return warning_id
+
+    def resolve_vendor_warning(
+        self,
+        *,
+        vendor_id: str,
+        warning_id: str,
+        actor_user_principal: str,
+        new_status: str = "resolved",
+    ) -> None:
+        status_value = str(new_status or "resolved").strip().lower()
+        if status_value not in {"resolved", "dismissed", "monitoring", "open"}:
+            raise ValueError("Warning status must be one of: open, monitoring, resolved, dismissed.")
+
+        warnings = self.list_vendor_warnings(vendor_id, status="all")
+        target = warnings[warnings["warning_id"].astype(str) == str(warning_id)]
+        if target.empty:
+            raise ValueError("Warning not found for this vendor.")
+
+        before = target.iloc[0].to_dict()
+        now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
+        resolved_at = now if status_value in {"resolved", "dismissed"} else None
+
+        self._execute_file(
+            "updates/resolve_vendor_warning.sql",
+            params=(status_value, resolved_at, now, actor_ref, warning_id, vendor_id),
+            app_vendor_warning=self._table("app_vendor_warning"),
+        )
+
+        after = dict(before)
+        after["warning_status"] = status_value
+        after["resolved_at"] = resolved_at.isoformat() if resolved_at else None
+        after["updated_at"] = now.isoformat()
+        after["updated_by"] = actor_ref
+        self._write_audit_entity_change(
+            entity_name="app_vendor_warning",
+            entity_id=str(warning_id),
+            action_type="update",
+            actor_user_principal=actor_user_principal,
+            before_json=before,
+            after_json=after,
+            request_id=None,
+        )
+
     def get_vendor_change_requests(self, vendor_id: str) -> pd.DataFrame:
         out = self._query_file(
             "ingestion/select_vendor_change_requests.sql",

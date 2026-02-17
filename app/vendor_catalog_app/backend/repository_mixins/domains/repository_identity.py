@@ -172,10 +172,16 @@ class RepositoryIdentityMixin:
         payload = self._serialize_payload(setting_value)
         try:
             self._execute_file(
+                "updates/delete_user_setting.sql",
+                params=(user_ref, setting_key),
+                app_user_settings=self._table("app_user_settings"),
+            )
+            self._execute_file(
                 "inserts/save_user_setting.sql",
                 params=(str(uuid.uuid4()), user_ref, setting_key, payload, now, user_ref),
                 app_user_settings=self._table("app_user_settings"),
             )
+            self._cache_clear()
         except (DataExecutionError, DataConnectionError):
             LOGGER.debug("Failed to save user setting '%s' for '%s'.", setting_key, user_principal, exc_info=True)
 

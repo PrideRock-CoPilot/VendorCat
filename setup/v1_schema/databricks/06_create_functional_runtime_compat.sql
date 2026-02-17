@@ -289,6 +289,25 @@ CREATE TABLE IF NOT EXISTS app_note (
   created_by STRING NOT NULL
 ) USING DELTA;
 
+CREATE TABLE IF NOT EXISTS app_vendor_warning (
+  warning_id STRING,
+  vendor_id STRING NOT NULL,
+  warning_category STRING NOT NULL,
+  severity STRING NOT NULL,
+  warning_status STRING NOT NULL,
+  warning_title STRING NOT NULL,
+  warning_detail STRING,
+  source_table STRING,
+  source_version STRING,
+  file_name STRING,
+  detected_at STRING,
+  resolved_at STRING,
+  created_at STRING NOT NULL,
+  created_by STRING NOT NULL,
+  updated_at STRING NOT NULL,
+  updated_by STRING NOT NULL
+) USING DELTA;
+
 CREATE TABLE IF NOT EXISTS app_employee_directory (
   login_identifier STRING,
   email STRING NOT NULL,

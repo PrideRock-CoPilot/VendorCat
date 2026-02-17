@@ -1,5 +1,8 @@
 ﻿README.md
 app.dev_local.yaml
+setup/**
+*.db
+**/*.db
 **/__pycache__/**
 **/*.pyc
 **/*.pyo

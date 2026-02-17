@@ -327,6 +327,162 @@ class RepositoryReportingPortfolioMixin:
         out["overall_score"] = pd.to_numeric(out.get("overall_score"), errors="coerce")
         return out[columns].sort_values("demo_date", ascending=False).head(limit)
 
+    def report_vendor_warnings(
+        self,
+        *,
+        search_text: str = "",
+        vendor_id: str = "all",
+        lifecycle_state: str = "all",
+        limit: int = 500,
+    ) -> pd.DataFrame:
+        columns = [
+            "warning_id",
+            "vendor_id",
+            "vendor_display_name",
+            "lifecycle_state",
+            "owner_org_id",
+            "risk_tier",
+            "warning_category",
+            "severity",
+            "warning_status",
+            "warning_title",
+            "warning_detail",
+            "source_table",
+            "source_version",
+            "file_name",
+            "detected_at",
+            "resolved_at",
+            "updated_at",
+            "updated_by",
+        ]
+        limit = max(50, min(limit, 5000))
+        where_parts = ["1 = 1"]
+        params: list[Any] = []
+
+        if vendor_id != "all":
+            where_parts.append("w.vendor_id = %s")
+            params.append(str(vendor_id))
+
+        if lifecycle_state != "all":
+            where_parts.append("lower(coalesce(v.lifecycle_state, '')) = lower(%s)")
+            params.append(str(lifecycle_state))
+
+        if search_text.strip():
+            like = f"%{search_text.strip()}%"
+            where_parts.append(
+                "("
+                "lower(coalesce(v.vendor_id, '')) LIKE lower(%s)"
+                " OR lower(coalesce(v.display_name, v.legal_name, '')) LIKE lower(%s)"
+                " OR lower(coalesce(w.warning_category, '')) LIKE lower(%s)"
+                " OR lower(coalesce(w.severity, '')) LIKE lower(%s)"
+                " OR lower(coalesce(w.warning_status, '')) LIKE lower(%s)"
+                " OR lower(coalesce(w.warning_title, '')) LIKE lower(%s)"
+                " OR lower(coalesce(w.warning_detail, '')) LIKE lower(%s)"
+                " OR lower(coalesce(w.source_table, '')) LIKE lower(%s)"
+                " OR lower(coalesce(w.source_version, '')) LIKE lower(%s)"
+                " OR lower(coalesce(w.file_name, '')) LIKE lower(%s)"
+                ")"
+            )
+            params.extend([like] * 10)
+
+        out = self._query_file(
+            "reporting/report_vendor_warnings.sql",
+            params=tuple(params) if params else None,
+            where_clause=" AND ".join(where_parts),
+            limit=limit,
+            columns=columns,
+            app_vendor_warning=self._table("app_vendor_warning"),
+            core_vendor=self._table("core_vendor"),
+        )
+        if out.empty:
+            return pd.DataFrame(columns=columns)
+        return out[columns]
+
+    def report_vendor_data_quality_overview(
+        self,
+        *,
+        search_text: str = "",
+        vendor_id: str = "all",
+        lifecycle_state: str = "all",
+        limit: int = 500,
+    ) -> pd.DataFrame:
+        columns = [
+            "vendor_id",
+            "vendor_display_name",
+            "lifecycle_state",
+            "owner_org_id",
+            "risk_tier",
+            "warning_count",
+            "open_warning_count",
+            "latest_warning_at",
+            "offering_count",
+            "latest_offering_updated_at",
+            "contract_count",
+            "latest_contract_updated_at",
+            "demo_count",
+            "latest_demo_updated_at",
+            "invoice_count",
+            "latest_invoice_date",
+            "ticket_count",
+            "latest_ticket_updated_at",
+            "data_flow_count",
+            "latest_data_flow_updated_at",
+        ]
+        limit = max(50, min(limit, 5000))
+        where_parts = ["1 = 1"]
+        params: list[Any] = []
+
+        if vendor_id != "all":
+            where_parts.append("v.vendor_id = %s")
+            params.append(str(vendor_id))
+
+        if lifecycle_state != "all":
+            where_parts.append("lower(coalesce(v.lifecycle_state, '')) = lower(%s)")
+            params.append(str(lifecycle_state))
+
+        if search_text.strip():
+            like = f"%{search_text.strip()}%"
+            where_parts.append(
+                "("
+                "lower(coalesce(v.vendor_id, '')) LIKE lower(%s)"
+                " OR lower(coalesce(v.display_name, v.legal_name, '')) LIKE lower(%s)"
+                " OR lower(coalesce(v.owner_org_id, '')) LIKE lower(%s)"
+                " OR lower(coalesce(v.risk_tier, '')) LIKE lower(%s)"
+                ")"
+            )
+            params.extend([like] * 4)
+
+        out = self._query_file(
+            "reporting/report_vendor_data_quality_overview.sql",
+            params=tuple(params) if params else None,
+            where_clause=" AND ".join(where_parts),
+            limit=limit,
+            columns=columns,
+            core_vendor=self._table("core_vendor"),
+            app_vendor_warning=self._table("app_vendor_warning"),
+            core_vendor_offering=self._table("core_vendor_offering"),
+            core_contract=self._table("core_contract"),
+            core_vendor_demo=self._table("core_vendor_demo"),
+            app_offering_invoice=self._table("app_offering_invoice"),
+            app_offering_ticket=self._table("app_offering_ticket"),
+            app_offering_data_flow=self._table("app_offering_data_flow"),
+        )
+        if out.empty:
+            return pd.DataFrame(columns=columns)
+
+        for count_col in [
+            "warning_count",
+            "open_warning_count",
+            "offering_count",
+            "contract_count",
+            "demo_count",
+            "invoice_count",
+            "ticket_count",
+            "data_flow_count",
+        ]:
+            out[count_col] = pd.to_numeric(out.get(count_col), errors="coerce").fillna(0).astype(int)
+        return out[columns]
+
     def report_owner_coverage(
         self,
         *,

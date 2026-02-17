@@ -9,7 +9,7 @@ SELECT
   display_name,
   active_flag
 FROM {employee_directory_view}
-WHERE coalesce(active_flag, 'A') IN ('A', 'active', 'true', '1')
+WHERE lower(coalesce(cast(active_flag as text), '1')) IN ('1', 'a', 'active', 'true')
   AND (
     lower(coalesce(login_identifier, '')) = lower(%s)
     OR lower(coalesce(email, '')) = lower(%s)

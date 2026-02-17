@@ -10,6 +10,9 @@ resources:
 # App configuration by section. Defaults are commented out for production clarity.
 # Defaults are defined in app/vendor_catalog_app/core/defaults.py and core/config.py.
 env:
+  # Build cache buster - forces fresh deployment
+  - name: "TVENDOR_BUILD_VERSION"
+    value: "20260217-185800"
   # Core environment
   - name: "TVENDOR_ENV"
     value: "prod"

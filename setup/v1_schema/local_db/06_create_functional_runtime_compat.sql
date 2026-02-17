@@ -317,6 +317,26 @@ CREATE TABLE IF NOT EXISTS app_note (
   created_by TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS app_vendor_warning (
+  warning_id TEXT PRIMARY KEY,
+  vendor_id TEXT NOT NULL,
+  warning_category TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  warning_status TEXT NOT NULL,
+  warning_title TEXT NOT NULL,
+  warning_detail TEXT,
+  source_table TEXT,
+  source_version TEXT,
+  file_name TEXT,
+  detected_at TEXT,
+  resolved_at TEXT,
+  created_at TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  FOREIGN KEY (vendor_id) REFERENCES core_vendor(vendor_id)
+);
+
 CREATE TABLE IF NOT EXISTS app_employee_directory (
   login_identifier TEXT PRIMARY KEY,
   email TEXT NOT NULL,
