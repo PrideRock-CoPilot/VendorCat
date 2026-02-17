@@ -12,6 +12,7 @@
   <div class="app-chrome">
     <header class="topbar">
       <div class="brand">Vendor Catalog</div>
+      <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode">🌙</button>
       <div class="user-meta">
         <span class="pill" title="{{ user_principal }}">{{ user_display_name }}</span>
         {% for role in roles %}
@@ -52,6 +53,7 @@
       {% if can_report %}
       <a class="{{ 'active' if active_nav == 'reports' else '' }}" href="/reports">Reports</a>
       {% endif %}
+      <a class="{{ 'active' if active_nav == 'help' else '' }}" href="/help">Help</a>
       {% if has_admin_rights %}
       <a class="{{ 'active' if active_nav == 'admin' else '' }}" href="/admin">Admin</a>
       {% endif %}

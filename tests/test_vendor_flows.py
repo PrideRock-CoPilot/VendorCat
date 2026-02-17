@@ -86,7 +86,7 @@ def test_create_vendor_validation_keeps_values_and_marks_owner_org(client: TestC
         follow_redirects=False,
     )
     assert response.status_code == 400
-    assert "Enter a new Owner Org ID." in response.text
+    assert "Enter a new Line of Business." in response.text
     assert "Validation Vendor LLC" in response.text
     assert 'class="input-error"' in response.text
 
@@ -330,7 +330,11 @@ def test_typeahead_vendor_offering_and_project_api(client: TestClient) -> None:
     user_response = client.get("/api/users/search?q=admin&limit=10")
     assert user_response.status_code == 200
     user_payload = user_response.json()
-    assert any(str(row.get("login_identifier")) == "admin@example.com" for row in user_payload.get("items", []))
+    user_items = user_payload.get("items", [])
+    admin_row = next((row for row in user_items if str(row.get("login_identifier")) == "admin@example.com"), None)
+    assert admin_row is not None
+    assert str(admin_row.get("display_name") or "").strip() != ""
+    assert str(admin_row.get("email") or "").strip() != ""
 
     contract_response = client.get("/api/contracts/search?q=MS-2024&limit=10")
     assert contract_response.status_code == 200
@@ -338,6 +342,26 @@ def test_typeahead_vendor_offering_and_project_api(client: TestClient) -> None:
     contract_items = contract_payload.get("items", [])
     assert any(str(row.get("contract_id")) == "ctr-101" for row in contract_items)
     assert any("MS-2024-001" in str(row.get("label", "")) for row in contract_items)
+
+    contact_seed = client.post(
+        "/vendors/vnd-002/contacts/add",
+        data={
+            "return_to": "/vendors/vnd-002/ownership",
+            "full_name": "Taylor Ops",
+            "contact_type": "support",
+            "email": "taylor.ops@example.com",
+            "phone": "555-0999",
+            "reason": "Seed contact for typeahead.",
+        },
+        follow_redirects=False,
+    )
+    assert contact_seed.status_code == 303
+
+    contact_response = client.get("/api/contacts/search?q=taylor&limit=10")
+    assert contact_response.status_code == 200
+    contact_payload = contact_response.json()
+    contact_items = contact_payload.get("items", [])
+    assert any(str(row.get("full_name") or "").strip() == "Taylor Ops" for row in contact_items)
 
 
 def test_contract_and_demo_forms_use_expected_inputs(client: TestClient) -> None:
@@ -702,7 +726,7 @@ def test_vendor_summary_falls_back_to_draft_offering_lob_and_service_type_values
     assert "Platform" in summary.text
 
 
-def test_vendor_ownership_allows_adding_owner_assignment_and_contact(client: TestClient) -> None:
+def test_vendor_ownership_allows_adding_owner_lob_and_contact(client: TestClient) -> None:
     owner_response = client.post(
         "/vendors/vnd-002/owners/add",
         data={
@@ -715,17 +739,16 @@ def test_vendor_ownership_allows_adding_owner_assignment_and_contact(client: Tes
     )
     assert owner_response.status_code == 303
 
-    assignment_response = client.post(
-        "/vendors/vnd-002/org-assignments/add",
+    lob_response = client.post(
+        "/vendors/vnd-002/ownership/lob/update",
         data={
             "return_to": "/vendors/vnd-002/ownership",
-            "org_id": "FIN-OPS",
-            "assignment_type": "consumer",
-            "reason": "Finance now consumes this vendor.",
+            "lob": "Finance",
+            "reason": "Set single LOB org value.",
         },
         follow_redirects=False,
     )
-    assert assignment_response.status_code == 303
+    assert lob_response.status_code == 303
 
     contact_response = client.post(
         "/vendors/vnd-002/contacts/add",
@@ -744,8 +767,168 @@ def test_vendor_ownership_allows_adding_owner_assignment_and_contact(client: Tes
     ownership_page = client.get("/vendors/vnd-002/ownership?return_to=%2Fvendors")
     assert ownership_page.status_code == 200
     assert "owner@example.com" in ownership_page.text
-    assert "FIN-OPS" in ownership_page.text
+    assert "Line of Business" in ownership_page.text
+    assert "Finance" in ownership_page.text
     assert "Taylor Ops" in ownership_page.text
+    assert "vendor-owner-search-filter" in ownership_page.text
+    assert "vendor-contact-search-filter" in ownership_page.text
+    assert "vendor-owner-add-template" in ownership_page.text
+    assert "vendor-contact-add-template" in ownership_page.text
+    assert "vendor-lob-update-template" in ownership_page.text
+    assert 'type="checkbox"' in ownership_page.text
+    assert 'name="primary_lob"' in ownership_page.text
+    assert 'name="lobs"' in ownership_page.text
+    assert 'name="reason_code"' in ownership_page.text
+
+
+def test_vendor_ownership_lob_update_supports_explicit_primary_lob(client: TestClient) -> None:
+    response = client.post(
+        "/vendors/vnd-002/ownership/lob/update",
+        data={
+            "return_to": "/vendors/vnd-002/ownership",
+            "lobs": ["Finance", "Security"],
+            "primary_lob": "Security",
+            "reason_code": "ownership_alignment",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    profile = get_repo().get_vendor_profile("vnd-002")
+    assert not profile.empty
+    assert str(profile.iloc[0].get("owner_org_id") or "").strip() == "Security"
+
+    assignments = get_repo().get_vendor_org_assignments("vnd-002")
+    active_assignments = assignments[
+        ~assignments["active_flag"].astype(str).str.strip().str.lower().isin({"0", "false", "no", "n"})
+    ]
+    active_lobs = {str(item).strip() for item in active_assignments["org_id"].tolist() if str(item).strip()}
+    assert {"Finance", "Security"}.issubset(active_lobs)
+
+
+def test_vendor_ownership_lobs_render_primary_then_alphabetical(client: TestClient) -> None:
+    response = client.post(
+        "/vendors/vnd-002/ownership/lob/update",
+        data={
+            "return_to": "/vendors/vnd-002/ownership",
+            "lobs": ["Security", "Finance", "Enterprise"],
+            "primary_lob": "Security",
+            "reason_code": "ownership_alignment",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    ownership_page = client.get("/vendors/vnd-002/ownership?return_to=%2Fvendors")
+    assert ownership_page.status_code == 200
+
+    lob_section_match = re.search(
+        r"Lines of Business</th>.*?<ul[^>]*>(.*?)</ul>",
+        ownership_page.text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    assert lob_section_match is not None
+
+    rendered_items = re.findall(r"<li>\s*(.*?)\s*</li>", lob_section_match.group(1), flags=re.IGNORECASE | re.DOTALL)
+    normalized_items = [re.sub(r"\s+", " ", item).strip() for item in rendered_items]
+    assert normalized_items
+    assert normalized_items[0] == "Security (Primary)"
+
+    trailing_items = normalized_items[1:]
+    trailing_lobs = [item.replace(" (Primary)", "") for item in trailing_items]
+    assert trailing_lobs == sorted(trailing_lobs, key=str.lower)
+    assert "Enterprise" in trailing_lobs
+    assert "Finance" in trailing_lobs
+
+
+def test_vendor_ownership_drawer_prepopulates_active_lobs_and_bulk_controls(client: TestClient) -> None:
+    response = client.post(
+        "/vendors/vnd-002/ownership/lob/update",
+        data={
+            "return_to": "/vendors/vnd-002/ownership",
+            "lobs": ["Security", "Finance", "Enterprise"],
+            "primary_lob": "Security",
+            "reason_code": "ownership_alignment",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    ownership_page = client.get("/vendors/vnd-002/ownership?return_to=%2Fvendors")
+    assert ownership_page.status_code == 200
+    assert "data-vendor-select-all-lobs" in ownership_page.text
+    assert "data-vendor-clear-all-lobs" in ownership_page.text
+
+    assignments = get_repo().get_vendor_org_assignments("vnd-002")
+    active_assignments = assignments[
+        ~assignments["active_flag"].astype(str).str.strip().str.lower().isin({"0", "false", "no", "n"})
+    ]
+    active_lobs = sorted({str(item).strip() for item in active_assignments["org_id"].tolist() if str(item).strip()})
+    assert active_lobs
+
+    rendered_lob_values = set(
+        re.findall(r'name="lobs"[^>]*value="([^"]+)"', ownership_page.text, flags=re.IGNORECASE)
+    )
+    assert rendered_lob_values
+
+    for lob_value in active_lobs:
+        if lob_value not in rendered_lob_values:
+            continue
+        checked_pattern = re.compile(
+            rf'name="lobs"[^>]*value="{re.escape(lob_value)}"[^>]*checked|value="{re.escape(lob_value)}"[^>]*name="lobs"[^>]*checked',
+            flags=re.IGNORECASE,
+        )
+        assert checked_pattern.search(ownership_page.text) is not None
+
+    unmanaged_lobs = [lob_value for lob_value in active_lobs if lob_value not in rendered_lob_values]
+    for lob_value in unmanaged_lobs:
+        assert f"{lob_value} (Current, unmanaged)" in ownership_page.text
+
+
+def test_vendor_ownership_lob_update_allows_no_primary_lob(client: TestClient) -> None:
+    response = client.post(
+        "/vendors/vnd-002/ownership/lob/update",
+        data={
+            "return_to": "/vendors/vnd-002/ownership",
+            "lobs": ["Finance", "Security"],
+            "primary_lob": "",
+            "reason_code": "ownership_alignment",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    profile = get_repo().get_vendor_profile("vnd-002")
+    assert not profile.empty
+    owner_org_value = str(profile.iloc[0].get("owner_org_id") or "").strip()
+    assert owner_org_value == ""
+
+    assignments = get_repo().get_vendor_org_assignments("vnd-002")
+    active_assignments = assignments[
+        ~assignments["active_flag"].astype(str).str.strip().str.lower().isin({"0", "false", "no", "n"})
+    ]
+    active_lobs = {str(item).strip() for item in active_assignments["org_id"].tolist() if str(item).strip()}
+    assert {"Finance", "Security"}.issubset(active_lobs)
+
+
+def test_vendor_contact_add_supports_name_fallback_from_email(client: TestClient) -> None:
+    response = client.post(
+        "/vendors/vnd-002/contacts/add",
+        data={
+            "return_to": "/vendors/vnd-002/ownership",
+            "full_name": "",
+            "contact_type": "support",
+            "email": "fallback.contact@example.com",
+            "phone": "555-0108",
+            "reason": "Fallback name from email.",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    ownership_page = client.get("/vendors/vnd-002/ownership?return_to=%2Fvendors")
+    assert ownership_page.status_code == 200
+    assert "fallback.contact@example.com" in ownership_page.text
 
 
 def test_offering_ownership_allows_adding_owner_and_contact(client: TestClient) -> None:
@@ -802,10 +985,54 @@ def test_offering_ownership_allows_adding_owner_and_contact(client: TestClient) 
     ownership_page = client.get("/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors")
     assert ownership_page.status_code == 200
     assert "pm@example.com" in ownership_page.text
-    assert "Secops User" in ownership_page.text
+    assert "Offering Contact" in ownership_page.text
+    assert "secops@example.com" in ownership_page.text
     assert "security_owner" in ownership_page.text
     assert "owner-search-filter" in ownership_page.text
+    assert "contact-search-filter" in ownership_page.text
     assert "Add Owner" in ownership_page.text
+    assert "Add Contact" in ownership_page.text
+    assert "offering-contact-add-template" in ownership_page.text
+    assert "Contact Name <span class=\"field-error\">*</span>" not in ownership_page.text
+    assert 'name="reason_code"' in ownership_page.text
+    assert "Confirm Remove" in ownership_page.text
+
+
+def test_offering_ownership_rejects_unknown_owner_before_save(client: TestClient) -> None:
+    response = client.post(
+        "/vendors/vnd-001/offerings/off-004/owners/add",
+        data={
+            "return_to": "/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors",
+            "owner_user_principal": "",
+            "owner_user_principal_display_name": "Not A Real Directory User",
+            "owner_role": "business_owner",
+            "reason": "Validation test.",
+        },
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "Owner must exist in the app user directory." in response.text
+
+
+def test_offering_contact_add_allows_non_directory_contact_lookup_values(client: TestClient) -> None:
+    response = client.post(
+        "/vendors/vnd-001/offerings/off-004/contacts/add",
+        data={
+            "return_to": "/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors",
+            "full_name": "Bob Smith",
+            "contact_type": "support",
+            "email": "bob.smith@xyzcorp.com",
+            "phone": "555-0123",
+            "reason": "Add external contact.",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    page = client.get("/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors")
+    assert page.status_code == 200
+    assert "Bob Smith" in page.text
+    assert "bob.smith@xyzcorp.com" in page.text
 
 
 def test_offering_ownership_shows_employee_directory_warning_banner(
@@ -843,6 +1070,243 @@ def test_offering_ownership_shows_employee_directory_warning_banner(
     assert response.status_code == 200
     assert "reference users not active in employee directory" in response.text
     assert "owner-status-badge missing" in response.text
+
+
+def test_offering_ownership_org_updates_single_lob_value(client: TestClient) -> None:
+    response = client.post(
+        "/vendors/vnd-001/offerings/off-004/ownership/lob/update",
+        data={
+            "return_to": "/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors",
+            "lobs": ["Finance"],
+            "reason_code": "ownership_alignment",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    page = client.get("/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors")
+    assert page.status_code == 200
+    assert "Line of Business" in page.text
+    assert "Finance" in page.text
+    assert 'name="lobs"' in page.text
+    assert 'name="primary_lob"' in page.text
+    assert 'type="checkbox"' in page.text
+    assert 'name="reason_code"' in page.text
+    assert "data-offering-select-all-lobs" in page.text
+    assert "data-offering-clear-all-lobs" in page.text
+
+
+def test_offering_ownership_drawer_shows_unmanaged_current_lob(client: TestClient) -> None:
+    update_result = get_repo().update_offering_fields(
+        vendor_id="vnd-001",
+        offering_id="off-004",
+        actor_user_principal="pm@example.com",
+        updates={"lob": "SEC-OPS"},
+        reason="Seed unmanaged legacy value for drawer rendering.",
+    )
+    assert update_result.get("request_id")
+
+    page = client.get("/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors")
+    assert page.status_code == 200
+    assert "SEC-OPS (Current, unmanaged)" in page.text
+
+
+def test_offering_ownership_lob_update_supports_explicit_primary_lob(client: TestClient) -> None:
+    response = client.post(
+        "/vendors/vnd-001/offerings/off-004/ownership/lob/update",
+        data={
+            "return_to": "/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors",
+            "lobs": ["Finance", "Security"],
+            "primary_lob": "Security",
+            "reason_code": "ownership_alignment",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    offering = get_repo().get_offering_record("vnd-001", "off-004")
+    assert offering is not None
+    assert str(offering.get("lob") or "").strip() == "Security"
+
+
+def test_offering_ownership_lob_update_allows_no_primary_lob(client: TestClient) -> None:
+    response = client.post(
+        "/vendors/vnd-001/offerings/off-004/ownership/lob/update",
+        data={
+            "return_to": "/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors",
+            "lobs": ["Finance", "Security"],
+            "primary_lob": "",
+            "reason_code": "ownership_alignment",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    offering = get_repo().get_offering_record("vnd-001", "off-004")
+    assert offering is not None
+    assert str(offering.get("lob") or "").strip() == ""
+
+
+def test_offering_owner_bulk_reassign_updates_multiple_assignments(client: TestClient) -> None:
+    add_owner_one = client.post(
+        "/vendors/vnd-001/offerings/off-001/owners/add",
+        data={
+            "return_to": "/vendors/vnd-001/offerings/off-001?section=ownership&return_to=%2Fvendors",
+            "owner_user_principal": "pm@example.com",
+            "owner_role": "business_owner",
+            "reason": "Assign owner one.",
+        },
+        follow_redirects=False,
+    )
+    assert add_owner_one.status_code == 303
+
+    add_owner_two = client.post(
+        "/vendors/vnd-001/offerings/off-004/owners/add",
+        data={
+            "return_to": "/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors",
+            "owner_user_principal": "pm@example.com",
+            "owner_role": "technical_owner",
+            "reason": "Assign owner two.",
+        },
+        follow_redirects=False,
+    )
+    assert add_owner_two.status_code == 303
+
+    reassign = client.post(
+        "/vendors/vnd-001/offerings/owners/reassign",
+        data={
+            "return_to": "/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors",
+            "from_owner_user_principal": "pm@example.com",
+            "to_owner_user_principal": "admin@example.com",
+            "reason_code": "employee_inactive",
+        },
+        follow_redirects=False,
+    )
+    assert reassign.status_code == 303
+
+    owners = get_repo().get_vendor_offering_business_owners("vnd-001")
+    active_owners = owners[~owners["active_flag"].astype(str).str.strip().str.lower().isin({"0", "false", "no", "n"})]
+    pm_active = active_owners[active_owners["owner_user_principal"].astype(str).str.lower() == "pm@example.com"]
+    assert pm_active.empty
+    admin_active = active_owners[active_owners["owner_user_principal"].astype(str).str.lower() == "admin@example.com"]
+    assert len(admin_active) >= 2
+
+
+def test_offering_owner_bulk_reassign_supports_legacy_source_not_in_directory(client: TestClient) -> None:
+    repo = get_repo()
+    legacy_owner = "stubborn.legacy.owner@example.com"
+    owner_id = repo._new_id("oown")
+    now = repo._now()
+    actor_ref = repo._actor_ref("admin@example.com")
+    repo._execute_file(
+        "inserts/add_offering_owner.sql",
+        params=(
+            owner_id,
+            "off-004",
+            legacy_owner,
+            "technical_owner",
+            True,
+            now,
+            actor_ref,
+        ),
+        core_offering_business_owner=repo._table("core_offering_business_owner"),
+    )
+
+    reassign = client.post(
+        "/vendors/vnd-001/offerings/owners/reassign",
+        data={
+            "return_to": "/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors",
+            "from_owner_user_principal": legacy_owner,
+            "to_owner_user_principal": "admin@example.com",
+            "reason_code": "employee_inactive",
+        },
+        follow_redirects=False,
+    )
+    assert reassign.status_code == 303
+
+    owners = repo.get_vendor_offering_business_owners("vnd-001")
+    target_row = owners[owners["offering_owner_id"].astype(str) == owner_id]
+    assert not target_row.empty
+    assert str(target_row.iloc[0]["owner_user_principal"]).strip().lower() == "admin@example.com"
+
+
+def test_offering_ownership_inactive_owner_shows_reassign_not_edit_action(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    add_owner = client.post(
+        "/vendors/vnd-001/offerings/off-004/owners/add",
+        data={
+            "return_to": "/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors",
+            "owner_user_principal": "pm@example.com",
+            "owner_role": "business_owner",
+            "reason": "Assign owner for inactive action test.",
+        },
+        follow_redirects=False,
+    )
+    assert add_owner.status_code == 303
+
+    repo = get_repo()
+    owners = repo.get_vendor_offering_business_owners("vnd-001")
+    owner_rows = owners[
+        (owners["offering_id"].astype(str) == "off-004")
+        & (owners["owner_user_principal"].astype(str).str.lower() == "pm@example.com")
+    ]
+    assert not owner_rows.empty
+    owner_id = str(owner_rows.iloc[0]["offering_owner_id"])
+
+    def _missing_status(principals):
+        return {
+            str(item).strip().lower(): {
+                "principal": str(item).strip(),
+                "status": "missing",
+                "active": False,
+                "login_identifier": None,
+                "display_name": None,
+            }
+            for item in principals
+        }
+
+    monkeypatch.setattr(repo, "get_employee_directory_status_map", _missing_status)
+
+    response = client.get("/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors")
+    assert response.status_code == 200
+    assert f"offering-owner-reassign-single-template-{owner_id}" in response.text
+    assert f"offering-owner-edit-template-{owner_id}" not in response.text
+    assert "Open Reassign All" in response.text
+
+
+def test_offering_owner_single_reassign_updates_only_selected_assignment(client: TestClient) -> None:
+    repo = get_repo()
+    owner_one = repo.add_offering_owner(
+        vendor_id="vnd-001",
+        offering_id="off-001",
+        owner_user_principal="pm@example.com",
+        owner_role="business_owner",
+        actor_user_principal="admin@example.com",
+    )
+    owner_two = repo.add_offering_owner(
+        vendor_id="vnd-001",
+        offering_id="off-004",
+        owner_user_principal="pm@example.com",
+        owner_role="technical_owner",
+        actor_user_principal="admin@example.com",
+    )
+
+    reassign = client.post(
+        f"/vendors/vnd-001/offerings/off-004/owners/{owner_two}/reassign",
+        data={
+            "return_to": "/vendors/vnd-001/offerings/off-004?section=ownership&return_to=%2Fvendors",
+            "to_owner_user_principal": "admin@example.com",
+            "reason_code": "role_transition",
+        },
+        follow_redirects=False,
+    )
+    assert reassign.status_code == 303
+
+    owners = repo.get_vendor_offering_business_owners("vnd-001")
+    row_one = owners[owners["offering_owner_id"].astype(str) == str(owner_one)]
+    row_two = owners[owners["offering_owner_id"].astype(str) == str(owner_two)]
+    assert not row_one.empty and not row_two.empty
+    assert str(row_one.iloc[0]["owner_user_principal"]).strip().lower() == "pm@example.com"
+    assert str(row_two.iloc[0]["owner_user_principal"]).strip().lower() == "admin@example.com"
 
 
 def test_parse_template_questions_preserves_optional_required_flag() -> None:

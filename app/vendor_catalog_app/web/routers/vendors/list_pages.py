@@ -5,6 +5,7 @@ from urllib.parse import quote
 import pandas as pd
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+
 from vendor_catalog_app.core.defaults import DEFAULT_SOURCE_SYSTEM
 from vendor_catalog_app.repository import GLOBAL_CHANGE_VENDOR_ID
 from vendor_catalog_app.web.core.activity import ensure_session_started, log_page_view
@@ -39,6 +40,7 @@ from vendor_catalog_app.web.routers.vendors.pages import (
     _normalize_vendor_sort,
     _vendor_list_url,
 )
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/vendors")
 
@@ -291,6 +293,7 @@ def vendor_list(
 
 
 @router.post("/settings")
+@require_permission("vendor_search_settings_edit")
 async def vendor_settings(request: Request):
     repo = get_repo()
     user = get_user_context(request)
@@ -347,6 +350,7 @@ def vendor_new_form(request: Request, return_to: str = VENDOR_DEFAULT_RETURN_TO)
 
 
 @router.post("/new")
+@require_permission("vendor_create")
 async def vendor_new_submit(request: Request):
     repo = get_repo()
     user = get_user_context(request)
@@ -383,9 +387,9 @@ async def vendor_new_submit(request: Request):
         field_errors["legal_name"] = "Legal name is required."
     if not owner_org_id:
         if form_values["owner_org_choice"] == "__new__":
-            field_errors["new_owner_org_id"] = "Enter a new Owner Org ID."
+            field_errors["new_owner_org_id"] = "Enter a new Line of Business."
         else:
-            field_errors["owner_org_choice"] = "Owner Org ID is required."
+            field_errors["owner_org_choice"] = "Line of Business is required."
 
     try:
         form_values["lifecycle_state"] = _normalize_lifecycle(form_values["lifecycle_state"])
@@ -447,9 +451,9 @@ async def vendor_new_submit(request: Request):
     except Exception as exc:
         error_text = str(exc)
         if "owner_org_id" in error_text.lower():
-            field_errors["owner_org_choice"] = "Owner Org ID is required."
+            field_errors["owner_org_choice"] = "Line of Business is required."
             if form_values["owner_org_choice"] == "__new__":
-                field_errors["new_owner_org_id"] = "Owner Org ID is required."
+                field_errors["new_owner_org_id"] = "Line of Business is required."
         add_flash(request, "Could not create vendor. Fix the highlighted fields and try again.", "error")
         return _render_vendor_new_form(
             request=request,

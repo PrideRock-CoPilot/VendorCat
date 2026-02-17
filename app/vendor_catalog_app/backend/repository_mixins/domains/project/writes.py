@@ -239,7 +239,7 @@ class RepositoryProjectWriteMixin:
             clean_updates["vendor_id"] = target_vendor_ids[0] if target_vendor_ids else None
 
         if clean_updates:
-            set_clause = ", ".join([f"{key} = %s" for key in clean_updates.keys()])
+            set_clause = ", ".join([f"{key} = %s" for key in clean_updates])
             params = list(clean_updates.values()) + [now, actor_ref, project_id]
             self._execute_file(
                 "updates/update_project.sql",

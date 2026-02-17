@@ -6,6 +6,7 @@
     <p>Create a vendor record in the catalog.</p>
   </div>
   <div>
+    <a class="button-link subtle" href="/help/add-vendor">? Help</a>
     <a class="button-link" href="{{ return_to }}">Back</a>
   </div>
 </div>
@@ -31,18 +32,18 @@
       </select>
       {% if field_errors.get('lifecycle_state') %}<span class="field-error">{{ field_errors.get('lifecycle_state') }}</span>{% endif %}
     </label>
-    <label>Owner Org ID (Owning Organization)
+    <label>Line of Business (LOB)
       <select id="owner_org_choice" name="owner_org_choice" class="{% if field_errors.get('owner_org_choice') %}input-error{% endif %}">
-        <option value="">Select owner org...</option>
+        <option value="">Select line of business...</option>
         {% for org in owner_org_options %}
         <option value="{{ org }}" {% if org == form_values.owner_org_choice %}selected{% endif %}>{{ org }}</option>
         {% endfor %}
-        <option value="__new__" {% if form_values.owner_org_choice == "__new__" %}selected{% endif %}>+ Add new org</option>
+        <option value="__new__" {% if form_values.owner_org_choice == "__new__" %}selected{% endif %}>+ Add new line of business</option>
       </select>
-      <small class="muted">This is the internal org that owns the vendor relationship.</small>
+      <small class="muted">This is the primary line of business for the vendor relationship.</small>
       {% if field_errors.get('owner_org_choice') %}<span class="field-error">{{ field_errors.get('owner_org_choice') }}</span>{% endif %}
     </label>
-    <label id="new_owner_org_wrap" class="{% if form_values.owner_org_choice != '__new__' %}hidden{% endif %}">New Owner Org ID
+    <label id="new_owner_org_wrap" class="{% if form_values.owner_org_choice != '__new__' %}hidden{% endif %}">New Line of Business
       <input type="text" id="new_owner_org_id" name="new_owner_org_id" value="{{ form_values.new_owner_org_id }}" class="{% if field_errors.get('new_owner_org_id') %}input-error{% endif %}" placeholder="Example: HR-OPS">
       {% if field_errors.get('new_owner_org_id') %}<span class="field-error">{{ field_errors.get('new_owner_org_id') }}</span>{% endif %}
     </label>

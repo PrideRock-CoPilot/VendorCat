@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 import pandas as pd
+
 from vendor_catalog_app.core.repository_constants import *
 
 LOGGER = logging.getLogger(__name__)
@@ -159,6 +160,52 @@ class RepositoryReportingSearchMixin:
             core_contract=self._table("core_contract"),
             core_vendor=self._table("core_vendor"),
             core_vendor_offering=self._table("core_vendor_offering"),
+        )
+
+    def search_contacts_typeahead(self, *, vendor_id: str | None = None, q: str = "", limit: int = 20) -> pd.DataFrame:
+        limit = max(1, min(int(limit or 20), 100))
+        columns = [
+            "full_name",
+            "email",
+            "phone",
+            "contact_type",
+            "vendor_id",
+            "vendor_display_name",
+            "usage_count",
+            "label",
+        ]
+        filter_vendor = str(vendor_id or "").strip()
+        where_parts = [
+            "coalesce(src.active_flag, true) = true",
+            "coalesce(trim(src.full_name), '') <> ''",
+        ]
+        params: list[Any] = []
+        if filter_vendor:
+            where_parts.append("src.vendor_id = %s")
+            params.append(filter_vendor)
+        if q.strip():
+            like = f"%{q.strip()}%"
+            where_parts.append(
+                "("
+                "lower(coalesce(src.full_name, '')) LIKE lower(%s)"
+                " OR lower(coalesce(src.email, '')) LIKE lower(%s)"
+                " OR lower(coalesce(src.phone, '')) LIKE lower(%s)"
+                " OR lower(coalesce(src.contact_type, '')) LIKE lower(%s)"
+                " OR lower(coalesce(src.vendor_display_name, '')) LIKE lower(%s)"
+                ")"
+            )
+            params.extend([like, like, like, like, like])
+        where = " AND ".join(where_parts)
+        return self._query_file(
+            "reporting/search_contacts_typeahead.sql",
+            params=tuple(params) if params else None,
+            columns=columns,
+            where_clause=where,
+            limit=limit,
+            core_vendor_contact=self._table("core_vendor_contact"),
+            core_offering_contact=self._table("core_offering_contact"),
+            core_vendor_offering=self._table("core_vendor_offering"),
+            core_vendor=self._table("core_vendor"),
         )
 
     def list_contracts_workspace(

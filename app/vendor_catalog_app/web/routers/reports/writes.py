@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
+from fastapi.responses import RedirectResponse
 
+from vendor_catalog_app.web.core.runtime import get_repo
+from vendor_catalog_app.web.core.user_context_service import get_user_context
+from vendor_catalog_app.web.http.flash import add_flash
 from vendor_catalog_app.web.routers.reports.common import *
-
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter()
 @router.post("/reports/email")
+@require_permission("report_email")
 async def reports_email_request(request: Request):
     repo = get_repo()
     user = get_user_context(request)
@@ -25,7 +30,9 @@ async def reports_email_request(request: Request):
     project_status = str(form.get("project_status", "all")).strip() or "all"
     outcome = str(form.get("outcome", "all")).strip() or "all"
     owner_principal = str(form.get("owner_principal", "")).strip()
-    org = str(form.get("org", "all")).strip() or "all"
+    lob = str(form.get("lob", "")).strip()
+    legacy_org = str(form.get("org", "")).strip()
+    selected_lob = lob or legacy_org or "all"
     cols = str(form.get("cols", "")).strip()
     view_mode = _safe_view_mode(str(form.get("view_mode", "both")))
     chart_kind = _safe_chart_kind(str(form.get("chart_kind", "bar")))
@@ -57,8 +64,8 @@ async def reports_email_request(request: Request):
         limit = 500
 
     orgs = repo.available_orgs()
-    if org not in orgs:
-        org = "all"
+    if selected_lob not in orgs:
+        selected_lob = "all"
     horizon_days = max(30, min(horizon_days, 730))
 
     if not email_to or "@" not in email_to:
@@ -73,7 +80,7 @@ async def reports_email_request(request: Request):
             project_status=project_status,
             outcome=outcome,
             owner_principal=owner_principal,
-            org=org,
+            lob=selected_lob,
             horizon_days=horizon_days,
             limit=limit,
         )
@@ -96,7 +103,7 @@ async def reports_email_request(request: Request):
                 "project_status": project_status,
                 "outcome": outcome,
                 "owner_principal": owner_principal,
-                "org": org,
+                "lob": selected_lob,
                 "horizon_days": horizon_days,
                 "limit": limit,
             },
@@ -121,7 +128,7 @@ async def reports_email_request(request: Request):
         project_status=project_status,
         outcome=outcome,
         owner_principal=owner_principal,
-        org=org,
+        lob=selected_lob,
         horizon_days=horizon_days,
         limit=limit,
         cols=cols,

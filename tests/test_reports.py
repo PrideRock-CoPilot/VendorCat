@@ -127,7 +127,7 @@ def test_reports_email_request(client: TestClient) -> None:
             "project_status": "all",
             "outcome": "all",
             "owner_principal": "",
-            "org": "all",
+            "lob": "all",
             "horizon_days": "180",
             "limit": "500",
             "cols": "",

@@ -73,6 +73,30 @@ REQUIRED_SCHEMA: dict[str, tuple[str, ...]] = {
         "data_description",
         "endpoint_details",
     ),
+    "vendor_help_article": (
+        "article_id",
+        "slug",
+        "title",
+        "section",
+        "article_type",
+        "role_visibility",
+        "content_md",
+        "owned_by",
+        "updated_at",
+        "updated_by",
+    ),
+    "vendor_help_feedback": (
+        "feedback_id",
+        "article_slug",
+        "was_helpful",
+        "created_at",
+    ),
+    "vendor_help_issue": (
+        "issue_id",
+        "issue_title",
+        "issue_description",
+        "created_at",
+    ),
 }
 
 COMPAT_COLUMN_MIGRATIONS: dict[str, tuple[tuple[str, str], ...]] = {

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
+
 from vendor_catalog_app.core.repository_constants import *
 from vendor_catalog_app.core.repository_errors import SchemaBootstrapRequiredError
 from vendor_catalog_app.core.security import (
@@ -43,8 +44,8 @@ class RepositoryCoreLookupMixin:
     @staticmethod
     def _default_lookup_option_rows() -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
-        now = datetime(1900, 1, 1, tzinfo=timezone.utc).isoformat()
-        open_end = datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc).isoformat()
+        now = datetime(1900, 1, 1, tzinfo=UTC).isoformat()
+        open_end = datetime(9999, 12, 31, 23, 59, 59, tzinfo=UTC).isoformat()
         groups: dict[str, list[str | tuple[str, str]]] = {
             LOOKUP_TYPE_DOC_SOURCE: DEFAULT_DOC_SOURCE_OPTIONS,
             LOOKUP_TYPE_DOC_TAG: DEFAULT_DOC_TAG_OPTIONS,
@@ -293,8 +294,8 @@ class RepositoryCoreLookupMixin:
         else:
             return fallback
         if parsed.tzinfo is None:
-            return parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
+            return parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
 
     @classmethod
     def _normalize_lookup_window(
@@ -302,8 +303,8 @@ class RepositoryCoreLookupMixin:
         valid_from_ts: Any,
         valid_to_ts: Any,
     ) -> tuple[datetime, datetime]:
-        start = cls._parse_lookup_ts(valid_from_ts, fallback=datetime(1900, 1, 1, tzinfo=timezone.utc))
-        end = cls._parse_lookup_ts(valid_to_ts, fallback=datetime(9999, 12, 31, 23, 59, 59, tzinfo=timezone.utc))
+        start = cls._parse_lookup_ts(valid_from_ts, fallback=datetime(1900, 1, 1, tzinfo=UTC))
+        end = cls._parse_lookup_ts(valid_to_ts, fallback=datetime(9999, 12, 31, 23, 59, 59, tzinfo=UTC))
         if end < start:
             raise ValueError("Valid To must be on or after Valid From.")
         return start, end

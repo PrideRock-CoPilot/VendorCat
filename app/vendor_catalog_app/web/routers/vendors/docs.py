@@ -4,6 +4,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+
 from vendor_catalog_app.core.defaults import DEFAULT_DOC_TITLE_MAX_LENGTH
 from vendor_catalog_app.web.core.runtime import get_repo
 from vendor_catalog_app.web.core.user_context_service import get_user_context
@@ -20,6 +21,7 @@ from vendor_catalog_app.web.utils.doc_links import (
     suggest_doc_title,
     suggest_doc_type,
 )
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/vendors")
 
@@ -181,6 +183,7 @@ async def _create_doc_link_for_entity(
 
 
 @router.post("/{vendor_id}/docs/link")
+@require_permission("vendor_doc_create")
 async def vendor_doc_link_submit(request: Request, vendor_id: str):
     form = await request.form()
     return_to = _safe_return_to(str(form.get("return_to", f"/vendors/{vendor_id}/summary")))
@@ -197,6 +200,7 @@ async def vendor_doc_link_submit(request: Request, vendor_id: str):
 
 
 @router.post("/{vendor_id}/projects/{project_id}/docs/link")
+@require_permission("project_doc_create")
 async def project_doc_link_submit(request: Request, vendor_id: str, project_id: str):
     form = await request.form()
     return_to = _safe_return_to(str(form.get("return_to", f"/projects/{project_id}/docs")))
@@ -213,6 +217,7 @@ async def project_doc_link_submit(request: Request, vendor_id: str, project_id: 
 
 
 @router.post("/{vendor_id}/offerings/{offering_id}/docs/link")
+@require_permission("offering_doc_create")
 async def offering_doc_link_submit(request: Request, vendor_id: str, offering_id: str):
     form = await request.form()
     return_to = _safe_return_to(str(form.get("return_to", f"/vendors/{vendor_id}/offerings/{offering_id}")))
@@ -229,6 +234,7 @@ async def offering_doc_link_submit(request: Request, vendor_id: str, offering_id
 
 
 @router.post("/{vendor_id}/projects/{project_id}/demos/{demo_id}/docs/link")
+@require_permission("demo_doc_create")
 async def project_demo_doc_link_submit(request: Request, vendor_id: str, project_id: str, demo_id: str):
     form = await request.form()
     return_to = _safe_return_to(str(form.get("return_to", f"/projects/{project_id}/demos")))
@@ -245,6 +251,7 @@ async def project_demo_doc_link_submit(request: Request, vendor_id: str, project
 
 
 @router.post("/docs/{doc_id}/remove")
+@require_permission("doc_delete")
 async def doc_link_remove_submit(request: Request, doc_id: str):
     repo = get_repo()
     user = get_user_context(request)

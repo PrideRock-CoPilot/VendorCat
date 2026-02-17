@@ -1,4 +1,61 @@
 document.addEventListener("DOMContentLoaded", () => {
+  // Theme toggle
+  const themeToggle = document.getElementById("theme-toggle");
+  const body = document.body;
+  const themeKey = "vendor-catalog-theme";
+
+  const setTheme = (isDark) => {
+    if (isDark) {
+      body.classList.add("dark-mode");
+      themeToggle.textContent = "☀️";
+      localStorage.setItem(themeKey, "dark");
+    } else {
+      body.classList.remove("dark-mode");
+      themeToggle.textContent = "🌙";
+      localStorage.setItem(themeKey, "light");
+    }
+  };
+
+  const toggleTheme = () => {
+    const isDark = body.classList.contains("dark-mode");
+    setTheme(!isDark);
+  };
+
+  // Load saved theme or default to light
+  const savedTheme = localStorage.getItem(themeKey);
+  if (savedTheme === "dark") {
+    setTheme(true);
+  } else {
+    setTheme(false);
+  }
+
+  if (themeToggle) {
+    themeToggle.addEventListener("click", toggleTheme);
+  }
+
+  // Utility functions
+  window.VendorCatalogUtils = {
+    formatDate: (dateString) => {
+      if (!dateString) return '';
+      const date = new Date(dateString);
+      return date.toLocaleDateString();
+    },
+    formatCurrency: (amount) => {
+      return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+    },
+    debounce: (func, wait) => {
+      let timeout;
+      return function executedFunction(...args) {
+        const later = () => {
+          clearTimeout(timeout);
+          func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+      };
+    }
+  };
+
   const loadingOverlay = document.getElementById("loading-overlay");
   const loadingOverlayStatus = document.getElementById("loading-overlay-status");
   let loadingTimer = null;
@@ -355,7 +412,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   document.addEventListener("submit", (event) => {
     const form = event.target;
-    if (form instanceof HTMLFormElement && shouldShowLoadingForForm(form)) {
+    if (!(form instanceof HTMLFormElement)) return;
+    form.classList.add("validation-attempted");
+    if (!form.checkValidity()) {
+      return;
+    }
+    if (shouldShowLoadingForForm(form)) {
       showLoadingOverlay(overlayShowDelayMs, "Saving changes...");
     }
   });
@@ -582,6 +644,52 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const initUserDirectoryTypeahead = (scope = document) => {
+    const getPickerFields = (input) => {
+      if (!(input instanceof HTMLInputElement)) {
+        return { emailInput: null, displayInput: null };
+      }
+      const pairKey = String(input.dataset.userSearchPair || "").trim();
+      const pickerRoot = input.closest("[data-user-picker]");
+      const formRoot = input.closest("form");
+      if (!pairKey) {
+        return { emailInput: null, displayInput: null };
+      }
+
+      const resolveFromRoot = (root) => {
+        if (!(root instanceof HTMLElement)) return { emailInput: null, displayInput: null };
+        const pairedInputs = Array.from(root.querySelectorAll("input[data-user-search]")).filter((node) => {
+          if (!(node instanceof HTMLInputElement)) return false;
+          return String(node.dataset.userSearchPair || "").trim() === pairKey;
+        });
+        let emailInput = null;
+        let displayInput = null;
+        pairedInputs.forEach((node) => {
+          const mode = String(node.dataset.userSearchMode || "").trim().toLowerCase();
+          if (mode === "email" || node.name === pairKey) {
+            emailInput = node;
+          } else if (mode === "display_name") {
+            displayInput = node;
+          }
+        });
+
+        if (!(emailInput instanceof HTMLInputElement)) {
+          const fallbackEmail = root.querySelector(`input[name="${pairKey}"]`);
+          if (fallbackEmail instanceof HTMLInputElement) emailInput = fallbackEmail;
+        }
+        if (!(displayInput instanceof HTMLInputElement)) {
+          const fallbackDisplay = root.querySelector(`input[name="${pairKey}_display_name"]`);
+          if (fallbackDisplay instanceof HTMLInputElement) displayInput = fallbackDisplay;
+        }
+        return { emailInput, displayInput };
+      };
+
+      const fromPicker = resolveFromRoot(pickerRoot);
+      if (fromPicker.emailInput || fromPicker.displayInput) {
+        return fromPicker;
+      }
+      return resolveFromRoot(formRoot);
+    };
+
     scope.querySelectorAll("input[data-user-search]").forEach((input) => {
       if (!(input instanceof HTMLInputElement)) return;
       if (input.dataset.userSearchInitialized === "1") return;
@@ -595,6 +703,7 @@ document.addEventListener("DOMContentLoaded", () => {
       wireTypeaheadKeyboard(input, results);
       let timer = null;
       let requestSeq = 0;
+      const getLivePair = () => getPickerFields(input);
 
       const hideResults = () => hideTypeahead(results);
       const renderResults = (items) => {
@@ -606,13 +715,34 @@ document.addEventListener("DOMContentLoaded", () => {
         items.forEach((item) => {
           const login = String(item.login_identifier || "").trim();
           if (!login) return;
-          const label = String(item.label || `${item.display_name || login} (${login})`).trim();
+          const rawDisplayName = String(item.display_name || "").trim();
+          const email = String(item.email || login).trim() || login;
+          const fallbackLabel = rawDisplayName ? `${rawDisplayName} (${email})` : email;
+          const label = String(item.label || fallbackLabel).trim() || fallbackLabel;
+          let displayName = rawDisplayName;
+          if (!displayName && label.includes("(")) {
+            displayName = label.split("(")[0].trim();
+          }
+          if (!displayName) {
+            displayName = login;
+          }
           const option = document.createElement("button");
           option.type = "button";
           option.className = "typeahead-option";
           option.textContent = label;
           option.addEventListener("click", () => {
-            input.value = login;
+            const { emailInput, displayInput } = getLivePair();
+            if (emailInput instanceof HTMLInputElement) {
+              emailInput.value = login;
+              emailInput.dispatchEvent(new Event("change", { bubbles: true }));
+            } else {
+              input.value = login;
+              input.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+            if (displayInput instanceof HTMLInputElement) {
+              displayInput.value = displayName;
+              displayInput.dispatchEvent(new Event("change", { bubbles: true }));
+            }
             hideResults();
           });
           results.appendChild(option);
@@ -648,6 +778,13 @@ document.addEventListener("DOMContentLoaded", () => {
       };
 
       input.addEventListener("input", () => {
+        const currentValue = String(input.value || "").trim();
+        const { displayInput, emailInput } = getLivePair();
+        if (displayInput instanceof HTMLInputElement && emailInput instanceof HTMLInputElement) {
+          if (input === displayInput && !String(emailInput.value || "").trim()) {
+            emailInput.value = currentValue;
+          }
+        }
         if (timer) window.clearTimeout(timer);
         timer = window.setTimeout(search, 180);
       });
@@ -659,6 +796,147 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       input.dataset.userSearchInitialized = "1";
+    });
+  };
+
+  const initContactDirectoryTypeahead = (scope = document) => {
+    const getPickerFields = (input) => {
+      if (!(input instanceof HTMLInputElement)) {
+        return { nameInput: null, emailInput: null, phoneInput: null };
+      }
+      const pairKey = String(input.dataset.contactSearchPair || "").trim();
+      if (!pairKey) {
+        return { nameInput: null, emailInput: null, phoneInput: null };
+      }
+      const pickerRoot = input.closest("[data-contact-picker]");
+      const formRoot = input.closest("form");
+
+      const resolveFromRoot = (root) => {
+        if (!(root instanceof HTMLElement)) return { nameInput: null, emailInput: null, phoneInput: null };
+        const pairedInputs = Array.from(root.querySelectorAll("input[data-contact-search]")).filter((node) => {
+          if (!(node instanceof HTMLInputElement)) return false;
+          return String(node.dataset.contactSearchPair || "").trim() === pairKey;
+        });
+        let nameInput = null;
+        let emailInput = null;
+        pairedInputs.forEach((node) => {
+          const mode = String(node.dataset.contactSearchMode || "").trim().toLowerCase();
+          if (mode === "name" || node.name === "full_name") {
+            nameInput = node;
+          } else if (mode === "email" || node.name === "email") {
+            emailInput = node;
+          }
+        });
+        const phoneInput = root.querySelector(`input[data-contact-phone][data-contact-search-pair="${pairKey}"]`);
+        return {
+          nameInput: nameInput instanceof HTMLInputElement ? nameInput : null,
+          emailInput: emailInput instanceof HTMLInputElement ? emailInput : null,
+          phoneInput: phoneInput instanceof HTMLInputElement ? phoneInput : null,
+        };
+      };
+
+      const fromPicker = resolveFromRoot(pickerRoot);
+      if (fromPicker.nameInput || fromPicker.emailInput || fromPicker.phoneInput) {
+        return fromPicker;
+      }
+      return resolveFromRoot(formRoot);
+    };
+
+    scope.querySelectorAll("input[data-contact-search]").forEach((input) => {
+      if (!(input instanceof HTMLInputElement)) return;
+      if (input.dataset.contactSearchInitialized === "1") return;
+
+      const results = resultsForInput(input);
+      if (!(results instanceof HTMLElement)) {
+        input.dataset.contactSearchInitialized = "1";
+        return;
+      }
+
+      wireTypeaheadKeyboard(input, results);
+      let timer = null;
+      let requestSeq = 0;
+
+      const hideResults = () => hideTypeahead(results);
+      const renderResults = (items) => {
+        results.innerHTML = "";
+        if (!items.length) {
+          hideResults();
+          return;
+        }
+        items.forEach((item) => {
+          const fullName = String(item.full_name || "").trim();
+          const email = String(item.email || "").trim();
+          const phone = String(item.phone || "").trim();
+          if (!fullName && !email) return;
+          const fallbackLabel = [fullName || "(No Name)", email ? `(${email})` : "", phone ? `- ${phone}` : ""]
+            .filter(Boolean)
+            .join(" ")
+            .trim();
+          const label = String(item.label || fallbackLabel).trim() || fallbackLabel;
+          const option = document.createElement("button");
+          option.type = "button";
+          option.className = "typeahead-option";
+          option.textContent = label;
+          option.addEventListener("click", () => {
+            const { nameInput, emailInput, phoneInput } = getPickerFields(input);
+            if (nameInput instanceof HTMLInputElement) {
+              nameInput.value = fullName || nameInput.value;
+              nameInput.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+            if (emailInput instanceof HTMLInputElement) {
+              emailInput.value = email || emailInput.value;
+              emailInput.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+            if (phoneInput instanceof HTMLInputElement) {
+              phoneInput.value = phone || "";
+              phoneInput.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+            hideResults();
+          });
+          results.appendChild(option);
+        });
+        if (!results.children.length) {
+          hideResults();
+          return;
+        }
+        results.classList.remove("hidden");
+      };
+
+      const search = async () => {
+        const query = String(input.value || "").trim();
+        if (!query) {
+          hideResults();
+          return;
+        }
+        const seq = requestSeq + 1;
+        requestSeq = seq;
+        try {
+          const response = await fetch(`/api/contacts/search?q=${encodeURIComponent(query)}&limit=15`);
+          if (!response.ok) {
+            hideResults();
+            return;
+          }
+          const payload = await response.json();
+          if (seq !== requestSeq) return;
+          const items = Array.isArray(payload.items) ? payload.items : [];
+          renderResults(items);
+        } catch {
+          hideResults();
+        }
+      };
+
+      input.addEventListener("input", () => {
+        if (timer) window.clearTimeout(timer);
+        timer = window.setTimeout(search, 180);
+      });
+
+      document.addEventListener("click", (event) => {
+        if (!results.contains(event.target) && event.target !== input) {
+          hideResults();
+        }
+      });
+
+      input.dataset.contactSearchInitialized = "1";
     });
   };
 
@@ -779,13 +1057,57 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
+  const initHelpCenter = (scope = document) => {
+    const copyButtons = Array.from(scope.querySelectorAll("[data-help-copy-link]"));
+    if (!copyButtons.length) return;
+
+    const copyText = async (text) => {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "readonly");
+      textarea.style.position = "absolute";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+    };
+
+    copyButtons.forEach((button) => {
+      if (!(button instanceof HTMLElement)) return;
+      if (button.dataset.helpCopyInit === "1") return;
+      button.dataset.helpCopyInit = "1";
+      button.addEventListener("click", async () => {
+        const rawLink = String(button.getAttribute("data-help-link") || "").trim();
+        const link = rawLink || window.location.pathname;
+        const url = link.startsWith("http") ? link : `${window.location.origin}${link}`;
+        try {
+          await copyText(url);
+          const original = button.textContent || "Copy link";
+          button.textContent = "Link copied";
+          window.setTimeout(() => {
+            button.textContent = original;
+          }, 1800);
+        } catch {
+          window.alert("Copy failed. Please copy the URL from the address bar.");
+        }
+      });
+    });
+  };
+
   applyTooltips(document);
   initCsrfForms(document);
   initDocLinkForms(document);
   initUserDirectoryTypeahead(document);
+  initContactDirectoryTypeahead(document);
   initTypeaheadKeyboard(document);
   initClickableRows(document);
   initResponsiveTables(document);
+  initHelpCenter(document);
 
   const observer = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
@@ -795,9 +1117,11 @@ document.addEventListener("DOMContentLoaded", () => {
           initCsrfForms(node);
           initDocLinkForms(node);
           initUserDirectoryTypeahead(node);
+          initContactDirectoryTypeahead(node);
           initTypeaheadKeyboard(node);
           initClickableRows(node);
           initResponsiveTables(node);
+          initHelpCenter(node);
         }
       });
     });

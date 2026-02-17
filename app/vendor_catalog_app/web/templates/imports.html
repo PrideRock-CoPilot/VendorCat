@@ -82,7 +82,12 @@
     <input type="hidden" name="preview_token" value="{{ preview_token }}">
     <label>
       Merge Reason
-      <input type="text" name="reason" value="{{ import_reason }}" placeholder="Bulk import update reason (required for merge actions)">
+      <select name="reason">
+        <option value="">Select reason (required for merge actions)</option>
+        {% for option in import_merge_reason_options %}
+        <option value="{{ option }}" {% if import_reason == option %}selected{% endif %}>{{ option|replace('_', ' ')|title }}</option>
+        {% endfor %}
+      </select>
     </label>
 
     <section class="bulk-defaults-card">

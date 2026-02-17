@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 IMPORT_MAX_ROWS = 20000
 IMPORT_PREVIEW_RENDER_LIMIT = 1200
 IMPORT_RESULTS_RENDER_LIMIT = 800

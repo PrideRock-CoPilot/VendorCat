@@ -131,9 +131,9 @@
 
 ## 2026-02-09T19:23:03Z | VC-20260209-192303-4168
 - Improved New Vendor validation UX to preserve entered values and show inline field-level errors instead of clearing the form on failure.
-- Added server-side validation and clear error messaging for required `Owner Org ID` before persistence attempts.
-- Reworked `Owner Org ID` input into a dropdown of existing orgs with a `+ Add new org` option and conditional input for new org IDs.
-- Added explanatory helper text clarifying `Owner Org ID` as the internal owning organization.
+- Added server-side validation and clear error messaging for required `Line of Business` before persistence attempts.
+- Reworked `Line of Business` input into a dropdown of existing values with a `+ Add new line of business` option and conditional input for new LOB values.
+- Added explanatory helper text clarifying `Line of Business` as the primary business ownership classification.
 - Added styling for invalid-field highlighting and hidden-field toggling.
 - Added test coverage to confirm validation errors keep form values and mark invalid fields.
 

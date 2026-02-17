@@ -5,6 +5,7 @@ import io
 from typing import Any
 
 from vendor_catalog_app.web.routers.imports.config import IMPORT_LAYOUTS, IMPORT_MAX_ROWS
+from vendor_catalog_app.web.routers.vendors.constants import IMPORT_MERGE_REASON_OPTIONS
 
 
 def can_manage_imports(user) -> bool:
@@ -112,5 +113,6 @@ def render_context(
         "preview_hidden_count": int(preview_hidden_count or 0),
         "import_results": import_results or [],
         "import_reason": import_reason,
+        "import_merge_reason_options": IMPORT_MERGE_REASON_OPTIONS,
     }
 

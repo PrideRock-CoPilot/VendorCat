@@ -14,7 +14,6 @@ from vendor_catalog_app.core.env import (
     get_env_int,
 )
 
-
 STARTUP_SPLASH_SESSION_KEY = "startup_splash_seen"
 DEFAULT_DASHBOARD_MONTHS = 12
 DEFAULT_DASHBOARD_HORIZON_DAYS = 180

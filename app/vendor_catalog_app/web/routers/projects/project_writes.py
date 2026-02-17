@@ -4,6 +4,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+
 from vendor_catalog_app.web.core.runtime import get_repo
 from vendor_catalog_app.web.core.user_context_service import get_user_context
 from vendor_catalog_app.web.http.flash import add_flash
@@ -11,15 +12,20 @@ from vendor_catalog_app.web.routers.projects.common import (
     _dedupe_ordered,
     _normalize_project_status,
     _normalize_project_type,
-    _prepare_doc_payload,
+    _resolve_owner_principal_input,
     _request_scope_vendor_id,
     _safe_return_to,
-    _safe_vendor_id,
 )
+from vendor_catalog_app.web.routers.vendors.constants import (
+    PROJECT_OWNER_CHANGE_REASON_OPTIONS,
+    PROJECT_UPDATE_REASON_OPTIONS,
+)
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/projects")
 
 @router.post("/new")
+@require_permission("project_create")
 async def projects_new_submit(request: Request):
     repo = get_repo()
     user = get_user_context(request)
@@ -35,6 +41,11 @@ async def projects_new_submit(request: Request):
 
     linked_vendors = _dedupe_ordered([str(x).strip() for x in form.getlist("linked_vendors") if str(x).strip()])
     linked_offerings = _dedupe_ordered([str(x).strip() for x in form.getlist("linked_offerings") if str(x).strip()])
+    try:
+        resolved_owner_principal = _resolve_owner_principal_input(repo, form)
+    except Exception as exc:
+        add_flash(request, str(exc), "error")
+        return RedirectResponse(url=f"/projects/new?return_to={quote(return_to, safe='')}", status_code=303)
     if linked_offerings:
         offering_rows = repo.get_offerings_by_ids(linked_offerings).to_dict("records")
         for row in offering_rows:
@@ -50,7 +61,7 @@ async def projects_new_submit(request: Request):
             "status": _normalize_project_status(str(form.get("status", "draft"))),
             "start_date": str(form.get("start_date", "")).strip() or None,
             "target_date": str(form.get("target_date", "")).strip() or None,
-            "owner_principal": str(form.get("owner_principal", "")).strip() or None,
+            "owner_principal": resolved_owner_principal,
             "description": str(form.get("description", "")).strip() or None,
             "linked_offering_ids": linked_offerings,
         }
@@ -94,6 +105,7 @@ async def projects_new_submit(request: Request):
 
 
 @router.post("/{project_id}/edit")
+@require_permission("project_edit")
 async def project_edit_submit(request: Request, project_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -110,6 +122,11 @@ async def project_edit_submit(request: Request, project_id: str):
 
     linked_vendors = _dedupe_ordered([str(x).strip() for x in form.getlist("linked_vendors") if str(x).strip()])
     linked_offerings = _dedupe_ordered([str(x).strip() for x in form.getlist("linked_offerings") if str(x).strip()])
+    try:
+        resolved_owner_principal = _resolve_owner_principal_input(repo, form)
+    except Exception as exc:
+        add_flash(request, str(exc), "error")
+        return RedirectResponse(url=f"/projects/{project_id}/summary?return_to={quote(return_to, safe='')}", status_code=303)
     if linked_offerings:
         offering_rows = repo.get_offerings_by_ids(linked_offerings).to_dict("records")
         for row in offering_rows:
@@ -123,7 +140,7 @@ async def project_edit_submit(request: Request, project_id: str):
         "status": _normalize_project_status(str(form.get("status", "draft"))),
         "start_date": str(form.get("start_date", "")).strip() or None,
         "target_date": str(form.get("target_date", "")).strip() or None,
-        "owner_principal": str(form.get("owner_principal", "")).strip() or None,
+        "owner_principal": resolved_owner_principal,
         "description": str(form.get("description", "")).strip() or None,
     }
 
@@ -176,12 +193,17 @@ async def project_edit_submit(request: Request, project_id: str):
 
 
 @router.post("/{project_id}/owner/update")
+@require_permission("project_owner_update")
 async def project_owner_update(request: Request, project_id: str):
     repo = get_repo()
     user = get_user_context(request)
     form = await request.form()
     return_to = _safe_return_to(str(form.get("return_to", f"/projects/{project_id}/ownership")))
-    owner_principal = str(form.get("owner_principal", "")).strip() or None
+    try:
+        owner_principal = _resolve_owner_principal_input(repo, form)
+    except Exception as exc:
+        add_flash(request, str(exc), "error")
+        return RedirectResponse(url=return_to, status_code=303)
     reason = str(form.get("reason", "")).strip() or "Update project owner"
 
     if user.config.locked_mode:

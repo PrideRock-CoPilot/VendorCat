@@ -6,7 +6,27 @@ Databricks-compatible Vendor Catalog application with a complete data model, gov
 - Production-style FastAPI + Jinja web app: `app/vendor_catalog_app`
 - Local SQLite bootstrap for full logical schema and seed data: `setup/local_db`
 - Architecture and domain design docs: `docs/architecture`
+- Governance and drift prevention framework: `docs/governance`
+- Operational runbooks: `docs/operations`
 - Changelog of implemented features: `docs/CHANGELOG.md`
+
+## Documentation
+
+**Start here**: [Documentation Index](docs/README.md)
+
+**Essential reads for developers**:
+- [Guardrails](docs/governance/guardrails.md) - 10 non-negotiable rules
+- [Definition of Done](docs/governance/definition-of-done.md) - PR checklists
+- [RBAC & Permissions](docs/architecture/rbac-and-permissions.md) - Permission enforcement patterns
+- [CI Quality Gates](docs/operations/ci-quality-gates.md) - Running checks locally
+
+**For deployments**:
+- [Release Process](docs/governance/release-process.md) - Branch strategy, versioning, rollback
+- [Migrations & Schema](docs/operations/migrations-and-schema.md) - Schema change workflow
+
+**For drift prevention**:
+- [Drift Threat Model](docs/governance/drift-threat-model.md) - Top 10 drift vectors with SLO targets
+- [PR Bundles](docs/roadmap/pr-bundles.md) - Step-by-step implementation plan
 
 ## Top-Level Layout
 - `app/`: runtime application code only

@@ -6,6 +6,7 @@ from datetime import date
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+
 from vendor_catalog_app.repository import (
     GLOBAL_CHANGE_VENDOR_ID,
     UNKNOWN_USER_PRINCIPAL,
@@ -21,14 +22,15 @@ from vendor_catalog_app.web.routers.demos.common import (
     DEMO_REVIEW_TEMPLATE_V2_NOTE_TYPE,
     DEMO_STAGE_NOTE_TYPE,
     DEMO_STAGE_ORDER,
-    build_template_library_index,
     build_submission_from_form,
+    build_template_library_index,
     is_demo_session_open,
     normalize_demo_stage,
     normalize_selection_outcome,
     parse_template_note,
     parse_template_questions_from_form,
 )
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/demos")
 
@@ -71,6 +73,7 @@ def _new_template_key() -> str:
 
 
 @router.post("")
+@require_permission("demo_create")
 async def create_demo(request: Request):
     repo = get_repo()
     user = get_user_context(request)
@@ -156,6 +159,7 @@ async def create_demo(request: Request):
 
 
 @router.post("/{demo_id}/stage")
+@require_permission("demo_stage")
 async def update_demo_stage(request: Request, demo_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -200,6 +204,7 @@ async def update_demo_stage(request: Request, demo_id: str):
 
 
 @router.post("/forms/save")
+@require_permission("demo_form_save")
 async def save_demo_form_template(request: Request):
     repo = get_repo()
     user = get_user_context(request)
@@ -262,6 +267,7 @@ async def save_demo_form_template(request: Request):
 
 
 @router.post("/forms/{template_key}/copy")
+@require_permission("demo_form_copy")
 async def copy_demo_form_template(request: Request, template_key: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -312,6 +318,7 @@ async def copy_demo_form_template(request: Request, template_key: str):
 
 
 @router.post("/forms/{template_key}/delete")
+@require_permission("demo_form_delete")
 async def delete_demo_form_template(request: Request, template_key: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -362,6 +369,7 @@ async def delete_demo_form_template(request: Request, template_key: str):
 
 
 @router.post("/{demo_id}/review-form/template")
+@require_permission("demo_review_form_template")
 async def save_demo_review_template(request: Request, demo_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -452,6 +460,7 @@ async def save_demo_review_template(request: Request, demo_id: str):
 
 
 @router.post("/{demo_id}/review-form/template/attach")
+@require_permission("demo_review_form_attach")
 async def attach_demo_review_template(request: Request, demo_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -523,6 +532,7 @@ async def attach_demo_review_template(request: Request, demo_id: str):
 
 
 @router.post("/{demo_id}/review-form/submit")
+@require_permission("demo_review_form_submit")
 async def submit_demo_review_form(request: Request, demo_id: str):
     repo = get_repo()
     user = get_user_context(request)

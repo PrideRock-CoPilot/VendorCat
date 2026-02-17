@@ -37,7 +37,6 @@ from vendor_catalog_app.core.env import (
     get_first_env,
 )
 
-
 DEV_ENV_NAMES = set(DEFAULT_DEV_ENV_NAMES)
 
 
@@ -145,7 +144,7 @@ class AppConfig:
         return self.env in DEV_ENV_NAMES
 
     @staticmethod
-    def from_env() -> "AppConfig":
+    def from_env() -> AppConfig:
         env_name = get_env(TVENDOR_ENV, DEFAULT_ENV_NAME).lower() or DEFAULT_ENV_NAME
         catalog, schema = _resolve_catalog_schema(env_name)
         default_local_db = env_name in DEV_ENV_NAMES

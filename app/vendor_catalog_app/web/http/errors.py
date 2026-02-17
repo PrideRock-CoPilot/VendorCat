@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import Request
@@ -9,9 +9,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from vendor_catalog_app.infrastructure.db import DataConnectionError, DataExecutionError, DataQueryError
 from vendor_catalog_app.core.env import TVENDOR_ERROR_INCLUDE_DETAILS, get_env_bool
 from vendor_catalog_app.core.repository_errors import SchemaBootstrapRequiredError
+from vendor_catalog_app.infrastructure.db import DataConnectionError, DataExecutionError, DataQueryError
 
 ERROR_CODE_SCHEMA_BOOTSTRAP_REQUIRED = "SCHEMA_BOOTSTRAP_REQUIRED"
 ERROR_CODE_VALIDATION = "VALIDATION_ERROR"
@@ -83,7 +83,7 @@ def build_api_error_payload(
             "message": str(message),
         },
         "request_id": str(request_id or "-"),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
     if details and _include_details():
         payload["error"]["details"] = details

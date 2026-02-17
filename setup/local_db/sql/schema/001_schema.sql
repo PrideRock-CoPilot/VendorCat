@@ -581,6 +581,43 @@ CREATE TABLE IF NOT EXISTS app_document_link (
   updated_by TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS vendor_help_article (
+  article_id TEXT PRIMARY KEY,
+  slug TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  section TEXT NOT NULL,
+  article_type TEXT NOT NULL,
+  role_visibility TEXT NOT NULL,
+  content_md TEXT NOT NULL,
+  owned_by TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  created_by TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS vendor_help_feedback (
+  feedback_id TEXT PRIMARY KEY,
+  article_id TEXT,
+  article_slug TEXT,
+  was_helpful INTEGER NOT NULL DEFAULT 0 CHECK (was_helpful IN (0, 1)),
+  comment TEXT,
+  user_principal TEXT,
+  page_path TEXT,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS vendor_help_issue (
+  issue_id TEXT PRIMARY KEY,
+  article_id TEXT,
+  article_slug TEXT,
+  issue_title TEXT NOT NULL,
+  issue_description TEXT NOT NULL,
+  page_path TEXT,
+  user_principal TEXT,
+  created_at TEXT NOT NULL
+);
+
 -- Security tables
 CREATE TABLE IF NOT EXISTS sec_user_role_map (
   user_principal TEXT NOT NULL,

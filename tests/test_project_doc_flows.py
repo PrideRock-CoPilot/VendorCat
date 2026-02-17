@@ -183,6 +183,29 @@ def test_create_project_without_vendor_then_attach_multiple(client: TestClient) 
     assert "Vendorless Bootstrap Project" in vendor_2_projects.text
 
 
+def test_create_project_accepts_owner_display_name_lookup(client: TestClient) -> None:
+    create_response = client.post(
+        "/projects/new",
+        data={
+            "return_to": "/projects",
+            "project_name": "Display Name Owner Project",
+            "project_type": "implementation",
+            "status": "draft",
+            "owner_principal": "",
+            "owner_principal_display_name": "Admin User",
+        },
+        follow_redirects=False,
+    )
+    assert create_response.status_code == 303
+    match = re.search(r"/projects/(prj-[^/]+)/summary", create_response.headers["location"])
+    assert match is not None
+    project_id = match.group(1)
+
+    detail_response = client.get(f"/projects/{project_id}/summary?return_to=%2Fprojects")
+    assert detail_response.status_code == 200
+    assert "admin@example.com" in detail_response.text
+
+
 def test_add_project_note_from_standalone_project_page(client: TestClient) -> None:
     create_project = client.post(
         "/vendors/vnd-001/projects/new",

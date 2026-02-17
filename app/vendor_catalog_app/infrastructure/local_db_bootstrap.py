@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 from vendor_catalog_app.core.config import AppConfig
 from vendor_catalog_app.core.env import (

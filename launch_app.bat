@@ -33,6 +33,23 @@ if "%TVENDOR_LOCAL_DB_SEED%"=="" set "TVENDOR_LOCAL_DB_SEED=false"
 if "%TVENDOR_LOCAL_DB_SEED_PROFILE%"=="" set "TVENDOR_LOCAL_DB_SEED_PROFILE=baseline"
 if "%TVENDOR_LOCAL_DB_REBUILD_MODE%"=="" set "TVENDOR_LOCAL_DB_REBUILD_MODE=always"
 if "%PORT%"=="" set "PORT=8000"
+if "%TVENDOR_PORT_FALLBACK%"=="" set "TVENDOR_PORT_FALLBACK=true"
+
+call :is_port_free %PORT%
+if errorlevel 1 (
+  if /I "%TVENDOR_PORT_FALLBACK%"=="true" (
+    echo Port %PORT% is in use. Searching for a free port...
+    call :find_free_port %PORT% 20
+    if errorlevel 1 (
+      echo ERROR: No available port found near %PORT%.
+      exit /b 1
+    )
+  ) else (
+    echo ERROR: Port %PORT% is already in use.
+    echo Set TVENDOR_PORT_FALLBACK=true to auto-select a free port.
+    exit /b 1
+  )
+)
 
 if /I "%TVENDOR_USE_LOCAL_DB%"=="true" (
   if /I not "%TVENDOR_ENV%"=="dev" if /I not "%TVENDOR_ENV%"=="development" if /I not "%TVENDOR_ENV%"=="local" (
@@ -149,3 +166,32 @@ if errorlevel 1 (
 )
 
 endlocal
+
+goto :eof
+
+:is_port_free
+setlocal
+set "CHECK_PORT=%~1"
+for /f "tokens=1" %%A in ('netstat -ano ^| findstr /R /C:":%CHECK_PORT% .*LISTENING"') do (
+  endlocal & exit /b 1
+)
+endlocal & exit /b 0
+
+:find_free_port
+setlocal EnableDelayedExpansion
+set "START_PORT=%~1"
+set "MAX_TRIES=%~2"
+if "!MAX_TRIES!"=="" set "MAX_TRIES=10"
+set /a "PORT_CANDIDATE=!START_PORT!"
+for /l %%i in (0,1,!MAX_TRIES!) do (
+  call :is_port_free !PORT_CANDIDATE!
+  if !errorlevel! == 0 (
+    for /f %%P in ("!PORT_CANDIDATE!") do (
+      endlocal
+      set "PORT=%%P"
+      exit /b 0
+    )
+  )
+  set /a PORT_CANDIDATE+=1
+)
+endlocal & exit /b 1

@@ -25,8 +25,8 @@ Use this rule instead:
 
 These counts are from current production-like flow checks.
 
-1. Create vendor with existing owner org: `3` clicks.
-1. Create vendor with new owner org: `4` clicks.
+1. Create vendor with existing line of business: `3` clicks.
+1. Create vendor with new line of business: `4` clicks.
 1. Create offering from a vendor: `3` clicks.
 1. Add invoice in offering financials: `3` clicks.
 1. Create project with owner + links: `6` clicks.

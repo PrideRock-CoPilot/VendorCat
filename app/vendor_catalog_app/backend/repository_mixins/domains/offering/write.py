@@ -5,6 +5,7 @@ import uuid
 from typing import Any
 
 import pandas as pd
+
 from vendor_catalog_app.core.repository_constants import *
 
 LOGGER = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ class RepositoryOfferingWriteMixin:
             raise ValueError("Legal name is required.")
         owner_org_id = (owner_org_id or "").strip()
         if not owner_org_id:
-            raise ValueError("Owner Org ID is required.")
+            raise ValueError("Line of Business is required.")
         vendor_id = self._new_id("vnd")
         now = self._now()
         actor_ref = self._actor_ref(actor_user_principal)
@@ -387,7 +388,7 @@ class RepositoryOfferingWriteMixin:
         after.update(clean_updates)
 
         request_id = str(uuid.uuid4())
-        set_clause = ", ".join([f"{k} = %s" for k in clean_updates.keys()])
+        set_clause = ", ".join([f"{k} = %s" for k in clean_updates])
         params = list(clean_updates.values()) + [offering_id, vendor_id]
         self._ensure_local_offering_columns()
         self._execute_file(
@@ -969,6 +970,66 @@ class RepositoryOfferingWriteMixin:
             request_id=None,
         )
 
+    def bulk_reassign_offering_owner(
+        self,
+        *,
+        vendor_id: str,
+        from_owner_user_principal: str,
+        to_owner_user_principal: str,
+        actor_user_principal: str,
+    ) -> int:
+        if not str(vendor_id or "").strip():
+            raise ValueError("Vendor ID is required.")
+        from_candidate = str(from_owner_user_principal or "").strip()
+        to_candidate = str(to_owner_user_principal or "").strip()
+        if not from_candidate:
+            raise ValueError("Source owner is required.")
+        if not to_candidate:
+            raise ValueError("Replacement owner is required.")
+
+        to_owner_ref = self.resolve_user_id(to_candidate, allow_create=True)
+        if not to_owner_ref:
+            raise ValueError("Replacement owner must exist in the app user directory.")
+        to_owner_login = self.resolve_user_login_identifier(to_candidate) or to_candidate
+
+        owners_df = self.get_vendor_offering_business_owners(vendor_id)
+        if owners_df.empty:
+            return 0
+        active_mask = ~owners_df["active_flag"].astype(str).str.strip().str.lower().isin({"0", "false", "no", "n"})
+        owner_values = owners_df["owner_user_principal"].astype(str).str.strip()
+        source_mask = owner_values.str.lower() == from_candidate.lower()
+        rows_to_update = owners_df[active_mask & source_mask]
+        if rows_to_update.empty:
+            return 0
+
+        source_values = {
+            str(from_candidate).strip().lower(),
+        }
+        source_ref = self.resolve_user_id(from_candidate, allow_create=False)
+        if source_ref:
+            source_values.add(str(source_ref).strip().lower())
+
+        target_values = {
+            str(to_candidate).strip().lower(),
+            str(to_owner_ref).strip().lower(),
+            str(to_owner_login).strip().lower(),
+        }
+        if source_values & target_values:
+            raise ValueError("Source and replacement owners must be different.")
+
+        now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
+        for row in rows_to_update.to_dict("records"):
+            owner_id = str(row.get("offering_owner_id") or "").strip()
+            if not owner_id:
+                continue
+            self._execute_file(
+                "updates/reassign_offering_owner_assignment.sql",
+                params=(to_owner_ref, now, actor_ref, owner_id),
+                core_offering_business_owner=self._table("core_offering_business_owner"),
+            )
+        return int(len(rows_to_update))
+
     def add_offering_contact(
         self,
         *,
@@ -982,25 +1043,13 @@ class RepositoryOfferingWriteMixin:
     ) -> str:
         if not self.offering_belongs_to_vendor(vendor_id, offering_id):
             raise ValueError("Offering does not belong to vendor.")
-        lookup_value = str(email or "").strip() or str(full_name or "").strip()
-        if not lookup_value:
-            raise ValueError("Contact must be selected from employee directory.")
-        login_identifier = self.resolve_user_login_identifier(lookup_value)
-        if not login_identifier:
-            raise ValueError("Offering contact must exist in vw_employee_directory.")
-        self._ensure_user_directory_entry(login_identifier)
-        profile = self.get_user_directory_profile(login_identifier) or {}
-        resolved_display_name = (
-            str(profile.get("display_name") or "").strip()
-            or " ".join(
-                [
-                    str(profile.get("first_name") or "").strip(),
-                    str(profile.get("last_name") or "").strip(),
-                ]
-            ).strip()
-            or login_identifier
-        )
-        resolved_email = str(profile.get("email") or "").strip() or login_identifier
+        resolved_display_name = str(full_name or "").strip()
+        resolved_email = str(email or "").strip()
+        resolved_phone = str(phone or "").strip()
+        if not resolved_display_name and resolved_email:
+            resolved_display_name = resolved_email
+        if not resolved_display_name:
+            raise ValueError("Contact name is required.")
         contact_type_options = self.list_contact_type_options() or ["business"]
         contact_type_value = self._normalize_choice(
             contact_type,
@@ -1016,8 +1065,8 @@ class RepositoryOfferingWriteMixin:
             "offering_id": offering_id,
             "contact_type": contact_type_value,
             "full_name": resolved_display_name,
-            "email": resolved_email,
-            "phone": None,
+            "email": resolved_email or None,
+            "phone": resolved_phone or None,
             "active_flag": True,
             "updated_at": now.isoformat(),
             "updated_by": actor_ref,

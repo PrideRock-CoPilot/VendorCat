@@ -6,6 +6,7 @@ import uuid
 from typing import Any
 
 import pandas as pd
+
 from vendor_catalog_app.core.env import TVENDOR_USER_DIRECTORY_TOUCH_TTL_SEC, get_env
 from vendor_catalog_app.core.repository_constants import UNKNOWN_USER_PRINCIPAL
 from vendor_catalog_app.infrastructure.db import DataConnectionError, DataExecutionError

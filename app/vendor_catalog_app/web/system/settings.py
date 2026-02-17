@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hmac
+from dataclasses import dataclass
 
 from fastapi import Request
 
@@ -12,8 +12,8 @@ from vendor_catalog_app.core.env import (
     TVENDOR_CSP_ENABLED,
     TVENDOR_CSP_POLICY,
     TVENDOR_CSRF_ENABLED,
-    TVENDOR_DATABRICKS_REPORTS_ALLOWED_HOSTS,
     TVENDOR_DATABRICKS_REPORTS_ALLOW_EMBED,
+    TVENDOR_DATABRICKS_REPORTS_ALLOWED_HOSTS,
     TVENDOR_METRICS_ALLOW_UNAUTHENTICATED,
     TVENDOR_METRICS_AUTH_TOKEN,
     TVENDOR_PERF_LOG_ENABLED,

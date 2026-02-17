@@ -3,6 +3,7 @@ from __future__ import annotations
 import pandas as pd
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
+
 from vendor_catalog_app.web.core.runtime import get_repo
 from vendor_catalog_app.web.core.template_context import base_template_context
 from vendor_catalog_app.web.core.user_context_service import get_user_context
@@ -15,11 +16,14 @@ from vendor_catalog_app.web.routers.vendors.common import (
     _write_blocked,
 )
 from vendor_catalog_app.web.routers.vendors.constants import (
+    CONTRACT_CHANGE_REASON_OPTIONS,
     CONTRACT_CANCEL_REASON_OPTIONS,
+    CONTRACT_MAPPING_REASON_OPTIONS,
     CONTRACT_STATUS_DEFAULT,
     CONTRACT_STATUS_OPTIONS,
     VENDOR_DEFAULT_RETURN_TO,
 )
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/vendors")
 
@@ -50,12 +54,14 @@ def vendor_contracts_page(request: Request, vendor_id: str, return_to: str = VEN
             "offering_options": offering_options,
             "contract_status_options": CONTRACT_STATUS_OPTIONS,
             "contract_cancel_reason_options": CONTRACT_CANCEL_REASON_OPTIONS,
+            "contract_change_reason_options": CONTRACT_CHANGE_REASON_OPTIONS,
         },
     )
     return request.app.state.templates.TemplateResponse(request, "vendor_section.html", context)
 
 
 @router.post("/{vendor_id}/map-contract")
+@require_permission("vendor_contract_map")
 async def map_contract_submit(request: Request, vendor_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -80,6 +86,9 @@ async def map_contract_submit(request: Request, vendor_id: str):
         return RedirectResponse(url=return_to, status_code=303)
     if offering_id and not repo.offering_belongs_to_vendor(vendor_id, offering_id):
         add_flash(request, "Selected offering does not belong to this vendor.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
+    if not reason:
+        add_flash(request, "Reason is required for mapping.", "error")
         return RedirectResponse(url=return_to, status_code=303)
 
     try:
@@ -117,6 +126,7 @@ async def map_contract_submit(request: Request, vendor_id: str):
 
 
 @router.post("/{vendor_id}/contracts/add")
+@require_permission("vendor_contract_create")
 async def add_vendor_contract_submit(request: Request, vendor_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -183,6 +193,7 @@ async def add_vendor_contract_submit(request: Request, vendor_id: str):
 
 
 @router.post("/{vendor_id}/contracts/{contract_id}/cancel")
+@require_permission("vendor_contract_cancel")
 async def cancel_vendor_contract_submit(request: Request, vendor_id: str, contract_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -248,6 +259,7 @@ async def cancel_vendor_contract_submit(request: Request, vendor_id: str, contra
 
 
 @router.post("/{vendor_id}/contracts/{contract_id}/update")
+@require_permission("vendor_contract_update")
 async def update_vendor_contract_submit(request: Request, vendor_id: str, contract_id: str):
     repo = get_repo()
     user = get_user_context(request)
@@ -270,6 +282,9 @@ async def update_vendor_contract_submit(request: Request, vendor_id: str, contra
         "end_date": str(form.get("end_date", "")).strip() or None,
         "annual_value": str(form.get("annual_value", "")).strip() or None,
     }
+    if not reason:
+        add_flash(request, "Reason is required for updates.", "error")
+        return RedirectResponse(url=return_to, status_code=303)
 
     try:
         if user.can_apply_change("update_contract"):
@@ -310,6 +325,7 @@ async def update_vendor_contract_submit(request: Request, vendor_id: str, contra
 
 
 @router.post("/{vendor_id}/map-contracts/bulk")
+@require_permission("vendor_contract_map_bulk")
 async def map_contracts_bulk_submit(request: Request, vendor_id: str):
     repo = get_repo()
     user = get_user_context(request)

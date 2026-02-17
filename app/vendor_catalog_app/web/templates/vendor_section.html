@@ -28,6 +28,7 @@
     <p>Vendor 360 high-level profile, governance, and audit.</p>
   </div>
   <div class="button-group">
+    <a class="button-link subtle" href="/help/vendor-360-overview">? Help</a>
     <a class="button-link subtle" href="/vendors/{{ vendor_id }}/offerings?return_to={{ return_to|urlencode }}">Offerings</a>
     <a class="button-link" href="{{ return_to }}">Back To List</a>
   </div>
@@ -221,78 +222,259 @@
 {% endif %}
 
 {% if section == "ownership" %}
-<div class="grid grid-3">
-  <section class="card section-divider">
-    <h2>Vendor Owners</h2>
+{% set vendor_owner_role_options = owner_role_options|default(["business_owner", "executive_owner", "service_owner", "technical_owner", "security_owner", "application_owner", "platform_owner", "legacy_owner"], true) %}
+{% set vendor_contact_type_options = contact_type_options|default(["business", "account_manager", "support", "escalation", "security_specialist", "customer_success", "product_manager"], true) %}
+{% set vendor_ownership_return_to = "/vendors/" ~ vendor_id ~ "/ownership" %}
+<section class="card section-divider">
+  <div class="button-group" data-vendor-ownership-tabs role="tablist" aria-label="Vendor ownership areas" style="margin-bottom:10px;">
+    <a href="#" class="button-link subtle active-tab" data-vendor-ownership-tab="owners" role="tab" aria-selected="true">Owners</a>
+    <a href="#" class="button-link subtle" data-vendor-ownership-tab="contacts" role="tab" aria-selected="false">Contacts</a>
+    <a href="#" class="button-link subtle" data-vendor-ownership-tab="org" role="tab" aria-selected="false">Line of Business</a>
+  </div>
+
+  <div data-vendor-ownership-panel="owners">
+    <div class="section-header">
+      <div><h2>Vendor Owners</h2></div>
+      {% if can_edit and not locked_mode %}
+      <div class="button-group">
+        <a
+          class="button-link"
+          href="#"
+          data-workspace-open
+          data-workspace-mode="drawer-right"
+          data-workspace-title="Add Vendor Owner"
+          data-workspace-template="vendor-owner-add-template"
+        >Add Owner</a>
+      </div>
+      {% endif %}
+    </div>
+    <div class="grid grid-2" style="margin-bottom:10px;">
+      <label>Search Owner
+        <input type="text" id="vendor-owner-search-filter" placeholder="Principal or display name">
+      </label>
+      <label>Role Filter
+        <select id="vendor-owner-role-filter">
+          <option value="">all</option>
+          {% for option in vendor_owner_role_options %}
+          <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
     <table>
       <thead><tr><th>Owner</th><th>Role</th><th>Active</th></tr></thead>
       <tbody>
       {% for row in owners %}
-      <tr><td>{{ row.owner_user_principal }}</td><td>{{ row.owner_role }}</td><td>{{ row.active_flag }}</td></tr>
+      <tr data-vendor-owner-filter-row data-owner-principal="{{ row.owner_user_principal|lower }}" data-owner-role="{{ row.owner_role|lower }}">
+        <td>{{ row.owner_user_principal }}</td>
+        <td>{{ row.owner_role }}</td>
+        <td>{{ row.active_flag }}</td>
+      </tr>
       {% else %}
       <tr><td colspan="3">No owners</td></tr>
       {% endfor %}
       </tbody>
     </table>
-    {% if can_edit and not locked_mode %}
-    <h3 style="margin-top:10px;">Add Owner</h3>
-    <div style="margin-top:10px;">
-      {{ vendor_owner_add_form(
-           post_url="/vendors/" ~ vendor_id ~ "/owners/add",
-           return_to="/vendors/" ~ vendor_id ~ "/ownership",
-           default_role="business_owner",
-           submit_label="Add Owner"
-         ) }}
+  </div>
+
+  <div data-vendor-ownership-panel="contacts" hidden>
+    <div class="section-header">
+      <div><h2>Vendor Contacts</h2></div>
+      {% if can_edit and not locked_mode %}
+      <div class="button-group">
+        <a
+          class="button-link"
+          href="#"
+          data-workspace-open
+          data-workspace-mode="drawer-right"
+          data-workspace-title="Add Vendor Contact"
+          data-workspace-template="vendor-contact-add-template"
+        >Add Contact</a>
+      </div>
+      {% endif %}
     </div>
-    {% endif %}
-  </section>
-  <section class="card section-divider">
-    <h2>Org Assignments</h2>
-    <table>
-      <thead><tr><th>Org</th><th>Type</th><th>Active</th></tr></thead>
-      <tbody>
-      {% for row in org_assignments %}
-      <tr><td>{{ row.org_id }}</td><td>{{ row.assignment_type }}</td><td>{{ row.active_flag }}</td></tr>
-      {% else %}
-      <tr><td colspan="3">No assignments</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    {% if can_edit and not locked_mode %}
-    <h3 style="margin-top:10px;">Add Assignment</h3>
-    <div style="margin-top:10px;">
-      {{ vendor_org_assignment_add_form(
-           post_url="/vendors/" ~ vendor_id ~ "/org-assignments/add",
-           return_to="/vendors/" ~ vendor_id ~ "/ownership",
-           submit_label="Add Assignment"
-         ) }}
+    <div class="grid grid-2" style="margin-bottom:10px;">
+      <label>Search Contact
+        <input type="text" id="vendor-contact-search-filter" placeholder="Name, email, or phone">
+      </label>
+      <label>Type Filter
+        <select id="vendor-contact-type-filter">
+          <option value="">all</option>
+          {% for option in vendor_contact_type_options %}
+          <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+          {% endfor %}
+        </select>
+      </label>
     </div>
-    {% endif %}
-  </section>
-  <section class="card section-divider">
-    <h2>Vendor Contacts</h2>
     <table>
       <thead><tr><th>Name</th><th>Type</th><th>Email</th><th>Phone</th></tr></thead>
       <tbody>
       {% for row in contacts %}
-      <tr><td>{{ row.full_name }}</td><td>{{ row.contact_type }}</td><td>{{ row.email }}</td><td>{{ row.phone }}</td></tr>
+      <tr
+        data-vendor-contact-filter-row
+        data-contact-name="{{ (row.full_name or '')|lower }}"
+        data-contact-email="{{ (row.email or '')|lower }}"
+        data-contact-phone="{{ (row.phone or '')|lower }}"
+        data-contact-type="{{ (row.contact_type or '')|lower }}"
+      >
+        <td>{{ row.full_name }}</td>
+        <td>{{ row.contact_type }}</td>
+        <td>{{ row.email }}</td>
+        <td>{{ row.phone }}</td>
+      </tr>
       {% else %}
       <tr><td colspan="4">No contacts</td></tr>
       {% endfor %}
       </tbody>
     </table>
-    {% if can_edit and not locked_mode %}
-    <h3 style="margin-top:10px;">Add Contact</h3>
-    <div style="margin-top:10px;">
+  </div>
+
+  <div data-vendor-ownership-panel="org" hidden>
+    <div class="section-header">
+      <div></div>
+      {% if can_edit and not locked_mode %}
+      <div class="button-group">
+        <a
+          class="button-link"
+          href="#"
+          data-workspace-open
+          data-workspace-mode="drawer-right"
+          data-workspace-title="Set Vendor Line of Business"
+          data-workspace-template="vendor-lob-update-template"
+        >Set Line of Business</a>
+      </div>
+      {% endif %}
+    </div>
+    <table>
+      <thead><tr><th title="Select one or more values from the admin-managed Offering LOB lookup list. Primary is optional.">Lines of Business</th></tr></thead>
+      <tbody>
+      <tr>
+        <td>
+          {% if ownership_lob_items %}
+            <ul style="margin:0; padding-left:18px;">
+              {% for item in ownership_lob_items %}
+              <li>
+                {{ item.lob }}{% if item.is_primary %} (Primary){% endif %}
+              </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            Not set
+          {% endif %}
+        </td>
+      </tr>
+      </tbody>
+    </table>
+  </div>
+
+  {% if can_edit and not locked_mode %}
+  <template id="vendor-owner-add-template">
+    <section>
+      <h3>Add Owner</h3>
+      {{ vendor_owner_add_form(
+           post_url="/vendors/" ~ vendor_id ~ "/owners/add",
+           return_to=vendor_ownership_return_to,
+           default_role="business_owner",
+           submit_label="Add Owner"
+         ) }}
+    </section>
+  </template>
+  <template id="vendor-contact-add-template">
+    <section>
+      <h3>Add Contact</h3>
       {{ vendor_contact_add_form(
            post_url="/vendors/" ~ vendor_id ~ "/contacts/add",
-           return_to="/vendors/" ~ vendor_id ~ "/ownership",
+           return_to=vendor_ownership_return_to,
            submit_label="Add Contact"
          ) }}
-    </div>
-    {% endif %}
-  </section>
-</div>
+    </section>
+  </template>
+  <template id="vendor-lob-update-template">
+    <section>
+      <h3>Set Vendor Line of Business</h3>
+      {% set selected_lob_values = [current_owner_org_id] if current_owner_org_id else [] %}
+      {% for row in org_assignments %}
+      {% set active_flag_value = (row.active_flag|string)|trim|lower %}
+      {% set is_active_assignment = active_flag_value not in ["0", "false", "no", "n"] %}
+      {% set assignment_lob = (row.org_id or "")|string %}
+      {% if is_active_assignment and assignment_lob and assignment_lob not in selected_lob_values %}
+      {% set _ = selected_lob_values.append(assignment_lob) %}
+      {% endif %}
+      {% endfor %}
+      {% set unmanaged_selected_lobs = [] %}
+      {% for selected_lob in selected_lob_values %}
+      {% if selected_lob not in ownership_lob_options %}
+      {% set _ = unmanaged_selected_lobs.append(selected_lob) %}
+      {% endif %}
+      {% endfor %}
+      <form method="post" action="/vendors/{{ vendor_id }}/ownership/lob/update" class="grid grid-1 form-grid" data-overlay-dirty-watch="true">
+        <input type="hidden" name="return_to" value="{{ vendor_ownership_return_to }}">
+        <label>Search LOB
+          <input type="text" id="vendor-lob-search-filter" placeholder="Type to filter options">
+        </label>
+        <div>
+          <span>Line of Business</span>
+          <div class="button-group" style="margin:8px 0 6px 0;">
+            <button type="button" class="button-link subtle" data-vendor-select-all-lobs>Select All</button>
+            <button type="button" class="button-link subtle" data-vendor-clear-all-lobs>Clear All</button>
+          </div>
+          <div id="vendor-lob-checkboxes" style="border:1px solid var(--border); border-radius:8px; max-height:min(52vh, 420px); overflow:auto; padding:8px; margin-top:6px;">
+            <div style="display:grid; grid-template-columns:64px 56px 1fr; align-items:center; gap:12px; margin:0 0 12px 0; font-size:13px; font-weight:700; color:#475569;">
+              <span style="white-space:nowrap;">Primary</span>
+              <span style="white-space:nowrap;">Active</span>
+              <span style="white-space:nowrap;">LOB</span>
+            </div>
+            {% for option in ownership_lob_options %}
+            <div data-vendor-lob-option data-lob-value="{{ option }}">
+              <label style="display:grid; grid-template-columns:64px 56px 1fr; align-items:center; gap:12px; padding:6px 0; line-height:1.25; cursor:pointer;">
+                <input
+                  type="radio"
+                  name="primary_lob"
+                  value="{{ option }}"
+                  data-vendor-primary-radio
+                  style="width:auto; min-width:0; margin:0; justify-self:center; visibility:hidden;"
+                  {% if option == (current_owner_org_id or "") %}checked{% endif %}
+                >
+                <input
+                  type="checkbox"
+                  name="lobs"
+                  value="{{ option }}"
+                  data-vendor-lob-checkbox
+                  style="width:auto; min-width:0; margin:0; justify-self:center;"
+                  {% if option in selected_lob_values %}checked{% endif %}
+                >
+                <span>{{ option }}</span>
+              </label>
+            </div>
+            {% endfor %}
+            {% for option in unmanaged_selected_lobs %}
+            <div style="display:grid; grid-template-columns:64px 56px 1fr; align-items:center; gap:12px; padding:6px 0; line-height:1.25; opacity:0.8;">
+              <input type="radio" disabled style="width:auto; min-width:0; margin:0; justify-self:center; visibility:hidden;">
+              <input type="checkbox" checked disabled style="width:auto; min-width:0; margin:0; justify-self:center;">
+              <span>{{ option }} (Current, unmanaged)</span>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        <div style="position:sticky; bottom:0; background:var(--card); border-top:1px solid var(--line); padding-top:10px; margin-top:8px;">
+          <label>Reason
+            <select name="reason_code" data-vendor-reason-code>
+              {% for option in org_assignment_reason_options %}
+              <option value="{{ option }}" {% if option == "ownership_alignment" %}selected{% endif %}>{{ option|replace('_', ' ')|title }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label data-vendor-reason-other-wrap style="display:none;">
+            Other reason
+            <input type="text" name="reason_other_detail" data-vendor-reason-other placeholder="Enter reason" maxlength="200">
+          </label>
+          <div class="form-actions"><button type="submit">Save Line of Business</button></div>
+        </div>
+      </form>
+    </section>
+  </template>
+  {% endif %}
+</section>
 {% endif %}
 
 {% if section == "contracts" %}
@@ -334,7 +516,12 @@
         <input type="text" name="annual_value" placeholder="e.g. 125000.00">
       </label>
       <label class="full">Reason
-        <input type="text" name="reason" placeholder="Why this contract is being added">
+        <select name="reason">
+          <option value="">Optional</option>
+          {% for option in contract_change_reason_options %}
+          <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+          {% endfor %}
+        </select>
       </label>
       <div><button type="submit">Add Contract</button></div>
     </form>
@@ -377,7 +564,12 @@
               <input type="date" name="start_date" value="{{ row.start_date or '' }}">
               <input type="date" name="end_date" value="{{ row.end_date or '' }}">
               <input type="text" name="annual_value" value="{{ row.annual_value or '' }}" placeholder="Annual Value">
-              <input type="text" name="reason" placeholder="Reason for update" required>
+              <select name="reason" required>
+                <option value="" selected disabled>Select reason</option>
+                {% for option in contract_change_reason_options %}
+                <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+                {% endfor %}
+              </select>
               <button type="submit">Save Contract</button>
             </form>
           </details>
@@ -534,7 +726,7 @@
         {% endfor %}
       </select>
     </label>
-    <label>Owner Org ID<input type="text" name="owner_org_id" value="{{ current.owner_org_id or '' }}"></label>
+    <label>Line of Business<input type="text" name="owner_org_id" value="{{ current.owner_org_id or '' }}"></label>
     <label>Risk Tier
       <select name="risk_tier">
         {% for tier in risk_tiers %}
@@ -543,7 +735,12 @@
       </select>
     </label>
     <label class="full">Reason For Change (required)
-      <textarea name="reason" rows="2" required placeholder="Explain why this change is needed."></textarea>
+      <select name="reason" required>
+        <option value="" selected disabled>Select reason</option>
+        {% for option in vendor_profile_change_reason_options %}
+        <option value="{{ option }}">{{ option|replace('_', ' ')|title }}</option>
+        {% endfor %}
+      </select>
     </label>
     <div><button type="submit">Apply Audited Update</button></div>
   </form>
@@ -597,5 +794,248 @@
     </tbody>
   </table>
 </section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+{% if section == "ownership" %}
+<script>
+(function () {
+  const tabContainer = document.querySelector("[data-vendor-ownership-tabs]");
+  const tabButtons = Array.from(document.querySelectorAll("[data-vendor-ownership-tab]"));
+  const tabPanels = Array.from(document.querySelectorAll("[data-vendor-ownership-panel]"));
+  if (tabContainer instanceof HTMLElement && tabButtons.length && tabPanels.length) {
+    const showTab = (tabName) => {
+      tabButtons.forEach((button) => {
+        if (!(button instanceof HTMLElement)) return;
+        const isActive = String(button.dataset.vendorOwnershipTab || "") === tabName;
+        button.classList.toggle("active-tab", isActive);
+        button.setAttribute("aria-selected", isActive ? "true" : "false");
+      });
+      tabPanels.forEach((panel) => {
+        if (!(panel instanceof HTMLElement)) return;
+        const isActive = String(panel.dataset.vendorOwnershipPanel || "") === tabName;
+        panel.hidden = !isActive;
+      });
+    };
+    tabButtons.forEach((button) => {
+      if (!(button instanceof HTMLElement)) return;
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        showTab(String(button.dataset.vendorOwnershipTab || "owners"));
+      });
+    });
+    showTab("owners");
+  }
+
+  const ownerSearchInput = document.getElementById("vendor-owner-search-filter");
+  const ownerRoleSelect = document.getElementById("vendor-owner-role-filter");
+  const ownerRows = Array.from(document.querySelectorAll("[data-vendor-owner-filter-row]"));
+  if (ownerSearchInput instanceof HTMLInputElement && ownerRoleSelect instanceof HTMLSelectElement && ownerRows.length) {
+    const applyOwnerFilters = () => {
+      const searchNeedle = String(ownerSearchInput.value || "").trim().toLowerCase();
+      const roleNeedle = String(ownerRoleSelect.value || "").trim().toLowerCase();
+      ownerRows.forEach((row) => {
+        if (!(row instanceof HTMLElement)) return;
+        const principal = String(row.dataset.ownerPrincipal || "").toLowerCase();
+        const role = String(row.dataset.ownerRole || "").toLowerCase();
+        const text = String(row.textContent || "").toLowerCase();
+        const searchMatch = !searchNeedle || principal.includes(searchNeedle) || text.includes(searchNeedle);
+        const roleMatch = !roleNeedle || role === roleNeedle;
+        row.style.display = searchMatch && roleMatch ? "" : "none";
+      });
+    };
+    ownerSearchInput.addEventListener("input", applyOwnerFilters);
+    ownerRoleSelect.addEventListener("change", applyOwnerFilters);
+  }
+
+  const contactSearchInput = document.getElementById("vendor-contact-search-filter");
+  const contactTypeSelect = document.getElementById("vendor-contact-type-filter");
+  const contactRows = Array.from(document.querySelectorAll("[data-vendor-contact-filter-row]"));
+  if (contactSearchInput instanceof HTMLInputElement && contactTypeSelect instanceof HTMLSelectElement && contactRows.length) {
+    const applyContactFilters = () => {
+      const searchNeedle = String(contactSearchInput.value || "").trim().toLowerCase();
+      const typeNeedle = String(contactTypeSelect.value || "").trim().toLowerCase();
+      contactRows.forEach((row) => {
+        if (!(row instanceof HTMLElement)) return;
+        const name = String(row.dataset.contactName || "").toLowerCase();
+        const email = String(row.dataset.contactEmail || "").toLowerCase();
+        const phone = String(row.dataset.contactPhone || "").toLowerCase();
+        const type = String(row.dataset.contactType || "").toLowerCase();
+        const text = String(row.textContent || "").toLowerCase();
+        const searchMatch = !searchNeedle || name.includes(searchNeedle) || email.includes(searchNeedle) || phone.includes(searchNeedle) || text.includes(searchNeedle);
+        const typeMatch = !typeNeedle || type === typeNeedle;
+        row.style.display = searchMatch && typeMatch ? "" : "none";
+      });
+    };
+    contactSearchInput.addEventListener("input", applyContactFilters);
+    contactTypeSelect.addEventListener("change", applyContactFilters);
+  }
+
+  const initVendorLobPrimaryControls = (root) => {
+    if (!(root instanceof HTMLElement || root instanceof Document)) return;
+    const container = root.querySelector("#vendor-lob-checkboxes");
+    if (!(container instanceof HTMLElement)) return;
+    if (container.dataset.vendorLobInit === "true") return;
+
+    const selectAllButton = root.querySelector("button[data-vendor-select-all-lobs]");
+    const clearAllButton = root.querySelector("button[data-vendor-clear-all-lobs]");
+    const checkboxes = Array.from(container.querySelectorAll("input[data-vendor-lob-checkbox]"));
+    const primaryRadios = Array.from(container.querySelectorAll("input[data-vendor-primary-radio]"));
+    const searchInput = root.querySelector("#vendor-lob-search-filter");
+    const reasonCodeSelect = root.querySelector("select[data-vendor-reason-code]");
+    const reasonOtherWrap = root.querySelector("[data-vendor-reason-other-wrap]");
+    const reasonOtherInput = root.querySelector("input[data-vendor-reason-other]");
+    const lobRows = Array.from(container.querySelectorAll("[data-vendor-lob-option]"));
+
+    container.addEventListener("pointerdown", (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const row = target.closest("[data-vendor-lob-option]");
+      if (!(row instanceof HTMLElement)) return;
+      const radio = row.querySelector("input[data-vendor-primary-radio]");
+      if (radio instanceof HTMLInputElement) {
+        radio.dataset.wasChecked = radio.checked ? "true" : "false";
+      }
+    });
+
+    const sync = () => {
+      let anyChecked = false;
+
+      checkboxes.forEach((checkbox) => {
+        if (!(checkbox instanceof HTMLInputElement)) return;
+        const isChecked = checkbox.checked;
+        const row = checkbox.closest("[data-vendor-lob-option]");
+        const radio = row instanceof HTMLElement ? row.querySelector("input[data-vendor-primary-radio]") : null;
+        if (!(radio instanceof HTMLInputElement)) return;
+
+        if (isChecked) {
+          anyChecked = true;
+          radio.style.visibility = "visible";
+          radio.disabled = false;
+        } else {
+          radio.style.visibility = "hidden";
+          radio.checked = false;
+          radio.disabled = true;
+        }
+      });
+
+      if (!anyChecked) {
+        primaryRadios.forEach((radio) => {
+          if (radio instanceof HTMLInputElement) {
+            radio.checked = false;
+          }
+        });
+      }
+    };
+
+    const applyLobFilter = () => {
+      if (!(searchInput instanceof HTMLInputElement)) return;
+      const needle = String(searchInput.value || "").trim().toLowerCase();
+      lobRows.forEach((row) => {
+        if (!(row instanceof HTMLElement)) return;
+        const text = String(row.textContent || "").toLowerCase();
+        row.style.display = !needle || text.includes(needle) ? "" : "none";
+      });
+    };
+
+    const syncReasonOther = () => {
+      if (!(reasonCodeSelect instanceof HTMLSelectElement)) return;
+      const isOther = String(reasonCodeSelect.value || "").trim().toLowerCase() == "other";
+      if (reasonOtherWrap instanceof HTMLElement) {
+        reasonOtherWrap.style.display = isOther ? "" : "none";
+      }
+      if (reasonOtherInput instanceof HTMLInputElement) {
+        reasonOtherInput.required = isOther;
+        if (!isOther) {
+          reasonOtherInput.value = "";
+        }
+      }
+    };
+
+    checkboxes.forEach((checkbox) => {
+      if (!(checkbox instanceof HTMLInputElement)) return;
+      checkbox.addEventListener("change", sync);
+    });
+
+    primaryRadios.forEach((radio) => {
+      if (!(radio instanceof HTMLInputElement)) return;
+      radio.addEventListener("click", (event) => {
+        if (radio.dataset.wasChecked !== "true") return;
+        event.preventDefault();
+        radio.checked = false;
+        sync();
+      });
+      radio.addEventListener("change", () => {
+        if (!radio.checked) {
+          sync();
+          return;
+        }
+        const value = String(radio.value || "");
+        const matchingCheckbox = container.querySelector(
+          `input[data-vendor-lob-checkbox][value="${CSS.escape(value)}"]`
+        );
+        if (matchingCheckbox instanceof HTMLInputElement) {
+          matchingCheckbox.checked = true;
+        }
+        sync();
+      });
+    });
+
+    if (selectAllButton instanceof HTMLElement) {
+      selectAllButton.addEventListener("click", () => {
+        checkboxes.forEach((checkbox) => {
+          if (checkbox instanceof HTMLInputElement) {
+            checkbox.checked = true;
+          }
+        });
+        sync();
+      });
+    }
+
+    if (clearAllButton instanceof HTMLElement) {
+      clearAllButton.addEventListener("click", () => {
+        checkboxes.forEach((checkbox) => {
+          if (checkbox instanceof HTMLInputElement) {
+            checkbox.checked = false;
+          }
+        });
+        primaryRadios.forEach((radio) => {
+          if (radio instanceof HTMLInputElement) {
+            radio.checked = false;
+          }
+        });
+        sync();
+      });
+    }
+
+    if (searchInput instanceof HTMLInputElement) {
+      searchInput.addEventListener("input", applyLobFilter);
+      applyLobFilter();
+    }
+
+    if (reasonCodeSelect instanceof HTMLSelectElement) {
+      reasonCodeSelect.addEventListener("change", syncReasonOther);
+      syncReasonOther();
+    }
+
+    sync();
+    container.dataset.vendorLobInit = "true";
+  };
+
+  initVendorLobPrimaryControls(document);
+  const workspaceOverlay = document.getElementById("workspace-overlay");
+  if (workspaceOverlay instanceof HTMLElement) {
+    workspaceOverlay.addEventListener("workspace-overlay-opened", (event) => {
+      const detail = event.detail || {};
+      const contentRoot = detail.contentRoot;
+      if (contentRoot instanceof HTMLElement) {
+        initVendorLobPrimaryControls(contentRoot);
+      }
+    });
+  }
+})();
+</script>
 {% endif %}
 {% endblock %}

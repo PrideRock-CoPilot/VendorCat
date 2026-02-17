@@ -1,19 +1,21 @@
 from __future__ import annotations
 
 import contextvars
-from contextlib import contextmanager
-from datetime import date, datetime
 import hashlib
 import logging
-from pathlib import Path
 import re
 import sqlite3
 import threading
 import time
-from typing import Any, Iterable
+from collections.abc import Iterable
+from contextlib import contextmanager
+from datetime import date, datetime
+from pathlib import Path
+from typing import Any
 
 import pandas as pd
 from databricks import sql as dbsql
+
 try:
     from databricks.sdk.core import Config as DatabricksSDKConfig
     from databricks.sdk.core import oauth_service_principal
@@ -21,7 +23,6 @@ except Exception:  # pragma: no cover - optional until OAuth client credentials 
     DatabricksSDKConfig = None
     oauth_service_principal = None
 
-from vendor_catalog_app.infrastructure.cache import LruTtlCache
 from vendor_catalog_app.core.config import AppConfig
 from vendor_catalog_app.core.env import (
     TVENDOR_DB_POOL_ACQUIRE_TIMEOUT_SEC,
@@ -38,6 +39,7 @@ from vendor_catalog_app.core.env import (
     get_env_float,
     get_env_int,
 )
+from vendor_catalog_app.infrastructure.cache import LruTtlCache
 
 PERF_LOGGER = logging.getLogger("vendor_catalog_app.perf")
 _REQUEST_PERF_CONTEXT: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
@@ -256,10 +258,10 @@ class DatabricksSQLClient:
                     remaining = deadline - now
                     if remaining <= 0:
                         raise DataConnectionError(
-                            (
+
                                 "Timed out waiting for Databricks SQL connection from pool. "
                                 f"max_size={self._pool_max_size}, timeout_sec={self._pool_acquire_timeout_sec:.1f}"
-                            )
+
                         )
                     self._pool_condition.wait(timeout=remaining)
 
@@ -415,9 +417,7 @@ class DatabricksSQLClient:
             return tuple(params)
         cleaned: list[Any] = []
         for value in params:
-            if isinstance(value, datetime):
-                cleaned.append(value.isoformat())
-            elif isinstance(value, date):
+            if isinstance(value, datetime) or isinstance(value, date):
                 cleaned.append(value.isoformat())
             else:
                 cleaned.append(value)
