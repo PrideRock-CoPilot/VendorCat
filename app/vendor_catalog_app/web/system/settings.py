@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hmac
 import secrets
+import sys
 from dataclasses import dataclass
 
 from fastapi import Request
@@ -116,7 +117,6 @@ def load_app_runtime_settings(config: AppConfig) -> AppRuntimeSettings:
     ):
         # Auto-generate a strong random secret for production/non-dev environments
         session_secret = secrets.token_urlsafe(32)
-        import sys
         print(f"[SECURITY] Generated random session secret at runtime for {config.environment}", file=sys.stderr)
 
     session_https_only = get_env_bool(TVENDOR_SESSION_HTTPS_ONLY, default=not config.is_dev_env)
