@@ -1617,6 +1617,25 @@ body.dark-mode .button-link.subtle:hover {
   margin: 0 0 10px;
 }
 
+.import-wizard-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.import-flow-panel {
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 10px;
+  margin: 10px 0;
+}
+
+.import-flow-panel h3 {
+  margin-bottom: 6px;
+}
+
 .bulk-defaults-card {
   border: 1px solid #d0d5dd;
   border-radius: 10px;
@@ -1650,6 +1669,50 @@ body.dark-mode .button-link.subtle:hover {
 
 .import-row-status-error {
   background: #fff5f4;
+}
+
+.import-merge-target input[disabled] {
+  background: #f3f4f6;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.terms-card {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.terms-scroll-box {
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 14px;
+  margin: 10px 0 12px;
+}
+
+.terms-scroll-box p {
+  margin: 0 0 10px;
+  color: #334155;
+  line-height: 1.45;
+}
+
+.terms-accept-form {
+  display: grid;
+  gap: 10px;
+}
+
+.terms-agree-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.terms-agree-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
 }
 
 .offering-chip-list {

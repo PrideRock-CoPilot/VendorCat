@@ -5,6 +5,7 @@ from vendor_catalog_app.backend.repository_mixins.domains.repository_admin impor
 from vendor_catalog_app.backend.repository_mixins.domains.repository_documents import RepositoryDocumentsMixin
 from vendor_catalog_app.backend.repository_mixins.domains.repository_help import RepositoryHelpMixin
 from vendor_catalog_app.backend.repository_mixins.domains.repository_identity import RepositoryIdentityMixin
+from vendor_catalog_app.backend.repository_mixins.domains.repository_imports import RepositoryImportsMixin
 from vendor_catalog_app.backend.repository_mixins.domains.repository_lookup import RepositoryLookupMixin
 from vendor_catalog_app.backend.repository_mixins.domains.repository_offering import RepositoryOfferingMixin
 from vendor_catalog_app.backend.repository_mixins.domains.repository_project import RepositoryProjectMixin
@@ -17,6 +18,7 @@ __all__ = [
     "RepositoryDocumentsMixin",
     "RepositoryHelpMixin",
     "RepositoryIdentityMixin",
+    "RepositoryImportsMixin",
     "RepositoryLookupMixin",
     "RepositoryOfferingMixin",
     "RepositoryProjectMixin",

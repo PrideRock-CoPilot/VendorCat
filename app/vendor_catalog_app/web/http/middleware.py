@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from urllib.parse import quote
 
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse, RedirectResponse
@@ -25,6 +26,7 @@ from vendor_catalog_app.web.system.settings import AppRuntimeSettings
 LOGGER = logging.getLogger(__name__)
 PERF_LOGGER = logging.getLogger("vendor_catalog_app.perf")
 PROTECTED_UI_PATH_PREFIXES = (
+    "/dashboard",
     "/vendor-360",
     "/vendors",
     "/projects",
@@ -51,6 +53,14 @@ def _is_protected_ui_path(path: str) -> bool:
     if cleaned in {"/", "/access/request"}:
         return False
     return any(cleaned.startswith(prefix) for prefix in PROTECTED_UI_PATH_PREFIXES)
+
+
+def _request_target_path(request: Request) -> str:
+    path = str(request.url.path or "/")
+    query = str(request.url.query or "").strip()
+    if query:
+        return f"{path}?{query}"
+    return path
 
 
 def register_security_headers_middleware(app: FastAPI, settings: AppRuntimeSettings) -> None:
@@ -96,6 +106,23 @@ def register_request_perf_middleware(app: FastAPI, settings: AppRuntimeSettings,
                     response = RedirectResponse(url="/access/request", status_code=303)
                     status_code = response.status_code
                     return response
+                if request.method.upper() in {"GET", "HEAD"}:
+                    from vendor_catalog_app.web.core.runtime import get_repo
+                    from vendor_catalog_app.web.core.terms import (
+                        has_current_terms_acceptance,
+                        terms_enforcement_enabled,
+                    )
+
+                    if terms_enforcement_enabled() and not has_current_terms_acceptance(
+                        request=request,
+                        repo=get_repo(),
+                        user_principal=user.user_principal,
+                    ):
+                        next_path = _request_target_path(request)
+                        redirect_url = f"/access/terms?next={quote(next_path, safe='/%?=&')}"
+                        response = RedirectResponse(url=redirect_url, status_code=303)
+                        status_code = response.status_code
+                        return response
 
             csrf_token = ensure_csrf_token(request)
             request.state.csrf_token = csrf_token

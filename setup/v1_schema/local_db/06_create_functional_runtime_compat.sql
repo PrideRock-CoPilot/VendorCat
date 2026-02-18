@@ -561,3 +561,118 @@ CREATE TABLE IF NOT EXISTS app_document_link (
   updated_by TEXT NOT NULL,
   UNIQUE (entity_type, entity_id, doc_url, active_flag)
 );
+
+CREATE TABLE IF NOT EXISTS app_import_job (
+  import_job_id TEXT PRIMARY KEY,
+  layout_key TEXT NOT NULL,
+  source_system TEXT NOT NULL,
+  source_object TEXT,
+  file_name TEXT,
+  file_type TEXT,
+  detected_format TEXT,
+  parser_config_json TEXT,
+  row_count INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  created_count INTEGER NOT NULL DEFAULT 0,
+  merged_count INTEGER NOT NULL DEFAULT 0,
+  skipped_count INTEGER NOT NULL DEFAULT 0,
+  failed_count INTEGER NOT NULL DEFAULT 0,
+  error_message TEXT,
+  created_at TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  applied_at TEXT,
+  applied_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS app_import_stage_row (
+  import_stage_row_id TEXT PRIMARY KEY,
+  import_job_id TEXT NOT NULL,
+  row_index INTEGER NOT NULL,
+  line_number TEXT,
+  row_payload_json TEXT NOT NULL,
+  suggested_action TEXT,
+  suggested_target_id TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (import_job_id) REFERENCES app_import_job(import_job_id),
+  UNIQUE (import_job_id, row_index)
+);
+
+CREATE TABLE IF NOT EXISTS app_import_stage_vendor (
+  import_stage_area_row_id TEXT PRIMARY KEY,
+  import_job_id TEXT NOT NULL,
+  row_index INTEGER NOT NULL,
+  line_number TEXT,
+  area_payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (import_job_id) REFERENCES app_import_job(import_job_id)
+);
+
+CREATE TABLE IF NOT EXISTS app_import_stage_vendor_contact (
+  import_stage_area_row_id TEXT PRIMARY KEY,
+  import_job_id TEXT NOT NULL,
+  row_index INTEGER NOT NULL,
+  line_number TEXT,
+  area_payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (import_job_id) REFERENCES app_import_job(import_job_id)
+);
+
+CREATE TABLE IF NOT EXISTS app_import_stage_vendor_owner (
+  import_stage_area_row_id TEXT PRIMARY KEY,
+  import_job_id TEXT NOT NULL,
+  row_index INTEGER NOT NULL,
+  line_number TEXT,
+  area_payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (import_job_id) REFERENCES app_import_job(import_job_id)
+);
+
+CREATE TABLE IF NOT EXISTS app_import_stage_offering (
+  import_stage_area_row_id TEXT PRIMARY KEY,
+  import_job_id TEXT NOT NULL,
+  row_index INTEGER NOT NULL,
+  line_number TEXT,
+  area_payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (import_job_id) REFERENCES app_import_job(import_job_id)
+);
+
+CREATE TABLE IF NOT EXISTS app_import_stage_offering_owner (
+  import_stage_area_row_id TEXT PRIMARY KEY,
+  import_job_id TEXT NOT NULL,
+  row_index INTEGER NOT NULL,
+  line_number TEXT,
+  area_payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (import_job_id) REFERENCES app_import_job(import_job_id)
+);
+
+CREATE TABLE IF NOT EXISTS app_import_stage_offering_contact (
+  import_stage_area_row_id TEXT PRIMARY KEY,
+  import_job_id TEXT NOT NULL,
+  row_index INTEGER NOT NULL,
+  line_number TEXT,
+  area_payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (import_job_id) REFERENCES app_import_job(import_job_id)
+);
+
+CREATE TABLE IF NOT EXISTS app_import_stage_contract (
+  import_stage_area_row_id TEXT PRIMARY KEY,
+  import_job_id TEXT NOT NULL,
+  row_index INTEGER NOT NULL,
+  line_number TEXT,
+  area_payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (import_job_id) REFERENCES app_import_job(import_job_id)
+);
+
+CREATE TABLE IF NOT EXISTS app_import_stage_project (
+  import_stage_area_row_id TEXT PRIMARY KEY,
+  import_job_id TEXT NOT NULL,
+  row_index INTEGER NOT NULL,
+  line_number TEXT,
+  area_payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (import_job_id) REFERENCES app_import_job(import_job_id)
+);

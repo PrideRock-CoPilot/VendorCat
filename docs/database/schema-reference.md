@@ -48,6 +48,8 @@ The Vendor Catalog logical model currently includes 40 tables and 3 reporting vi
 - `app_project_demo`
 - `app_project_note`
 - `app_document_link`
+- `app_import_job`
+- `app_import_stage_row`
 
 ## `sec_` Security And Entitlements
 - `sec_user_role_map`

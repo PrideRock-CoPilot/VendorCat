@@ -1,0 +1,4 @@
+vendor_id,legal_name,display_name,owner_org_id,lifecycle_state,risk_tier,support_contact_name,support_contact_type,support_email,support_phone
+,Atlas Clinical Data Systems LLC,Atlas Clinical,IT-HEALTH,draft,medium,Atlas Support,business,support@atlasclinical.example,1-800-555-1101
+vnd-70231,Blue Ridge Procurement Services Inc,Blue Ridge Procurement,FIN-OPS,active,low,Ridge Vendor Care,support,care@blueridgeproc.example,1-800-555-1102
+,Canyon Infrastructure Analytics Ltd,Canyon Analytics,ENG-PLATFORM,draft,high,Canyon Escalation Desk,technical,escalations@canyoninfra.example,1-800-555-1103

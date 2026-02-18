@@ -3,30 +3,126 @@
 <div class="section-header">
   <div>
     <h1>Data Imports</h1>
-    <p>Upload CSV data, review auto-matching against existing records, then create new rows or merge updates.</p>
+    <p>Use quick upload for approved layouts, or launch the wizard for everything else.</p>
   </div>
 </div>
 
 <section class="card section-divider">
-  <form method="post" action="/imports/preview" enctype="multipart/form-data" class="grid grid-3">
-    <label>
-      Layout
-      <select name="layout">
-        {% for option in layout_options %}
-        <option value="{{ option.key }}" {% if option.key == selected_layout %}selected{% endif %}>{{ option.label }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>
-      CSV File
-      <input type="file" name="file" accept=".csv,text/csv" required>
-    </label>
-    <div style="display:flex; align-items:flex-end;">
-      <button type="submit">Upload And Preview</button>
+  <div class="import-wizard-steps">
+    <span class="status-badge {{ 'status-ready' if wizard_step in ['upload', 'preview', 'complete'] else 'status-same' }}">1. Upload</span>
+    <span class="status-badge {{ 'status-ready' if wizard_step in ['preview', 'complete'] else 'status-same' }}">2. Detect & Stage</span>
+    <span class="status-badge {{ 'status-ready' if wizard_step in ['preview', 'complete'] else 'status-same' }}">3. Preview & Map</span>
+    <span class="status-badge {{ 'status-ready' if wizard_step == 'complete' else 'status-same' }}">4. Merge</span>
+  </div>
+
+  <form method="post" action="/imports/preview" enctype="multipart/form-data" id="import-start-form">
+    <input type="hidden" name="flow_mode" id="flow-mode-input" value="{{ selected_flow_mode }}">
+    <div class="grid grid-4">
+      <label>
+        Upload File
+        <input type="file" name="file" id="ingestion-file-input" required>
+      </label>
+
+      <label>
+        Layout
+        <select name="layout">
+          {% for option in layout_options %}
+          <option value="{{ option.key }}" {% if option.key == selected_layout %}selected{% endif %}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        Source System
+        <select name="source_system">
+          {% for option in source_system_options %}
+          <option value="{{ option.key }}" {% if option.key == selected_source_system %}selected{% endif %}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label>
+        Source Object
+        <input type="text" name="source_object" value="{{ source_object }}" placeholder="table/feed/file group">
+      </label>
     </div>
+
+    <div id="ingestion-route-hint" class="flash info" style="display:none;"></div>
+
+    <section id="quick-upload-panel" class="import-flow-panel">
+      <h3>Quick Upload (Approved Layouts)</h3>
+      <p class="muted">For approved CSV/TSV templates only. Header layout must match the official template exactly.</p>
+      <div class="button-group">
+        <button type="submit" id="quick-submit-button">Quick Preview</button>
+        <button type="button" class="button-link subtle" id="open-wizard-button">Use Wizard Instead</button>
+      </div>
+    </section>
+
+    <section id="wizard-upload-panel" class="import-flow-panel" style="display:none;">
+      <h3>Advanced Wizard</h3>
+      <p class="muted">Auto-opened for JSON/XML/other formats or custom parsing needs.</p>
+      <div class="grid grid-5">
+        <label>
+          Parser Mode
+          <select name="format_hint" id="format-hint-select">
+            {% for option in file_format_options %}
+            <option value="{{ option.key }}" {% if option.key == parser_options.format_hint %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label data-format-option="delimiter">
+          Delimiter
+          <input type="text" name="delimiter" value="{{ parser_options.delimiter }}" placeholder=", | ; or \t">
+        </label>
+
+        <label data-format-option="json">
+          JSON Record Path
+          <input type="text" name="json_record_path" value="{{ parser_options.json_record_path }}" placeholder="records.items">
+        </label>
+
+        <label data-format-option="xml">
+          XML Record Tag
+          <input type="text" name="xml_record_tag" value="{{ parser_options.xml_record_tag }}" placeholder="vendor">
+        </label>
+
+        <label>
+          Saved Mapping
+          <select name="mapping_profile_id" id="mapping-profile-select">
+            <option value="">No saved mapping</option>
+            {% for profile in mapping_profiles %}
+            <option value="{{ profile.profile_id }}" {% if selected_mapping_profile_id == profile.profile_id %}selected{% endif %}>
+              {{ profile.profile_name }}{% if profile.file_format %} ({{ profile.file_format|upper }}){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <div class="button-group">
+        <button type="submit" id="wizard-submit-button">Launch Wizard Preview</button>
+        <button type="button" class="button-link subtle" id="back-to-quick-button">Back To Quick Upload</button>
+      </div>
+    </section>
   </form>
+
   <p class="muted">{{ selected_layout_spec.description }}</p>
   <p class="muted">Columns: {{ selected_layout_spec.fields|join(", ") }}</p>
+  {% if source_file_name %}
+  <p class="muted">
+    File: <strong>{{ source_file_name }}</strong>
+    {% if detected_file_type %}| detected={{ detected_file_type }}{% endif %}
+    {% if effective_file_type %}| parser={{ effective_file_type }}{% endif %}
+  </p>
+  {% endif %}
+  {% for warning in parser_warnings %}
+  <div class="flash info">{{ warning }}</div>
+  {% endfor %}
+  {% if staging_warning %}
+  <div class="flash info">{{ staging_warning }}</div>
+  {% endif %}
+  {% if staging_job_id %}
+  <p class="muted">Staging job: <strong>{{ staging_job_id }}</strong> | staged rows: <strong>{{ staged_row_count }}</strong></p>
+  {% endif %}
 
   <h3>Sample Templates</h3>
   <div class="button-group">
@@ -49,6 +145,98 @@
       {% endif %}
     </div>
   </div>
+
+  <section class="bulk-defaults-card">
+    <h3>Source Tag/Column Mapping</h3>
+    <p class="muted">Detected source fields are shown from the uploaded file. Adjust mappings, then rebuild preview.</p>
+    {% if mapping_profile_saved %}
+    <div class="flash success">Saved mapping profile: <strong>{{ mapping_profile_saved }}</strong></div>
+    {% endif %}
+    <form method="post" action="/imports/remap">
+      <input type="hidden" name="preview_token" value="{{ preview_token }}">
+      <div class="grid grid-3">
+        <label>
+          Mapping Profile
+          <select name="mapping_profile_id">
+            <option value="">Use current mapping</option>
+            {% for profile in mapping_profiles %}
+            <option value="{{ profile.profile_id }}" {% if selected_mapping_profile_id == profile.profile_id %}selected{% endif %}>
+              {{ profile.profile_name }}{% if profile.file_format %} ({{ profile.file_format|upper }}){% endif %}{% if profile.compatible is defined and not profile.compatible %} - signature differs{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Save Mapping As
+          <input type="text" name="mapping_profile_name" placeholder="optional profile name">
+        </label>
+        <div class="button-group form-actions">
+          <button type="submit">Rebuild Preview With Mapping</button>
+        </div>
+      </div>
+      <div class="table-wrap table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Source Tag/Column (Static)</th>
+              <th>Sample</th>
+              <th>Map To Destination Field</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for source in source_field_map %}
+            <tr>
+              <td><strong>{{ source.key }}</strong></td>
+              <td>{{ source.sample_value }}</td>
+              <td>
+                <input type="hidden" name="source_field_keys" value="{{ source.key }}">
+                <select name="source_target_keys">
+                  <option value="">(unmapped)</option>
+                  {% for group in target_field_groups %}
+                  <optgroup label="{{ group.area_label }} -> {{ group.stage_table }}">
+                    {% for option in group.options %}
+                    <option value="{{ option.key }}" {% if selected_source_target_mapping.get(source.key, "") == option.key %}selected{% endif %}>
+                      {{ option.label }}
+                    </option>
+                    {% endfor %}
+                  </optgroup>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </form>
+  </section>
+
+  {% if source_field_map %}
+  <section class="bulk-defaults-card">
+    <h3>Detected Source Fields</h3>
+    <div class="table-wrap table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Tag / Column</th>
+            <th>Sample Value</th>
+            <th>Rows With Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for source in source_field_map %}
+          <tr>
+            <td>{{ source.key }}</td>
+            <td>{{ source.sample_value }}</td>
+            <td>{{ source.non_empty_count }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
   {% set summary = namespace(error_count=0, review_count=0, ready_count=0, suggested_merge=0, suggested_new=0) %}
   {% for row in preview_rows %}
     {% if row.row_status == "error" %}
@@ -121,12 +309,12 @@
             {% endfor %}
             <th>Match</th>
             <th>Action</th>
-            <th>Target ID</th>
+            <th>Merge Target</th>
           </tr>
         </thead>
         <tbody>
           {% for row in preview_rows %}
-          <tr data-row-status="{{ row.row_status }}" class="import-row-status-{{ row.row_status }}">
+          <tr data-row-status="{{ row.row_status }}" class="import-row-status-{{ row.row_status }}" data-row-index="{{ row.row_index }}">
             <td>{{ row.line_number or row.row_index }}</td>
             <td>
               {% if row.row_status == "error" %}
@@ -161,7 +349,24 @@
               </select>
             </td>
             <td>
-              <input type="text" name="target_{{ row.row_index }}" value="{{ row.suggested_target_id }}" placeholder="target id for merge">
+              <div class="import-merge-target">
+                <input type="hidden" name="target_{{ row.row_index }}" value="{{ row.suggested_target_id }}" data-merge-target-hidden>
+                <input
+                  type="text"
+                  value="{{ row.suggested_target_label or '' }}"
+                  list="merge-target-options-{{ row.row_index }}"
+                  placeholder="Search and select merge target"
+                  data-merge-target-label-input
+                >
+                <datalist id="merge-target-options-{{ row.row_index }}">
+                  {% for option in row.merge_options or [] %}
+                  <option value="{{ option.label }}" data-target-id="{{ option.id }}"></option>
+                  {% endfor %}
+                </datalist>
+                {% if not (row.merge_options or []) %}
+                <small class="muted">No suggestions yet; adjust row data or keep as new.</small>
+                {% endif %}
+              </div>
             </td>
           </tr>
           {% endfor %}
@@ -180,6 +385,9 @@
 {% if import_results %}
 <section class="card section-divider">
   <h2>Import Results</h2>
+  {% if staging_job_id %}
+  <p class="muted">Staging job: <strong>{{ staging_job_id }}</strong> finalized.</p>
+  {% endif %}
   <table>
     <thead>
       <tr>
@@ -203,17 +411,252 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+(() => {
+  const fileInput = document.getElementById("ingestion-file-input");
+  const flowModeInput = document.getElementById("flow-mode-input");
+  const routeHint = document.getElementById("ingestion-route-hint");
+  const quickPanel = document.getElementById("quick-upload-panel");
+  const wizardPanel = document.getElementById("wizard-upload-panel");
+  const openWizardButton = document.getElementById("open-wizard-button");
+  const backToQuickButton = document.getElementById("back-to-quick-button");
+  const quickSubmitButton = document.getElementById("quick-submit-button");
+  const wizardSubmitButton = document.getElementById("wizard-submit-button");
+  const formatSelect = document.getElementById("format-hint-select");
+  const delimiterBlock = document.querySelector("[data-format-option='delimiter']");
+  const jsonBlock = document.querySelector("[data-format-option='json']");
+  const xmlBlock = document.querySelector("[data-format-option='xml']");
+
+  const quickExtensions = new Set(["csv", "tsv"]);
+  const wizardExtensions = new Set(["json", "xml"]);
+
+  const setMode = (mode) => {
+    const selected = (mode || "quick").toLowerCase() === "wizard" ? "wizard" : "quick";
+    if (flowModeInput) {
+      flowModeInput.value = selected;
+    }
+    if (quickPanel) {
+      quickPanel.style.display = selected === "quick" ? "" : "none";
+    }
+    if (wizardPanel) {
+      wizardPanel.style.display = selected === "wizard" ? "" : "none";
+    }
+  };
+
+  const setRouteHint = (message) => {
+    if (!routeHint) {
+      return;
+    }
+    const text = String(message || "").trim();
+    if (!text) {
+      routeHint.style.display = "none";
+      routeHint.textContent = "";
+      return;
+    }
+    routeHint.style.display = "";
+    routeHint.textContent = text;
+  };
+
+  const extensionFromFileName = (name) => {
+    const raw = String(name || "").trim().toLowerCase();
+    const idx = raw.lastIndexOf(".");
+    if (idx <= -1 || idx === raw.length - 1) {
+      return "";
+    }
+    return raw.slice(idx + 1);
+  };
+
+  const detectFileTypeKey = (fileObj) => {
+    if (!fileObj) {
+      return "";
+    }
+    const ext = extensionFromFileName(fileObj.name || "");
+    if (ext) {
+      return ext;
+    }
+    const mime = String(fileObj.type || "").toLowerCase();
+    if (mime.includes("json")) return "json";
+    if (mime.includes("xml")) return "xml";
+    if (mime.includes("csv")) return "csv";
+    if (mime.includes("tab-separated") || mime.includes("tsv")) return "tsv";
+    return "";
+  };
+
+  const routeByFile = (fileObj) => {
+    const ext = detectFileTypeKey(fileObj);
+    if (!ext) {
+      setMode("quick");
+      setRouteHint("");
+      if (formatSelect) {
+        formatSelect.value = "auto";
+      }
+      return;
+    }
+    if (quickExtensions.has(ext)) {
+      setMode("quick");
+      setRouteHint(`Detected .${ext} file. Using Quick Upload for approved layouts.`);
+      if (formatSelect) {
+        formatSelect.value = "auto";
+      }
+      return;
+    }
+    setMode("wizard");
+    if (wizardExtensions.has(ext) && formatSelect) {
+      formatSelect.value = ext;
+    } else if (formatSelect) {
+      formatSelect.value = "auto";
+    }
+    const pretty = ext.toUpperCase();
+    setRouteHint(`Detected .${ext} (${pretty}). Advanced Wizard enabled for guided parsing.`);
+  };
+
+  const toggleParserBlocks = () => {
+    if (!formatSelect) {
+      return;
+    }
+    const value = (formatSelect.value || "").toLowerCase();
+    const showDelimiter = value === "auto" || value === "csv" || value === "tsv" || value === "delimited";
+    const showJson = value === "auto" || value === "json";
+    const showXml = value === "auto" || value === "xml";
+    if (delimiterBlock) delimiterBlock.style.display = showDelimiter ? "" : "none";
+    if (jsonBlock) jsonBlock.style.display = showJson ? "" : "none";
+    if (xmlBlock) xmlBlock.style.display = showXml ? "" : "none";
+  };
+
+  if (openWizardButton) {
+    openWizardButton.addEventListener("click", () => {
+      setMode("wizard");
+      setRouteHint("Advanced Wizard enabled. Configure parser settings and continue.");
+    });
+  }
+
+  if (backToQuickButton) {
+    backToQuickButton.addEventListener("click", () => {
+      setMode("quick");
+      if (formatSelect) {
+        formatSelect.value = "auto";
+      }
+      toggleParserBlocks();
+      setRouteHint("Quick Upload enabled for approved layout files.");
+    });
+  }
+
+  if (quickSubmitButton) {
+    quickSubmitButton.addEventListener("click", (event) => {
+      const selectedFile = fileInput && fileInput.files && fileInput.files.length ? fileInput.files[0] : null;
+      const ext = detectFileTypeKey(selectedFile);
+      if (ext && !quickExtensions.has(ext)) {
+        event.preventDefault();
+        setMode("wizard");
+        if (formatSelect && wizardExtensions.has(ext)) {
+          formatSelect.value = ext;
+        }
+        toggleParserBlocks();
+        setRouteHint(`Detected .${ext}. Quick Upload is only for approved CSV/TSV layouts, so Wizard is now active.`);
+        return;
+      }
+      setMode("quick");
+      if (formatSelect) {
+        formatSelect.value = "auto";
+      }
+      toggleParserBlocks();
+    });
+  }
+
+  if (wizardSubmitButton) {
+    wizardSubmitButton.addEventListener("click", () => {
+      setMode("wizard");
+      toggleParserBlocks();
+    });
+  }
+
+  if (fileInput) {
+    fileInput.addEventListener("change", () => {
+      const selectedFile = fileInput.files && fileInput.files.length ? fileInput.files[0] : null;
+      routeByFile(selectedFile);
+      toggleParserBlocks();
+    });
+  }
+
+  if (formatSelect) {
+    formatSelect.addEventListener("change", toggleParserBlocks);
+  }
+
+  const initialFileName = {{ source_file_name|tojson }};
+  const initialEffectiveType = {{ effective_file_type|tojson }};
+  const initialFlowMode = {{ selected_flow_mode|tojson }};
+  const initialMode = String(initialFlowMode || "").toLowerCase() === "wizard" ? "wizard" : "quick";
+  setMode(initialMode);
+  if (initialMode === "wizard" && formatSelect && initialEffectiveType) {
+    formatSelect.value = String(initialEffectiveType || "auto").toLowerCase();
+  }
+  if (initialMode !== "wizard") {
+    routeByFile(initialFileName ? { name: initialFileName, type: "" } : null);
+  } else if (initialFileName) {
+    setRouteHint("Advanced Wizard mode is active for this preview.");
+  }
+  toggleParserBlocks();
+})();
+</script>
+
 {% if preview_rows %}
 <script>
 (() => {
-  const actionSelects = Array.from(document.querySelectorAll("[data-import-action-select]"));
-  if (!actionSelects.length) {
+  const previewRows = Array.from(document.querySelectorAll("tr[data-row-index]"));
+  if (!previewRows.length) {
     return;
   }
-  const getRows = () => actionSelects.map((select) => ({
-    select,
-    row: select.closest("tr"),
-  })).filter((item) => !!item.row);
+  const getRows = () => previewRows.map((row) => ({
+    row,
+    select: row.querySelector("[data-import-action-select]"),
+  })).filter((item) => !!item.row && !!item.select);
+
+  const syncMergeTargetForRow = (row) => {
+    const labelInput = row.querySelector("[data-merge-target-label-input]");
+    const hiddenInput = row.querySelector("[data-merge-target-hidden]");
+    if (!labelInput || !hiddenInput) {
+      return;
+    }
+    const listId = labelInput.getAttribute("list");
+    const datalist = listId ? document.getElementById(listId) : null;
+    const options = datalist ? Array.from(datalist.querySelectorAll("option")) : [];
+    const entered = String(labelInput.value || "").trim();
+    const matched = options.find((opt) => String(opt.value || "").trim() === entered);
+    hiddenInput.value = matched ? String(matched.getAttribute("data-target-id") || "").trim() : "";
+  };
+
+  const hydrateMergeLabelFromHidden = (row) => {
+    const labelInput = row.querySelector("[data-merge-target-label-input]");
+    const hiddenInput = row.querySelector("[data-merge-target-hidden]");
+    if (!labelInput || !hiddenInput) {
+      return;
+    }
+    if (String(labelInput.value || "").trim()) {
+      return;
+    }
+    const currentId = String(hiddenInput.value || "").trim();
+    if (!currentId) {
+      return;
+    }
+    const listId = labelInput.getAttribute("list");
+    const datalist = listId ? document.getElementById(listId) : null;
+    const options = datalist ? Array.from(datalist.querySelectorAll("option")) : [];
+    const matched = options.find((opt) => String(opt.getAttribute("data-target-id") || "").trim() === currentId);
+    if (matched) {
+      labelInput.value = String(matched.value || "").trim();
+    }
+  };
+
+  const refreshMergeTargetAvailability = (row) => {
+    const actionSelect = row.querySelector("[data-import-action-select]");
+    const labelInput = row.querySelector("[data-merge-target-label-input]");
+    if (!actionSelect || !labelInput) {
+      return;
+    }
+    const mergeEnabled = String(actionSelect.value || "").toLowerCase() === "merge";
+    labelInput.disabled = !mergeEnabled;
+    labelInput.setAttribute("aria-disabled", mergeEnabled ? "false" : "true");
+  };
 
   const setAllActions = (value, onlyWithoutErrors) => {
     getRows().forEach((item) => {
@@ -222,6 +665,7 @@
         return;
       }
       item.select.value = value;
+      item.select.dispatchEvent(new Event("change", { bubbles: true }));
     });
   };
 
@@ -248,6 +692,21 @@
   if (allSkip) {
     allSkip.addEventListener("click", () => setAllActions("skip", false));
   }
+
+  previewRows.forEach((row) => {
+    const actionSelect = row.querySelector("[data-import-action-select]");
+    const labelInput = row.querySelector("[data-merge-target-label-input]");
+    hydrateMergeLabelFromHidden(row);
+    refreshMergeTargetAvailability(row);
+    if (actionSelect) {
+      actionSelect.addEventListener("change", () => refreshMergeTargetAvailability(row));
+    }
+    if (labelInput) {
+      labelInput.addEventListener("input", () => syncMergeTargetForRow(row));
+      labelInput.addEventListener("change", () => syncMergeTargetForRow(row));
+      labelInput.addEventListener("blur", () => syncMergeTargetForRow(row));
+    }
+  });
 })();
 </script>
 {% endif %}

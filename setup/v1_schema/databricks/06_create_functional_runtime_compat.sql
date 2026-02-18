@@ -505,3 +505,108 @@ CREATE TABLE IF NOT EXISTS app_document_link (
   updated_at STRING NOT NULL,
   updated_by STRING NOT NULL
 ) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS app_import_job (
+  import_job_id STRING,
+  layout_key STRING NOT NULL,
+  source_system STRING NOT NULL,
+  source_object STRING,
+  file_name STRING,
+  file_type STRING,
+  detected_format STRING,
+  parser_config_json STRING,
+  row_count INT NOT NULL,
+  status STRING NOT NULL,
+  created_count INT NOT NULL,
+  merged_count INT NOT NULL,
+  skipped_count INT NOT NULL,
+  failed_count INT NOT NULL,
+  error_message STRING,
+  created_at STRING NOT NULL,
+  created_by STRING NOT NULL,
+  applied_at STRING,
+  applied_by STRING
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS app_import_stage_row (
+  import_stage_row_id STRING,
+  import_job_id STRING NOT NULL,
+  row_index INT NOT NULL,
+  line_number STRING,
+  row_payload_json STRING NOT NULL,
+  suggested_action STRING,
+  suggested_target_id STRING,
+  created_at STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS app_import_stage_vendor (
+  import_stage_area_row_id STRING,
+  import_job_id STRING NOT NULL,
+  row_index INT NOT NULL,
+  line_number STRING,
+  area_payload_json STRING NOT NULL,
+  created_at STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS app_import_stage_vendor_contact (
+  import_stage_area_row_id STRING,
+  import_job_id STRING NOT NULL,
+  row_index INT NOT NULL,
+  line_number STRING,
+  area_payload_json STRING NOT NULL,
+  created_at STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS app_import_stage_vendor_owner (
+  import_stage_area_row_id STRING,
+  import_job_id STRING NOT NULL,
+  row_index INT NOT NULL,
+  line_number STRING,
+  area_payload_json STRING NOT NULL,
+  created_at STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS app_import_stage_offering (
+  import_stage_area_row_id STRING,
+  import_job_id STRING NOT NULL,
+  row_index INT NOT NULL,
+  line_number STRING,
+  area_payload_json STRING NOT NULL,
+  created_at STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS app_import_stage_offering_owner (
+  import_stage_area_row_id STRING,
+  import_job_id STRING NOT NULL,
+  row_index INT NOT NULL,
+  line_number STRING,
+  area_payload_json STRING NOT NULL,
+  created_at STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS app_import_stage_offering_contact (
+  import_stage_area_row_id STRING,
+  import_job_id STRING NOT NULL,
+  row_index INT NOT NULL,
+  line_number STRING,
+  area_payload_json STRING NOT NULL,
+  created_at STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS app_import_stage_contract (
+  import_stage_area_row_id STRING,
+  import_job_id STRING NOT NULL,
+  row_index INT NOT NULL,
+  line_number STRING,
+  area_payload_json STRING NOT NULL,
+  created_at STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS app_import_stage_project (
+  import_stage_area_row_id STRING,
+  import_job_id STRING NOT NULL,
+  row_index INT NOT NULL,
+  line_number STRING,
+  area_payload_json STRING NOT NULL,
+  created_at STRING NOT NULL
+) USING DELTA;

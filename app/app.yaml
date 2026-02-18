@@ -13,6 +13,20 @@ env:
   # Build cache buster - forces fresh deployment
   - name: "TVENDOR_BUILD_VERSION"
     value: "20260217-185800"
+
+  # Databricks connectivity and auth
+  # Prefer resource binding + runtime host injection.
+  # Host is resolved from Databricks runtime env (DATABRICKS_HOST alias).
+  # HTTP path is derived automatically from DATABRICKS_WAREHOUSE_ID.
+  - name: "DATABRICKS_WAREHOUSE_ID"
+    valueFrom: "sql-warehouse"
+
+  # Optional explicit fallbacks (normally not needed in Databricks Apps):
+  # - name: "DATABRICKS_SERVER_HOSTNAME"
+  #   value: "dbc-e26a2f07-7a87.cloud.databricks.com"
+  # - name: "DATABRICKS_HTTP_PATH"
+  #   value: "/sql/1.0/warehouses/955428814f623a0e"
+
   # Core environment
   - name: "TVENDOR_ENV"
     value: "prod"
@@ -39,14 +53,6 @@ env:
   # - name: "TVENDOR_SQL_PRELOAD_ON_STARTUP"
   #   value: "false"
 
-  # Databricks connectivity and auth
-  # Provide either DATABRICKS_HTTP_PATH or DATABRICKS_WAREHOUSE_ID.
-  - name: "DATABRICKS_SERVER_HOSTNAME"
-    value: "dbc-e26a2f07-7a87.cloud.databricks.com"
-  - name: "DATABRICKS_HTTP_PATH"
-    value: "/sql/1.0/warehouses/955428814f623a0e" # explicit fallback if binding is not injected
-  - name: "DATABRICKS_WAREHOUSE_ID"
-    valueFrom: "sql-warehouse"
   # - name: "DATABRICKS_TOKEN"
   #   value: "dapi..."
   # - name: "DATABRICKS_CLIENT_ID"
@@ -75,6 +81,8 @@ env:
   #   value: "default-src 'self'; ..."
   - name: "TVENDOR_TRUST_FORWARDED_IDENTITY_HEADERS"
     value: "true" # enable forwarded identity from Databricks Apps
+  - name: "TVENDOR_TERMS_ENFORCEMENT_ENABLED"
+    value: "true" # require acceptance of current terms version before protected pages
   # - name: "TVENDOR_FORWARDED_GROUP_HEADERS"
   #   value: "x-..." # default: from core/security.py
   # - name: "TVENDOR_ALLOW_TEST_ROLE_OVERRIDE"

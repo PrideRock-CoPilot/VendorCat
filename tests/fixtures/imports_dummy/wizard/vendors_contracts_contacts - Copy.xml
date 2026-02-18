@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<vendorFeed sourceSystem="zycus" sourceObject="supplier_contract_contact_sync" extractedAt="2026-02-17T22:40:00Z" batchId="zy-batch-20260217-09">
+  <vendorRecord2>
+    <vendor2>
+      <vendor_id></vendor_id>
+      <legal_name>Proseware Identity Assurance LLC</legal_name>
+      <display_name>Proseware Identity Assurance</display_name>
+      <owner_org_id>IT-SECURITY</owner_org_id>
+      <lifecycle_state>draft</lifecycle_state>
+      <risk_tier>high</risk_tier>
+    </vendor2>
+    <support_contact2>
+      <name>Jordan Mills</name>
+      <contact_type>technical</contact_type>
+      <email>support@prosewareid.example</email>
+      <phone>1-855-555-4401</phone>
+    </support_contact2>
+    <contract2>
+      <contract_number>PRW-2026-188</contract_number>
+      <status>draft</status>
+      <start_date>2026-12-01</start_date>
+      <end_date>2027-11-30</end_date>
+      <annual_value currency="USD">670000</annual_value>
+      <renewal_terms>annual</renewal_terms>
+      <termination_notice_days>120</termination_notice_days>
+    </contract2>
+    <additional_information>
+      <data_classification>pii</data_classification>
+      <primary_data_steward>nina.brooks@example.com</primary_data_steward>
+      <security_review_notes>IdP metadata exchange pending completion.</security_review_notes>
+      <integration_dependencies>
+        <dependency>Entra ID</dependency>
+        <dependency>Okta</dependency>
+      </integration_dependencies>
+    </additional_information>
+  </vendorRecord2>
+  <vendorRecord2>
+    <vendor2>
+      <vendor_id>vnd-81209</vendor_id>
+      <legal_name>Tailspin Billing Platform Corp</legal_name>
+      <display_name>Tailspin Billing Platform</display_name>
+      <owner_org_id>FIN-BILLING</owner_org_id>
+      <lifecycle_state>active</lifecycle_state>
+      <risk_tier>medium</risk_tier>
+    </vendor2>
+    <support_contact2>
+      <name>Evelyn Ross</name>
+      <contact_type>business</contact_type>
+      <email>help@tailspinbilling.example</email>
+      <phone>1-855-555-4402</phone>
+    </support_contact2>
+    <contract2>
+      <contract_number>TSP-2024-553</contract_number>
+      <status>active</status>
+      <start_date>2024-06-01</start_date>
+      <end_date>2027-05-31</end_date>
+      <annual_value currency="USD">980000</annual_value>
+      <renewal_terms>auto_renew</renewal_terms>
+      <termination_notice_days>180</termination_notice_days>
+    </contract2>
+    <additional_information>
+      <data_classification>pci</data_classification>
+      <primary_data_steward>marco.fuentes@example.com</primary_data_steward>
+      <security_review_notes>Open action item for audit evidence export scheduling.</security_review_notes>
+      <integration_dependencies>
+        <dependency>Workday</dependency>
+        <dependency>ServiceNow</dependency>
+        <dependency>Databricks</dependency>
+      </integration_dependencies>
+    </additional_information>
+  </vendorRecord2>
+</vendorFeed>

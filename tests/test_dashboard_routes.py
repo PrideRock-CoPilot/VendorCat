@@ -24,6 +24,5 @@ def client(monkeypatch: pytest.MonkeyPatch, isolated_local_db: Path) -> TestClie
 
 def test_dashboard_redirects_roleless_user_to_access_request(client: TestClient) -> None:
     response = client.get("/dashboard?as_user=bob.smith@example.com", follow_redirects=False)
-    assert response.status_code == 200
-    assert "Opening your workspace" in response.text
-    assert "splash=1" in response.text
+    assert response.status_code == 303
+    assert str(response.headers.get("location", "")) == "/access/request"

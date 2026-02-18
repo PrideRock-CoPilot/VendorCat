@@ -9,6 +9,7 @@ from vendor_catalog_app.backend.repository_mixins import (
     RepositoryDocumentsMixin,
     RepositoryHelpMixin,
     RepositoryIdentityMixin,
+    RepositoryImportsMixin,
     RepositoryLookupMixin,
     RepositoryOfferingMixin,
     RepositoryProjectMixin,
@@ -30,6 +31,7 @@ from vendor_catalog_app.infrastructure.db import DatabricksSQLClient
 class VendorRepository(
     RepositoryCoreMixin,
     RepositoryIdentityMixin,
+    RepositoryImportsMixin,
     RepositoryReportingMixin,
     RepositoryOfferingMixin,
     RepositoryProjectMixin,

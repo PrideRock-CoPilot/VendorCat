@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import quote, unquote
+
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
@@ -9,10 +11,27 @@ from vendor_catalog_app.web.core.activity import ensure_session_started, log_pag
 from vendor_catalog_app.web.core.identity import resolve_databricks_request_identity
 from vendor_catalog_app.web.core.runtime import get_repo
 from vendor_catalog_app.web.core.template_context import base_template_context
+from vendor_catalog_app.web.core.terms import (
+    has_current_terms_acceptance,
+    record_terms_acceptance,
+    terms_document,
+    terms_enforcement_enabled,
+)
 from vendor_catalog_app.web.core.user_context_service import get_user_context
 from vendor_catalog_app.web.http.flash import add_flash
 
 router = APIRouter(prefix="/access")
+
+
+def _safe_next_path(raw_next: str) -> str:
+    decoded = unquote(str(raw_next or "").strip())
+    if not decoded:
+        return "/dashboard"
+    if not decoded.startswith("/") or decoded.startswith("//"):
+        return "/dashboard"
+    if decoded.startswith("/access/terms"):
+        return "/dashboard"
+    return decoded
 
 
 def _allowed_role_options(repo) -> list[str]:
@@ -116,3 +135,67 @@ async def submit_access_request(request: Request):
     except Exception as exc:
         add_flash(request, f"Could not submit access request: {exc}", "error")
         return RedirectResponse(url="/access/request", status_code=303)
+
+
+@router.get("/terms")
+def access_terms_page(request: Request, next: str = "/dashboard"):
+    repo = get_repo()
+    user = get_user_context(request)
+    ensure_session_started(request, user)
+    log_page_view(request, user, "Terms Of Use")
+    if not terms_enforcement_enabled():
+        return RedirectResponse(url=_safe_next_path(next), status_code=303)
+
+    next_path = _safe_next_path(next)
+    if has_current_terms_acceptance(
+        request=request,
+        repo=repo,
+        user_principal=user.user_principal,
+    ):
+        return RedirectResponse(url=next_path, status_code=303)
+
+    context = base_template_context(
+        request=request,
+        context=user,
+        title="Terms Of Use",
+        active_nav="",
+        extra={
+            "next_path": next_path,
+            "terms": terms_document(),
+        },
+    )
+    return request.app.state.templates.TemplateResponse(request, "access_terms.html", context)
+
+
+@router.post("/terms/accept")
+async def accept_terms(request: Request):
+    repo = get_repo()
+    user = get_user_context(request)
+    ensure_session_started(request, user)
+    if not terms_enforcement_enabled():
+        return RedirectResponse(url="/dashboard", status_code=303)
+
+    form = await request.form()
+    next_path = _safe_next_path(str(form.get("next", "/dashboard") or "/dashboard"))
+    agree = str(form.get("agree_terms", "")).strip().lower() in {"1", "true", "on", "yes"}
+    scrolled = str(form.get("scrolled_to_end", "")).strip().lower() in {"1", "true", "yes"}
+    accepted_version = str(form.get("terms_version", "")).strip()
+    if not agree:
+        add_flash(request, "You must agree to the terms before continuing.", "error")
+        return RedirectResponse(url=f"/access/terms?next={quote(next_path, safe='/%?=&')}", status_code=303)
+    if not scrolled:
+        add_flash(request, "Scroll through the full terms before accepting.", "error")
+        return RedirectResponse(url=f"/access/terms?next={quote(next_path, safe='/%?=&')}", status_code=303)
+    try:
+        record_terms_acceptance(
+            request=request,
+            repo=repo,
+            user_principal=user.user_principal,
+            accepted_version=accepted_version,
+        )
+    except Exception as exc:
+        add_flash(request, f"Could not record acceptance: {exc}", "error")
+        return RedirectResponse(url=f"/access/terms?next={quote(next_path, safe='/%?=&')}", status_code=303)
+
+    add_flash(request, "Terms accepted. Access granted for this version.", "success")
+    return RedirectResponse(url=next_path, status_code=303)

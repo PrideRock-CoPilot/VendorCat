@@ -37,4 +37,5 @@ def isolated_local_db(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     monkeypatch.setenv("TVENDOR_LOCAL_DB_PATH", str(db_path))
     monkeypatch.setenv("TVENDOR_TEST_USER", "admin@example.com")
     monkeypatch.setenv("TVENDOR_SESSION_SECRET", "test-session-secret")
+    monkeypatch.setenv("TVENDOR_TERMS_ENFORCEMENT_ENABLED", "false")
     return db_path

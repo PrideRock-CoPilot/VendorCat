@@ -4,6 +4,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse, Response
 
 from vendor_catalog_app.web.http.flash import add_flash
+from vendor_catalog_app.web.routers.imports.mappings import load_mapping_profiles
 from vendor_catalog_app.web.routers.imports.parsing import (
     can_manage_imports,
     import_template_csv,
@@ -24,7 +25,7 @@ def _imports_module():
 @router.get("/imports")
 def imports_home(request: Request):
     imports_module = _imports_module()
-    imports_module.get_repo()
+    repo = imports_module.get_repo()
     user = imports_module.get_user_context(request)
     imports_module.ensure_session_started(request, user)
     imports_module.log_page_view(request, user, "Imports")
@@ -33,12 +34,17 @@ def imports_home(request: Request):
         add_flash(request, "You do not have permission to access Imports.", "error")
         return RedirectResponse(url="/dashboard", status_code=303)
 
+    mapping_profiles = load_mapping_profiles(repo, user_principal=user.user_principal, layout_key="vendors")
     context = imports_module.base_template_context(
         request,
         user,
         title="Data Imports",
         active_nav="imports",
-        extra=render_context(selected_layout="vendors"),
+        extra=render_context(
+            selected_layout="vendors",
+            selected_flow_mode="quick",
+            mapping_profiles=mapping_profiles,
+        ),
     )
     return request.app.state.templates.TemplateResponse(request, "imports.html", context)
 
