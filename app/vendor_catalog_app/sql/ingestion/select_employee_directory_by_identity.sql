@@ -1,5 +1,10 @@
 SELECT
-  login_identifier,
+  coalesce(
+    nullif(lower(trim(email)), ''),
+    nullif(lower(trim(login_identifier)), ''),
+    nullif(lower(trim(network_id)), ''),
+    nullif(lower(trim(employee_id)), '')
+  ) AS login_identifier,
   email,
   network_id,
   employee_id,
@@ -11,7 +16,7 @@ SELECT
 FROM {employee_directory_view}
 WHERE lower(coalesce(active_flag || '', '1')) IN ('1', 'a', 'active', 'true')
   AND (
-    lower(coalesce(login_identifier, '')) = lower(%s)
+    lower(coalesce(email, '')) = lower(%s)
     OR lower(coalesce(email, '')) = lower(%s)
     OR lower(coalesce(network_id, '')) = lower(%s)
     OR lower(coalesce(employee_id, '')) = lower(%s)

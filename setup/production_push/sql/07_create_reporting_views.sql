@@ -6,7 +6,7 @@ WITH directory AS (
   SELECT
     emp.EMPLID AS employee_id,
     LOWER(COALESCE(emp.OPRID, emp.EMAIL_ADDR)) AS network_id,
-    emp.EMAIL_ADDR AS email,
+    LOWER(emp.EMAIL_ADDR) AS email,
     emp.FIRST_NAME AS first_name,
     emp.LAST_NAME AS last_name,
     TRIM(emp.FIRST_NAME || ' ' || emp.LAST_NAME) AS display_name,
@@ -55,7 +55,7 @@ WITH directory AS (
 )
 SELECT DISTINCT
   employee_id,
-  network_id AS login_identifier,
+  LOWER(COALESCE(NULLIF(email, ''), NULLIF(network_id, ''), NULLIF(employee_id, ''))) AS login_identifier,
   network_id,
   email,
   first_name,

@@ -50,7 +50,16 @@ class ApiError(RuntimeError):
 
 
 def is_api_request(request: Request) -> bool:
-    path = str(getattr(request.url, "path", "") or "")
+    route = request.scope.get("route")
+    route_path = str(getattr(route, "path", "") or "").strip()
+    if route_path:
+        return route_path.startswith("/api/")
+
+    accept = str(request.headers.get("accept", "") or "").lower()
+    if "text/html" in accept and "application/json" not in accept:
+        return False
+
+    path = str(getattr(request.url, "path", "") or "").strip()
     return path.startswith("/api/")
 
 

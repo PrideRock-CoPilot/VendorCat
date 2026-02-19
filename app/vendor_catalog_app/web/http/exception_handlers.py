@@ -3,9 +3,8 @@ from __future__ import annotations
 import logging
 
 from fastapi import FastAPI, Request
-from fastapi.exception_handlers import http_exception_handler, request_validation_exception_handler
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -19,6 +18,29 @@ from vendor_catalog_app.web.system.bootstrap_diagnostics import (
 )
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _generic_web_error_response(
+    request: Request,
+    templates: Jinja2Templates,
+    *,
+    status_code: int,
+    title: str,
+    message: str,
+) -> object:
+    return templates.TemplateResponse(
+        request,
+        "error_generic.html",
+        {
+            "request": request,
+            "status_code": int(status_code),
+            "title": str(title),
+            "message": str(message),
+            "request_id": str(getattr(request.state, "request_id", "-")),
+            "path": str(request.url.path or "/"),
+        },
+        status_code=int(status_code),
+    )
 
 
 def register_exception_handlers(app: FastAPI, templates: Jinja2Templates) -> None:
@@ -83,7 +105,13 @@ def register_exception_handlers(app: FastAPI, templates: Jinja2Templates) -> Non
     @app.exception_handler(ApiError)
     async def _api_error_exception_handler(request: Request, exc: ApiError):
         if not is_api_request(request):
-            return PlainTextResponse(str(exc), status_code=exc.status_code)
+            return _generic_web_error_response(
+                request,
+                templates,
+                status_code=exc.status_code,
+                title="Request Failed",
+                message=str(exc),
+            )
         spec = normalize_exception(exc)
         return api_error_response(
             request,
@@ -96,7 +124,13 @@ def register_exception_handlers(app: FastAPI, templates: Jinja2Templates) -> Non
     @app.exception_handler(RequestValidationError)
     async def _request_validation_error_handler(request: Request, exc: RequestValidationError):
         if not is_api_request(request):
-            return await request_validation_exception_handler(request, exc)
+            return _generic_web_error_response(
+                request,
+                templates,
+                status_code=422,
+                title="Validation Error",
+                message="The request is missing required fields or contains invalid values.",
+            )
         spec = normalize_exception(exc)
         return api_error_response(
             request,
@@ -155,7 +189,13 @@ def register_exception_handlers(app: FastAPI, templates: Jinja2Templates) -> Non
                     "path": str(request.url.path),
                 },
             )
-            return PlainTextResponse("An unexpected error occurred.", status_code=500)
+            return _generic_web_error_response(
+                request,
+                templates,
+                status_code=500,
+                title="Unexpected Error",
+                message="An unexpected error occurred while processing this request.",
+            )
 
         spec = normalize_exception(exc)
         log_fn = LOGGER.warning if spec.status_code < 500 else LOGGER.exception

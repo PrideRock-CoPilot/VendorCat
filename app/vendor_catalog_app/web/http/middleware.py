@@ -102,11 +102,12 @@ def register_request_perf_middleware(app: FastAPI, settings: AppRuntimeSettings,
 
                 user = get_user_context(request)
                 user_roles = set(getattr(user, "roles", set()) or set())
-                if not user_roles:
+                # Let dashboard route execute its own access/bootstrap handling.
+                if not user_roles and not path.startswith("/dashboard"):
                     response = RedirectResponse(url="/access/request", status_code=303)
                     status_code = response.status_code
                     return response
-                if request.method.upper() in {"GET", "HEAD"}:
+                if user_roles and request.method.upper() in {"GET", "HEAD"}:
                     from vendor_catalog_app.web.core.runtime import get_repo
                     from vendor_catalog_app.web.core.terms import (
                         has_current_terms_acceptance,
@@ -126,34 +127,37 @@ def register_request_perf_middleware(app: FastAPI, settings: AppRuntimeSettings,
 
             csrf_token = ensure_csrf_token(request)
             request.state.csrf_token = csrf_token
-            if settings.csrf_enabled and request_requires_write_protection(request.method):
-                if not await request_matches_csrf_token(
+            if (
+                settings.csrf_enabled
+                and request_requires_write_protection(request.method)
+                and not await request_matches_csrf_token(
                     request,
                     expected_token=csrf_token,
                     header_name=CSRF_HEADER,
-                ):
-                    LOGGER.warning(
-                        "Blocked write request due to invalid CSRF token. method=%s path=%s",
-                        request.method,
-                        request.url.path,
-                        extra={
-                            "event": "csrf_validation_failed",
-                            "method": request.method,
-                            "path": str(request.url.path),
-                        },
+                )
+            ):
+                LOGGER.warning(
+                    "Blocked write request due to invalid CSRF token. method=%s path=%s",
+                    request.method,
+                    request.url.path,
+                    extra={
+                        "event": "csrf_validation_failed",
+                        "method": request.method,
+                        "path": str(request.url.path),
+                    },
+                )
+                message = "Invalid CSRF token. Refresh and try again."
+                if is_api_request(request):
+                    response = api_error_response(
+                        request,
+                        status_code=403,
+                        code="FORBIDDEN",
+                        message=message,
                     )
-                    message = "Invalid CSRF token. Refresh and try again."
-                    if is_api_request(request):
-                        response = api_error_response(
-                            request,
-                            status_code=403,
-                            code="FORBIDDEN",
-                            message=message,
-                        )
-                    else:
-                        response = PlainTextResponse(message, status_code=403)
-                    status_code = response.status_code
-                    return response
+                else:
+                    response = PlainTextResponse(message, status_code=403)
+                status_code = response.status_code
+                return response
 
             if request_requires_write_protection(request.method):
                 limiter_key = f"{request_rate_limit_key(request)}:{request.method.upper()}"
@@ -197,27 +201,15 @@ def register_request_perf_middleware(app: FastAPI, settings: AppRuntimeSettings,
             except Exception as exc:
                 spec = normalize_exception(exc)
                 status_code = int(spec.status_code)
-                if is_api_request(request):
-                    response = api_error_response(
-                        request,
-                        status_code=spec.status_code,
-                        code=spec.code,
-                        message=spec.message,
-                        details=spec.details,
-                    )
-                else:
-                    LOGGER.exception(
-                        "Unhandled web request error. path=%s method=%s",
-                        request.url.path,
-                        request.method,
-                        extra={
-                            "event": "unhandled_web_error",
-                            "request_id": str(getattr(request.state, "request_id", "-")),
-                            "method": request.method,
-                            "path": str(request.url.path),
-                        },
-                    )
-                    response = PlainTextResponse("An unexpected error occurred.", status_code=500)
+                if not is_api_request(request):
+                    raise
+                response = api_error_response(
+                    request,
+                    status_code=spec.status_code,
+                    code=spec.code,
+                    message=spec.message,
+                    details=spec.details,
+                )
                 status_code = response.status_code
                 return response
 

@@ -6,32 +6,64 @@
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>Vendor Catalog</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/app.css?v={{ static_asset_version }}">
+  {% block head %}{% endblock %}
 </head>
 <body>
   <div class="app-chrome">
     <header class="topbar">
-      <div class="brand">Vendor Catalog</div>
-      <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode">🌙</button>
-      <div class="user-meta">
-        <span class="pill" title="{{ user_principal }}">{{ user_display_name }}</span>
-        {% for role in roles %}
-        <span class="pill role">{{ role }}</span>
-        {% endfor %}
-        {% if has_admin_rights and testing_role_override_enabled %}
-        <form method="post" action="/admin/testing-role" class="inline-form role-switch-form">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <input type="hidden" name="return_to" value="{{ request.url.path }}">
-          <span class="role-switch-label">role</span>
-          <select name="role_override" aria-label="Testing role override">
-            <option value="" {% if not testing_role_override %}selected{% endif %}>No Override</option>
-            {% for role in testing_role_options %}
-            <option value="{{ role }}" {% if role == testing_role_override %}selected{% endif %}>{{ role }}</option>
-            {% endfor %}
-          </select>
-          <button type="submit">Apply</button>
-        </form>
-        {% endif %}
+      <div class="topbar-left">
+        <div class="brand">Vendor Catalog</div>
+      </div>
+      <div class="topbar-right">
+        <div class="user-menu" data-user-menu>
+          <button type="button" id="user-menu-button" class="user-menu-button" aria-expanded="false" aria-controls="user-menu-dropdown">
+            <span class="user-menu-avatar">{{ (user_display_name or "U")[0]|upper }}</span>
+            <span class="user-menu-label">
+              <strong>{{ user_display_name }}</strong>
+              <small>{{ roles|join(", ") if roles else "No role assigned" }}</small>
+            </span>
+            <span class="user-menu-caret" aria-hidden="true">v</span>
+          </button>
+          <div id="user-menu-dropdown" class="user-menu-dropdown hidden">
+            <div class="user-menu-section">
+              <div class="user-menu-meta">
+                <div class="muted">Signed in as</div>
+                <div class="user-menu-principal">{{ user_principal }}</div>
+              </div>
+            </div>
+            <div class="user-menu-section">
+              <label for="theme-select">Theme</label>
+              <select id="theme-select" class="user-menu-select" aria-label="Theme">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </div>
+            {% if has_admin_rights and testing_role_override_enabled %}
+            <div class="user-menu-section">
+              <form method="post" action="/admin/testing-role" class="role-switch-form user-menu-role-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="return_to" value="{{ request.url.path }}">
+                <label for="user-menu-role-override">Testing Role</label>
+                <div class="user-menu-role-row">
+                  <select id="user-menu-role-override" name="role_override" aria-label="Testing role override">
+                    <option value="" {% if not testing_role_override %}selected{% endif %}>No Override</option>
+                    {% for role in testing_role_options %}
+                    <option value="{{ role }}" {% if role == testing_role_override %}selected{% endif %}>{{ role }}</option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit">Apply</button>
+                </div>
+              </form>
+            </div>
+            {% endif %}
+            <div class="user-menu-section user-menu-links">
+              <a href="/access/terms/view">User Agreement</a>
+              <a href="/version-info">Version Info</a>
+              <a href="/help">Help Guide</a>
+            </div>
+          </div>
+        </div>
       </div>
     </header>
 
@@ -53,7 +85,6 @@
       {% if can_report %}
       <a class="{{ 'active' if active_nav == 'reports' else '' }}" href="/reports">Reports</a>
       {% endif %}
-      <a class="{{ 'active' if active_nav == 'help' else '' }}" href="/help">Help</a>
       {% if has_admin_rights %}
       <a class="{{ 'active' if active_nav == 'admin' else '' }}" href="/admin">Admin</a>
       {% endif %}
@@ -114,13 +145,18 @@
         <span>Vendor Catalog</span>
       </div>
       <div class="loading-title">Loading Workspace</div>
+      <div class="loading-brand-row">
+        <span class="loading-spinner" aria-hidden="true"></span>
+        <span>Working...</span>
+      </div>
       <div id="loading-overlay-status" class="loading-status">Preparing data and services...</div>
       <div class="loading-progress" aria-hidden="true"><span></span></div>
     </div>
   </div>
   <noscript><style>#loading-overlay { display: none !important; }</style></noscript>
 
-  <script src="/static/js/app.js"></script>
+  <script src="/static/js/app.js?v={{ static_asset_version }}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
+
