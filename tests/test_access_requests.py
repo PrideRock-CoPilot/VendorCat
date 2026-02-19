@@ -159,3 +159,38 @@ def test_roleless_user_can_submit_access_request(client: TestClient) -> None:
 
     after_count = len(_access_request_rows_for_user(repo, principal))
     assert after_count == before_count + 1
+
+
+def test_access_request_shows_thank_you_then_in_progress_on_reload(client: TestClient) -> None:
+    repo = get_repo()
+    principal = "bob.smith@example.com"
+    for row in _access_request_rows_for_user(repo, principal):
+        status_value = str(row.get("status") or "").strip().lower()
+        if status_value in {"approved", "rejected"}:
+            continue
+        repo.update_change_request_status(
+            change_request_id=str(row.get("change_request_id") or ""),
+            new_status="rejected",
+            actor_user_principal="admin@example.com",
+            notes="Test cleanup: close prior open request.",
+        )
+
+    first_view = client.post(
+        f"/access/request?as_user={principal}",
+        data={
+            "requested_role": "vendor_viewer",
+            "justification": "Need access for status messaging test.",
+        },
+        follow_redirects=True,
+    )
+    assert first_view.status_code == 200
+    assert "Thank you for submitting your access request." in first_view.text
+    assert "Request ID:" in first_view.text
+    assert "You already have an open access request." not in first_view.text
+    assert "Your Access Requests" not in first_view.text
+
+    second_view = client.get(f"/access/request?as_user={principal}")
+    assert second_view.status_code == 200
+    assert "Thank you for submitting your access request." not in second_view.text
+    assert "You already have an open access request." in second_view.text
+    assert "Your Access Requests" in second_view.text

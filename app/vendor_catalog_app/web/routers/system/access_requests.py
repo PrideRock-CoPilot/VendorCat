@@ -24,6 +24,7 @@ from vendor_catalog_app.web.http.flash import add_flash
 router = APIRouter(prefix="/access")
 LOGGER = logging.getLogger(__name__)
 TERMINAL_ACCESS_REQUEST_STATUSES = {"approved", "rejected"}
+ACCESS_REQUEST_JUST_SUBMITTED_SESSION_KEY = "access_request_just_submitted_request_id"
 
 
 def _safe_next_path(raw_next: str) -> str:
@@ -153,6 +154,12 @@ def _has_open_access_request(repo, *, requestor_user_principal: str) -> bool:
 def access_request_page(request: Request):
     repo = get_repo()
     user = get_user_context(request)
+    session = request.scope.get("session")
+    just_submitted_request_id = ""
+    if isinstance(session, dict):
+        just_submitted_request_id = str(
+            session.pop(ACCESS_REQUEST_JUST_SUBMITTED_SESSION_KEY, "") or ""
+        ).strip()
     forwarded_identity = resolve_databricks_request_identity(request)
     user_principal = str(getattr(user, "user_principal", "") or "").strip() or UNKNOWN_USER_PRINCIPAL
     identity_is_valid = user_principal != UNKNOWN_USER_PRINCIPAL
@@ -202,6 +209,7 @@ def access_request_page(request: Request):
             "access_requests": access_requests,
             "open_requests": open_requests,
             "open_request_exists": bool(open_requests),
+            "just_submitted_request_id": just_submitted_request_id,
             # Temporary compatibility with older templates.
             "pending_requests": open_requests,
         },
@@ -266,7 +274,11 @@ async def submit_access_request(request: Request):
             requested_role=requested_role,
             justification=justification,
         )
-        add_flash(request, f"Access request submitted: {request_id}", "success")
+        session = request.scope.get("session")
+        if isinstance(session, dict):
+            session[ACCESS_REQUEST_JUST_SUBMITTED_SESSION_KEY] = request_id
+        else:
+            add_flash(request, f"Access request submitted: {request_id}", "success")
         return RedirectResponse(url="/access/request", status_code=303)
     except Exception as exc:
         add_flash(request, f"Could not submit access request: {exc}", "error")
