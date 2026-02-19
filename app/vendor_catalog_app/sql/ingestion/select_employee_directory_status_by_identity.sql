@@ -16,7 +16,7 @@ WHERE
   OR lower(coalesce(employee_id, '')) = lower(%s)
 ORDER BY
   CASE
-    WHEN coalesce(active_flag, true) = true THEN 0
+    WHEN lower(coalesce(active_flag || '', '1')) IN ('1', 'a', 'active', 'true') THEN 0
     ELSE 1
   END,
   login_identifier

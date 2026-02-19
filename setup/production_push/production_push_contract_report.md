@@ -1,0 +1,216 @@
+# Production Push Contract Validation
+
+## Summary
+- Required app objects: 49
+- Production push objects: 95 (tables=91, views=4)
+- Missing objects: 0
+- Objects with missing required columns: 0
+- SQL files with unresolved placeholders: 0
+
+## Script Object Creation Matrix (production push)
+- `00_create_v1_schema.sql`: tables=0, views=0, total=0
+- `01_create_lookup_tables.sql`: tables=6, views=0, total=6
+- `02_create_core_tables.sql`: tables=5, views=0, total=5
+- `03_create_assignment_tables.sql`: tables=7, views=0, total=7
+- `04_create_governance_tables.sql`: tables=7, views=0, total=7
+- `05_create_functional_parity_bridge.sql`: tables=14, views=0, total=14
+- `06_create_functional_runtime_compat.sql`: tables=52, views=0, total=52
+- `07_create_reporting_views.sql`: tables=0, views=4, total=4
+- `90_create_indexes.sql`: tables=0, views=0, total=0
+- `94_seed_critical_reference_data.sql`: tables=0, views=0, total=0
+- `95_seed_base_security_roles.sql`: tables=0, views=0, total=0
+- `96_seed_help_center.sql`: tables=0, views=0, total=0
+
+## Required Objects and Column Contract
+- `app_document_link` [table] required_cols=13 defined_cols=13
+  - required: `active_flag`, `created_at`, `created_by`, `doc_id`, `doc_title`, `doc_type`, `doc_url`, `entity_id`, `entity_type`, `owner`, `tags`, `updated_at`, `updated_by`
+  - defined: `active_flag`, `created_at`, `created_by`, `doc_id`, `doc_title`, `doc_type`, `doc_url`, `entity_id`, `entity_type`, `owner`, `tags`, `updated_at`, `updated_by`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_doc_link_by_id.sql`, `app\vendor_catalog_app\sql\ingestion\select_docs_by_entity.sql`, `app\vendor_catalog_app\sql\ingestion\select_offering_activity.sql`, `app\vendor_catalog_app\sql\ingestion\select_project_activity.sql`, `app\vendor_catalog_app\sql\inserts\create_doc_link.sql`, `app\vendor_catalog_app\sql\reporting\report_project_portfolio_docs.sql`, `app\vendor_catalog_app\sql\updates\remove_doc_link_delete.sql`, `app\vendor_catalog_app\sql\updates\remove_doc_link_soft.sql`, `app\vendor_catalog_app\sql\updates\update_doc_link.sql`
+- `app_import_job` [table] required_cols=19 defined_cols=19
+  - required: `applied_at`, `applied_by`, `created_at`, `created_by`, `created_count`, `detected_format`, `error_message`, `failed_count`, `file_name`, `file_type`, `import_job_id`, `layout_key`, `merged_count`, `parser_config_json`, `row_count`, `skipped_count`, `source_object`, `source_system`, `status`
+  - defined: `applied_at`, `applied_by`, `created_at`, `created_by`, `created_count`, `detected_format`, `error_message`, `failed_count`, `file_name`, `file_type`, `import_job_id`, `layout_key`, `merged_count`, `parser_config_json`, `row_count`, `skipped_count`, `source_object`, `source_system`, `status`
+  - files: `app\vendor_catalog_app\sql\inserts\create_import_stage_job.sql`, `app\vendor_catalog_app\sql\updates\finalize_import_stage_job.sql`
+- `app_import_stage_row` [table] required_cols=8 defined_cols=8
+  - required: `created_at`, `import_job_id`, `import_stage_row_id`, `line_number`, `row_index`, `row_payload_json`, `suggested_action`, `suggested_target_id`
+  - defined: `created_at`, `import_job_id`, `import_stage_row_id`, `line_number`, `row_index`, `row_payload_json`, `suggested_action`, `suggested_target_id`
+  - files: `app\vendor_catalog_app\sql\inserts\create_import_stage_row.sql`
+- `app_lookup_option` [table] required_cols=12 defined_cols=12
+  - required: `active_flag`, `deleted_flag`, `is_current`, `lookup_type`, `option_code`, `option_id`, `option_label`, `sort_order`, `updated_at`, `updated_by`, `valid_from_ts`, `valid_to_ts`
+  - defined: `active_flag`, `deleted_flag`, `is_current`, `lookup_type`, `option_code`, `option_id`, `option_label`, `sort_order`, `updated_at`, `updated_by`, `valid_from_ts`, `valid_to_ts`
+  - files: `app\vendor_catalog_app\sql\health\select_runtime_lookup_scd_probe.sql`, `app\vendor_catalog_app\sql\inserts\create_lookup_option.sql`, `app\vendor_catalog_app\sql\reporting\list_lookup_options.sql`, `app\vendor_catalog_app\sql\updates\close_lookup_option_version.sql`
+- `app_note` [table] required_cols=7 defined_cols=7
+  - required: `created_at`, `created_by`, `entity_id`, `entity_name`, `note_id`, `note_text`, `note_type`
+  - defined: `created_at`, `created_by`, `entity_id`, `entity_name`, `note_id`, `note_text`, `note_type`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_app_note_by_id.sql`, `app\vendor_catalog_app\sql\ingestion\select_app_notes_by_entity_and_type.sql`, `app\vendor_catalog_app\sql\ingestion\select_offering_activity.sql`, `app\vendor_catalog_app\sql\ingestion\select_offering_notes.sql`, `app\vendor_catalog_app\sql\inserts\add_offering_note.sql`, `app\vendor_catalog_app\sql\inserts\create_app_note.sql`
+- `app_offering_data_flow` [table] required_cols=19 defined_cols=19
+  - required: `active_flag`, `created_at`, `created_by`, `creation_process`, `data_description`, `data_flow_id`, `delivery_process`, `direction`, `endpoint_details`, `flow_name`, `identifiers`, `method`, `notes`, `offering_id`, `owner_user_principal`, `reporting_layer`, `updated_at`, `updated_by`, `vendor_id`
+  - defined: `active_flag`, `created_at`, `created_by`, `creation_process`, `data_description`, `data_flow_id`, `delivery_process`, `direction`, `endpoint_details`, `flow_name`, `identifiers`, `method`, `notes`, `offering_id`, `owner_user_principal`, `reporting_layer`, `updated_at`, `updated_by`, `vendor_id`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_offering_activity.sql`, `app\vendor_catalog_app\sql\ingestion\select_offering_data_flow_by_id.sql`, `app\vendor_catalog_app\sql\ingestion\select_offering_data_flows.sql`, `app\vendor_catalog_app\sql\inserts\create_offering_data_flow.sql`, `app\vendor_catalog_app\sql\reporting\report_vendor_data_quality_overview.sql`, `app\vendor_catalog_app\sql\updates\remove_offering_data_flow_delete.sql`, `app\vendor_catalog_app\sql\updates\remove_offering_data_flow_soft.sql`, `app\vendor_catalog_app\sql\updates\update_offering_data_flow.sql`
+- `app_offering_invoice` [table] required_cols=14 defined_cols=14
+  - required: `active_flag`, `amount`, `created_at`, `created_by`, `currency_code`, `invoice_date`, `invoice_id`, `invoice_number`, `invoice_status`, `notes`, `offering_id`, `updated_at`, `updated_by`, `vendor_id`
+  - defined: `active_flag`, `amount`, `created_at`, `created_by`, `currency_code`, `invoice_date`, `invoice_id`, `invoice_number`, `invoice_status`, `notes`, `offering_id`, `updated_at`, `updated_by`, `vendor_id`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_offering_invoice_by_id.sql`, `app\vendor_catalog_app\sql\ingestion\select_offering_invoice_candidates.sql`, `app\vendor_catalog_app\sql\ingestion\select_offering_invoices.sql`, `app\vendor_catalog_app\sql\inserts\create_offering_invoice.sql`, `app\vendor_catalog_app\sql\reporting\report_offering_budget_variance_invoices.sql`, `app\vendor_catalog_app\sql\reporting\report_vendor_data_quality_overview.sql`, `app\vendor_catalog_app\sql\updates\remove_offering_invoice_soft.sql`
+- `app_offering_payment` [table] required_cols=15 defined_cols=15
+  - required: `active_flag`, `amount`, `created_at`, `created_by`, `currency_code`, `invoice_id`, `notes`, `offering_id`, `payment_date`, `payment_id`, `payment_reference`, `payment_status`, `updated_at`, `updated_by`, `vendor_id`
+  - defined: `active_flag`, `amount`, `created_at`, `created_by`, `currency_code`, `invoice_id`, `notes`, `offering_id`, `payment_date`, `payment_id`, `payment_reference`, `payment_status`, `updated_at`, `updated_by`, `vendor_id`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_offering_payment_candidates.sql`, `app\vendor_catalog_app\sql\inserts\create_offering_payment.sql`
+- `app_offering_profile` [table] required_cols=19 defined_cols=19
+  - required: `data_received`, `data_sent`, `estimated_monthly_cost`, `implementation_notes`, `inbound_identifiers`, `inbound_ingestion_notes`, `inbound_landing_zone`, `inbound_method`, `inbound_reporting_layer`, `integration_method`, `offering_id`, `outbound_creation_process`, `outbound_delivery_process`, `outbound_method`, `outbound_notes`, `outbound_responsible_owner`, `updated_at`, `updated_by`, `vendor_id`
+  - defined: `data_received`, `data_sent`, `estimated_monthly_cost`, `implementation_notes`, `inbound_identifiers`, `inbound_ingestion_notes`, `inbound_landing_zone`, `inbound_method`, `inbound_reporting_layer`, `integration_method`, `offering_id`, `outbound_creation_process`, `outbound_delivery_process`, `outbound_method`, `outbound_notes`, `outbound_responsible_owner`, `updated_at`, `updated_by`, `vendor_id`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_offering_profile.sql`, `app\vendor_catalog_app\sql\inserts\create_offering_profile.sql`, `app\vendor_catalog_app\sql\reporting\report_offering_budget_variance_offerings.sql`, `app\vendor_catalog_app\sql\updates\update_offering_profile.sql`
+- `app_offering_ticket` [table] required_cols=16 defined_cols=16
+  - required: `active_flag`, `closed_date`, `created_at`, `created_by`, `external_ticket_id`, `notes`, `offering_id`, `opened_date`, `priority`, `status`, `ticket_id`, `ticket_system`, `title`, `updated_at`, `updated_by`, `vendor_id`
+  - defined: `active_flag`, `closed_date`, `created_at`, `created_by`, `external_ticket_id`, `notes`, `offering_id`, `opened_date`, `priority`, `status`, `ticket_id`, `ticket_system`, `title`, `updated_at`, `updated_by`, `vendor_id`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_offering_activity.sql`, `app\vendor_catalog_app\sql\ingestion\select_offering_ticket_by_id.sql`, `app\vendor_catalog_app\sql\ingestion\select_offering_tickets.sql`, `app\vendor_catalog_app\sql\inserts\create_offering_ticket.sql`, `app\vendor_catalog_app\sql\reporting\report_vendor_data_quality_overview.sql`, `app\vendor_catalog_app\sql\updates\update_offering_ticket.sql`
+- `app_project` [table] required_cols=14 defined_cols=14
+  - required: `active_flag`, `created_at`, `created_by`, `description`, `owner_principal`, `project_id`, `project_name`, `project_type`, `start_date`, `status`, `target_date`, `updated_at`, `updated_by`, `vendor_id`
+  - defined: `active_flag`, `created_at`, `created_by`, `description`, `owner_principal`, `project_id`, `project_name`, `project_type`, `start_date`, `status`, `target_date`, `updated_at`, `updated_by`, `vendor_id`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_project_by_id.sql`, `app\vendor_catalog_app\sql\ingestion\select_project_primary_vendor_fallback.sql`, `app\vendor_catalog_app\sql\inserts\create_project.sql`, `app\vendor_catalog_app\sql\reporting\filter_vendors_page_search_clause.sql`, `app\vendor_catalog_app\sql\reporting\list_all_projects.sql`, `app\vendor_catalog_app\sql\reporting\list_owner_reassignment_assignments.sql`, `app\vendor_catalog_app\sql\reporting\list_projects_for_vendor.sql`, `app\vendor_catalog_app\sql\reporting\report_owner_coverage.sql`, `app\vendor_catalog_app\sql\reporting\report_project_portfolio_vendor_map.sql`, `app\vendor_catalog_app\sql\reporting\report_vendor_inventory_project_map.sql`, `app\vendor_catalog_app\sql\reporting\search_projects_typeahead.sql`, `app\vendor_catalog_app\sql\reporting\search_vendors_broad.sql`, `app\vendor_catalog_app\sql\updates\reassign_project_owner_assignment.sql`, `app\vendor_catalog_app\sql\updates\update_project.sql`
+- `app_project_demo` [table] required_cols=20 defined_cols=20
+  - required: `active_flag`, `attendees_internal`, `attendees_vendor`, `created_at`, `created_by`, `demo_datetime_end`, `demo_datetime_start`, `demo_name`, `demo_type`, `followups`, `linked_offering_id`, `linked_vendor_demo_id`, `notes`, `outcome`, `project_demo_id`, `project_id`, `score`, `updated_at`, `updated_by`, `vendor_id`
+  - defined: `active_flag`, `attendees_internal`, `attendees_vendor`, `created_at`, `created_by`, `demo_datetime_end`, `demo_datetime_start`, `demo_name`, `demo_type`, `followups`, `linked_offering_id`, `linked_vendor_demo_id`, `notes`, `outcome`, `project_demo_id`, `project_id`, `score`, `updated_at`, `updated_by`, `vendor_id`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_project_activity.sql`, `app\vendor_catalog_app\sql\ingestion\select_project_demos.sql`, `app\vendor_catalog_app\sql\inserts\create_project_demo.sql`, `app\vendor_catalog_app\sql\reporting\list_all_projects.sql`, `app\vendor_catalog_app\sql\reporting\list_projects_for_vendor.sql`, `app\vendor_catalog_app\sql\updates\remove_project_demo_delete.sql`, `app\vendor_catalog_app\sql\updates\remove_project_demo_soft.sql`, `app\vendor_catalog_app\sql\updates\update_project_demo.sql`
+- `app_project_note` [table] required_cols=9 defined_cols=9
+  - required: `active_flag`, `created_at`, `created_by`, `note_text`, `project_id`, `project_note_id`, `updated_at`, `updated_by`, `vendor_id`
+  - defined: `active_flag`, `created_at`, `created_by`, `note_text`, `project_id`, `project_note_id`, `updated_at`, `updated_by`, `vendor_id`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_project_activity.sql`, `app\vendor_catalog_app\sql\ingestion\select_project_notes.sql`, `app\vendor_catalog_app\sql\inserts\add_project_note.sql`, `app\vendor_catalog_app\sql\reporting\report_project_portfolio_notes.sql`
+- `app_project_offering_map` [table] required_cols=9 defined_cols=9
+  - required: `active_flag`, `created_at`, `created_by`, `offering_id`, `project_id`, `project_offering_map_id`, `updated_at`, `updated_by`, `vendor_id`
+  - defined: `active_flag`, `created_at`, `created_by`, `offering_id`, `project_id`, `project_offering_map_id`, `updated_at`, `updated_by`, `vendor_id`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_project_offerings.sql`, `app\vendor_catalog_app\sql\inserts\create_project_offering_map.sql`, `app\vendor_catalog_app\sql\reporting\report_project_portfolio_offering_map.sql`, `app\vendor_catalog_app\sql\updates\delete_project_offering_map.sql`, `app\vendor_catalog_app\sql\updates\update_project_offering_map_soft.sql`
+- `app_project_vendor_map` [table] required_cols=8 defined_cols=8
+  - required: `active_flag`, `created_at`, `created_by`, `project_id`, `project_vendor_map_id`, `updated_at`, `updated_by`, `vendor_id`
+  - defined: `active_flag`, `created_at`, `created_by`, `project_id`, `project_vendor_map_id`, `updated_at`, `updated_by`, `vendor_id`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_project_vendor_ids.sql`, `app\vendor_catalog_app\sql\inserts\create_project_vendor_map.sql`, `app\vendor_catalog_app\sql\reporting\filter_all_projects_vendor_clause.sql`, `app\vendor_catalog_app\sql\reporting\list_projects_for_vendor.sql`, `app\vendor_catalog_app\sql\reporting\report_project_portfolio_vendor_map.sql`, `app\vendor_catalog_app\sql\reporting\report_vendor_inventory_project_map.sql`, `app\vendor_catalog_app\sql\updates\delete_project_vendor_map.sql`, `app\vendor_catalog_app\sql\updates\update_project_vendor_map_soft.sql`
+- `app_usage_log` [table] required_cols=6 defined_cols=6
+  - required: `event_ts`, `event_type`, `page_name`, `payload_json`, `usage_event_id`, `user_principal`
+  - defined: `event_ts`, `event_type`, `page_name`, `payload_json`, `usage_event_id`, `user_principal`
+  - files: `app\vendor_catalog_app\sql\inserts\log_usage_event.sql`
+- `app_user_directory` [table] required_cols=13 defined_cols=13
+  - required: `active_flag`, `created_at`, `display_name`, `email`, `employee_id`, `first_name`, `last_name`, `last_seen_at`, `login_identifier`, `manager_id`, `network_id`, `updated_at`, `user_id`
+  - defined: `active_flag`, `created_at`, `display_name`, `email`, `employee_id`, `first_name`, `last_name`, `last_seen_at`, `login_identifier`, `manager_id`, `network_id`, `updated_at`, `user_id`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_project_by_id.sql`, `app\vendor_catalog_app\sql\ingestion\select_user_directory_all.sql`, `app\vendor_catalog_app\sql\ingestion\select_user_directory_by_login.sql`, `app\vendor_catalog_app\sql\ingestion\select_user_directory_by_user_id.sql`, `app\vendor_catalog_app\sql\ingestion\select_user_directory_search.sql`, `app\vendor_catalog_app\sql\ingestion\select_vendor_business_owners.sql`, `app\vendor_catalog_app\sql\ingestion\select_vendor_offering_business_owners.sql`, `app\vendor_catalog_app\sql\inserts\create_user_directory.sql`, `app\vendor_catalog_app\sql\reporting\count_group_role_grants.sql`, `app\vendor_catalog_app\sql\reporting\count_role_grants.sql`, `app\vendor_catalog_app\sql\reporting\count_scope_grants.sql`, `app\vendor_catalog_app\sql\reporting\list_all_projects.sql`, `app\vendor_catalog_app\sql\reporting\list_group_role_grants.sql`, `app\vendor_catalog_app\sql\reporting\list_owner_reassignment_assignments.sql`, `app\vendor_catalog_app\sql\reporting\list_projects_for_vendor.sql`, `app\vendor_catalog_app\sql\reporting\list_role_grants.sql`, `app\vendor_catalog_app\sql\reporting\list_scope_grants.sql`, `app\vendor_catalog_app\sql\updates\update_user_directory_profile.sql`
+- `app_user_settings` [table] required_cols=6 defined_cols=6
+  - required: `setting_id`, `setting_key`, `setting_value_json`, `updated_at`, `updated_by`, `user_principal`
+  - defined: `setting_id`, `setting_key`, `setting_value_json`, `updated_at`, `updated_by`, `user_principal`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_user_setting_latest.sql`, `app\vendor_catalog_app\sql\inserts\save_user_setting.sql`, `app\vendor_catalog_app\sql\updates\delete_user_setting.sql`
+- `app_vendor_change_request` [table] required_cols=8 defined_cols=8
+  - required: `change_request_id`, `change_type`, `requested_payload_json`, `requestor_user_principal`, `status`, `submitted_at`, `updated_at`, `vendor_id`
+  - defined: `change_request_id`, `change_type`, `requested_payload_json`, `requestor_user_principal`, `status`, `submitted_at`, `updated_at`, `vendor_id`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_all_vendor_change_requests.sql`, `app\vendor_catalog_app\sql\ingestion\select_vendor_audit_events.sql`, `app\vendor_catalog_app\sql\ingestion\select_vendor_change_request_by_id.sql`, `app\vendor_catalog_app\sql\ingestion\select_vendor_change_requests.sql`, `app\vendor_catalog_app\sql\inserts\create_vendor_change_request.sql`, `app\vendor_catalog_app\sql\updates\update_vendor_change_request_status.sql`
+- `app_vendor_warning` [table] required_cols=16 defined_cols=16
+  - required: `created_at`, `created_by`, `detected_at`, `file_name`, `resolved_at`, `severity`, `source_table`, `source_version`, `updated_at`, `updated_by`, `vendor_id`, `warning_category`, `warning_detail`, `warning_id`, `warning_status`, `warning_title`
+  - defined: `created_at`, `created_by`, `detected_at`, `file_name`, `resolved_at`, `severity`, `source_table`, `source_version`, `updated_at`, `updated_by`, `vendor_id`, `warning_category`, `warning_detail`, `warning_id`, `warning_status`, `warning_title`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_vendor_warnings.sql`, `app\vendor_catalog_app\sql\inserts\create_vendor_warning.sql`, `app\vendor_catalog_app\sql\reporting\report_vendor_data_quality_overview.sql`, `app\vendor_catalog_app\sql\reporting\report_vendor_warnings.sql`, `app\vendor_catalog_app\sql\updates\resolve_vendor_warning.sql`
+- `audit_access_event` [table] required_cols=7 defined_cols=7
+  - required: `access_event_id`, `action_type`, `actor_user_principal`, `event_ts`, `notes`, `target_role`, `target_user_principal`
+  - defined: `access_event_id`, `action_type`, `actor_user_principal`, `event_ts`, `notes`, `target_role`, `target_user_principal`
+  - files: `app\vendor_catalog_app\sql\inserts\audit_access.sql`
+- `audit_entity_change` [table] required_cols=9 defined_cols=9
+  - required: `action_type`, `actor_user_principal`, `after_json`, `before_json`, `change_event_id`, `entity_id`, `entity_name`, `event_ts`, `request_id`
+  - defined: `action_type`, `actor_user_principal`, `after_json`, `before_json`, `change_event_id`, `entity_id`, `entity_name`, `event_ts`, `request_id`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_offering_activity.sql`, `app\vendor_catalog_app\sql\ingestion\select_project_activity.sql`, `app\vendor_catalog_app\sql\ingestion\select_vendor_audit_events.sql`, `app\vendor_catalog_app\sql\inserts\audit_entity_change.sql`
+- `audit_workflow_event` [table] required_cols=8 defined_cols=8
+  - required: `actor_user_principal`, `event_ts`, `new_status`, `notes`, `old_status`, `workflow_event_id`, `workflow_id`, `workflow_type`
+  - defined: `actor_user_principal`, `event_ts`, `new_status`, `notes`, `old_status`, `workflow_event_id`, `workflow_id`, `workflow_type`
+  - files: `app\vendor_catalog_app\sql\inserts\create_workflow_event.sql`
+- `core_contract` [table] required_cols=11 defined_cols=11
+  - required: `annual_value`, `cancelled_flag`, `contract_id`, `contract_number`, `contract_status`, `end_date`, `offering_id`, `start_date`, `updated_at`, `updated_by`, `vendor_id`
+  - defined: `annual_value`, `cancelled_flag`, `contract_id`, `contract_number`, `contract_status`, `end_date`, `offering_id`, `start_date`, `updated_at`, `updated_by`, `vendor_id`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_vendor_contract_events.sql`, `app\vendor_catalog_app\sql\ingestion\select_vendor_contracts.sql`, `app\vendor_catalog_app\sql\inserts\create_contract.sql`, `app\vendor_catalog_app\sql\reporting\filter_vendors_page_search_clause.sql`, `app\vendor_catalog_app\sql\reporting\list_contracts_workspace.sql`, `app\vendor_catalog_app\sql\reporting\report_vendor_data_quality_overview.sql`, `app\vendor_catalog_app\sql\reporting\report_vendor_inventory_contracts.sql`, `app\vendor_catalog_app\sql\reporting\search_contracts_typeahead.sql`, `app\vendor_catalog_app\sql\reporting\search_vendors_broad.sql`, `app\vendor_catalog_app\sql\updates\map_contract_to_offering.sql`, `app\vendor_catalog_app\sql\updates\record_contract_cancellation_contract_update.sql`, `app\vendor_catalog_app\sql\updates\update_contract_fields.sql`
+- `core_contract_event` [table] required_cols=7 defined_cols=7
+  - required: `actor_user_principal`, `contract_event_id`, `contract_id`, `event_ts`, `event_type`, `notes`, `reason_code`
+  - defined: `actor_user_principal`, `contract_event_id`, `contract_id`, `event_ts`, `event_type`, `notes`, `reason_code`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_vendor_contract_events.sql`, `app\vendor_catalog_app\sql\inserts\record_contract_cancellation_event.sql`, `app\vendor_catalog_app\sql\reporting\dashboard_cancelled_contract_count.sql`, `app\vendor_catalog_app\sql\reporting\dashboard_kpis.sql`
+- `core_offering_business_owner` [table] required_cols=7 defined_cols=7
+  - required: `active_flag`, `offering_id`, `offering_owner_id`, `owner_role`, `owner_user_principal`, `updated_at`, `updated_by`
+  - defined: `active_flag`, `offering_id`, `offering_owner_id`, `owner_role`, `owner_user_principal`, `updated_at`, `updated_by`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_vendor_offering_business_owners.sql`, `app\vendor_catalog_app\sql\inserts\add_offering_owner.sql`, `app\vendor_catalog_app\sql\reporting\filter_vendors_page_search_clause.sql`, `app\vendor_catalog_app\sql\reporting\list_owner_reassignment_assignments.sql`, `app\vendor_catalog_app\sql\reporting\report_owner_coverage.sql`, `app\vendor_catalog_app\sql\reporting\search_vendors_broad.sql`, `app\vendor_catalog_app\sql\updates\reassign_offering_owner_assignment.sql`, `app\vendor_catalog_app\sql\updates\reassign_offering_owner_bulk.sql`, `app\vendor_catalog_app\sql\updates\remove_offering_owner_delete.sql`, `app\vendor_catalog_app\sql\updates\remove_offering_owner_soft.sql`, `app\vendor_catalog_app\sql\updates\update_offering_owner.sql`
+- `core_offering_contact` [table] required_cols=9 defined_cols=9
+  - required: `active_flag`, `contact_type`, `email`, `full_name`, `offering_contact_id`, `offering_id`, `phone`, `updated_at`, `updated_by`
+  - defined: `active_flag`, `contact_type`, `email`, `full_name`, `offering_contact_id`, `offering_id`, `phone`, `updated_at`, `updated_by`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_vendor_offering_contacts.sql`, `app\vendor_catalog_app\sql\inserts\add_offering_contact.sql`, `app\vendor_catalog_app\sql\reporting\filter_vendors_page_search_clause.sql`, `app\vendor_catalog_app\sql\reporting\search_contacts_typeahead.sql`, `app\vendor_catalog_app\sql\reporting\search_vendors_broad.sql`, `app\vendor_catalog_app\sql\updates\remove_offering_contact_delete.sql`, `app\vendor_catalog_app\sql\updates\remove_offering_contact_soft.sql`
+- `core_vendor` [table] required_cols=11 defined_cols=12
+  - required: `display_name`, `legal_name`, `lifecycle_state`, `owner_org_id`, `risk_tier`, `source_batch_id`, `source_record_id`, `source_system`, `updated_at`, `updated_by`, `vendor_id`
+  - defined: `display_name`, `legal_name`, `lifecycle_state`, `owner_org_id`, `risk_tier`, `source_batch_id`, `source_extract_ts`, `source_record_id`, `source_system`, `updated_at`, `updated_by`, `vendor_id`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_offerings_by_ids.sql`, `app\vendor_catalog_app\sql\ingestion\select_project_by_id.sql`, `app\vendor_catalog_app\sql\ingestion\select_vendor_profile_by_id.sql`, `app\vendor_catalog_app\sql\ingestion\select_vendors_by_ids.sql`, `app\vendor_catalog_app\sql\inserts\create_vendor_profile.sql`, `app\vendor_catalog_app\sql\reporting\available_orgs.sql`, `app\vendor_catalog_app\sql\reporting\dashboard_active_vendors.sql`, `app\vendor_catalog_app\sql\reporting\dashboard_kpis.sql`, `app\vendor_catalog_app\sql\reporting\executive_risk_distribution.sql`, `app\vendor_catalog_app\sql\reporting\executive_top_vendors_by_spend.sql`, `app\vendor_catalog_app\sql\reporting\list_all_projects.sql`, `app\vendor_catalog_app\sql\reporting\list_contracts_workspace.sql`, `app\vendor_catalog_app\sql\reporting\list_owner_reassignment_assignments.sql`, `app\vendor_catalog_app\sql\reporting\list_vendor_contacts_index.sql`, `app\vendor_catalog_app\sql\reporting\list_vendors_page_count.sql`, `app\vendor_catalog_app\sql\reporting\list_vendors_page_data.sql`, `app\vendor_catalog_app\sql\reporting\report_offering_budget_variance_offerings.sql`, `app\vendor_catalog_app\sql\reporting\report_owner_coverage.sql`, `app\vendor_catalog_app\sql\reporting\report_vendor_data_quality_overview.sql`, `app\vendor_catalog_app\sql\reporting\report_vendor_warnings.sql`, `app\vendor_catalog_app\sql\reporting\search_contacts_typeahead.sql`, `app\vendor_catalog_app\sql\reporting\search_contracts_typeahead.sql`, `app\vendor_catalog_app\sql\reporting\search_offerings_typeahead.sql`, `app\vendor_catalog_app\sql\reporting\search_projects_typeahead.sql`, `app\vendor_catalog_app\sql\reporting\search_vendors_base.sql`, `app\vendor_catalog_app\sql\reporting\search_vendors_broad.sql`, `app\vendor_catalog_app\sql\reporting\search_vendors_fallback.sql`, `app\vendor_catalog_app\sql\reporting\search_vendors_typeahead.sql`, `app\vendor_catalog_app\sql\updates\apply_vendor_profile_update.sql`
+- `core_vendor_business_owner` [table] required_cols=7 defined_cols=7
+  - required: `active_flag`, `owner_role`, `owner_user_principal`, `updated_at`, `updated_by`, `vendor_id`, `vendor_owner_id`
+  - defined: `active_flag`, `owner_role`, `owner_user_principal`, `updated_at`, `updated_by`, `vendor_id`, `vendor_owner_id`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_vendor_business_owners.sql`, `app\vendor_catalog_app\sql\inserts\add_vendor_owner.sql`, `app\vendor_catalog_app\sql\reporting\filter_vendors_page_search_clause.sql`, `app\vendor_catalog_app\sql\reporting\list_owner_reassignment_assignments.sql`, `app\vendor_catalog_app\sql\reporting\report_owner_coverage.sql`, `app\vendor_catalog_app\sql\reporting\report_vendor_inventory_owners.sql`, `app\vendor_catalog_app\sql\reporting\search_vendors_broad.sql`, `app\vendor_catalog_app\sql\updates\reassign_vendor_owner_assignment.sql`
+- `core_vendor_contact` [table] required_cols=9 defined_cols=9
+  - required: `active_flag`, `contact_type`, `email`, `full_name`, `phone`, `updated_at`, `updated_by`, `vendor_contact_id`, `vendor_id`
+  - defined: `active_flag`, `contact_type`, `email`, `full_name`, `phone`, `updated_at`, `updated_by`, `vendor_contact_id`, `vendor_id`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_vendor_contacts.sql`, `app\vendor_catalog_app\sql\inserts\add_vendor_contact.sql`, `app\vendor_catalog_app\sql\reporting\filter_vendors_page_search_clause.sql`, `app\vendor_catalog_app\sql\reporting\list_vendor_contacts_index.sql`, `app\vendor_catalog_app\sql\reporting\search_contacts_typeahead.sql`, `app\vendor_catalog_app\sql\reporting\search_vendors_broad.sql`
+- `core_vendor_demo` [table] required_cols=10 defined_cols=10
+  - required: `demo_date`, `demo_id`, `non_selection_reason_code`, `notes`, `offering_id`, `overall_score`, `selection_outcome`, `updated_at`, `updated_by`, `vendor_id`
+  - defined: `demo_date`, `demo_id`, `non_selection_reason_code`, `notes`, `offering_id`, `overall_score`, `selection_outcome`, `updated_at`, `updated_by`, `vendor_id`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_demo_outcome_by_id.sql`, `app\vendor_catalog_app\sql\ingestion\select_vendor_demo_notes.sql`, `app\vendor_catalog_app\sql\ingestion\select_vendor_demo_scores.sql`, `app\vendor_catalog_app\sql\ingestion\select_vendor_demos.sql`, `app\vendor_catalog_app\sql\inserts\create_demo_outcome.sql`, `app\vendor_catalog_app\sql\reporting\dashboard_demo_count.sql`, `app\vendor_catalog_app\sql\reporting\dashboard_kpis.sql`, `app\vendor_catalog_app\sql\reporting\demo_outcomes.sql`, `app\vendor_catalog_app\sql\reporting\filter_vendors_page_search_clause.sql`, `app\vendor_catalog_app\sql\reporting\report_vendor_data_quality_overview.sql`, `app\vendor_catalog_app\sql\reporting\search_vendors_broad.sql`, `app\vendor_catalog_app\sql\updates\map_demo_to_offering.sql`
+- `core_vendor_demo_note` [table] required_cols=6 defined_cols=6
+  - required: `created_at`, `created_by`, `demo_id`, `demo_note_id`, `note_text`, `note_type`
+  - defined: `created_at`, `created_by`, `demo_id`, `demo_note_id`, `note_text`, `note_type`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_demo_note_by_id.sql`, `app\vendor_catalog_app\sql\ingestion\select_demo_notes_by_demo.sql`, `app\vendor_catalog_app\sql\ingestion\select_demo_notes_by_demo_and_creator.sql`, `app\vendor_catalog_app\sql\ingestion\select_vendor_demo_notes.sql`, `app\vendor_catalog_app\sql\inserts\create_demo_note.sql`, `app\vendor_catalog_app\sql\updates\update_demo_note_text.sql`
+- `core_vendor_demo_score` [table] required_cols=6 defined_cols=6
+  - required: `comments`, `demo_id`, `demo_score_id`, `score_category`, `score_value`, `weight`
+  - defined: `comments`, `demo_id`, `demo_score_id`, `score_category`, `score_value`, `weight`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_vendor_demo_scores.sql`
+- `core_vendor_identifier` [table] required_cols=6 defined_cols=8
+  - required: `country_code`, `identifier_type`, `identifier_value`, `is_primary`, `vendor_id`, `vendor_identifier_id`
+  - defined: `country_code`, `identifier_type`, `identifier_value`, `is_primary`, `updated_at`, `updated_by`, `vendor_id`, `vendor_identifier_id`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_vendor_identifiers.sql`
+- `core_vendor_offering` [table] required_cols=10 defined_cols=10
+  - required: `criticality_tier`, `lifecycle_state`, `lob`, `offering_id`, `offering_name`, `offering_type`, `service_type`, `updated_at`, `updated_by`, `vendor_id`
+  - defined: `criticality_tier`, `lifecycle_state`, `lob`, `offering_id`, `offering_name`, `offering_type`, `service_type`, `updated_at`, `updated_by`, `vendor_id`
+  - files: `app\vendor_catalog_app\sql\health\select_runtime_offering_columns_probe.sql`, `app\vendor_catalog_app\sql\ingestion\select_offering_belongs_to_vendor.sql`, `app\vendor_catalog_app\sql\ingestion\select_offering_vendor_pairs.sql`, `app\vendor_catalog_app\sql\ingestion\select_offerings_by_ids.sql`, `app\vendor_catalog_app\sql\ingestion\select_project_offerings.sql`, `app\vendor_catalog_app\sql\ingestion\select_vendor_offering_business_owners.sql`, `app\vendor_catalog_app\sql\ingestion\select_vendor_offering_contacts.sql`, `app\vendor_catalog_app\sql\ingestion\select_vendor_offerings.sql`, `app\vendor_catalog_app\sql\ingestion\select_vendor_offerings_for_vendor_ids.sql`, `app\vendor_catalog_app\sql\inserts\create_offering.sql`, `app\vendor_catalog_app\sql\reporting\dashboard_active_offerings.sql`, `app\vendor_catalog_app\sql\reporting\dashboard_kpis.sql`, `app\vendor_catalog_app\sql\reporting\filter_vendors_page_search_clause.sql`, `app\vendor_catalog_app\sql\reporting\list_contracts_workspace.sql`, `app\vendor_catalog_app\sql\reporting\list_owner_reassignment_assignments.sql`, `app\vendor_catalog_app\sql\reporting\report_offering_budget_variance_offerings.sql`, `app\vendor_catalog_app\sql\reporting\report_owner_coverage.sql`, `app\vendor_catalog_app\sql\reporting\report_vendor_data_quality_overview.sql`, `app\vendor_catalog_app\sql\reporting\report_vendor_inventory_offerings.sql`, `app\vendor_catalog_app\sql\reporting\search_contacts_typeahead.sql`, `app\vendor_catalog_app\sql\reporting\search_contracts_typeahead.sql`, `app\vendor_catalog_app\sql\reporting\search_offerings_typeahead.sql`, `app\vendor_catalog_app\sql\reporting\search_vendors_broad.sql`, `app\vendor_catalog_app\sql\updates\reassign_offering_owner_bulk.sql`, `app\vendor_catalog_app\sql\updates\update_offering_fields.sql`
+- `core_vendor_org_assignment` [table] required_cols=7 defined_cols=7
+  - required: `active_flag`, `assignment_type`, `org_id`, `updated_at`, `updated_by`, `vendor_id`, `vendor_org_assignment_id`
+  - defined: `active_flag`, `assignment_type`, `org_id`, `updated_at`, `updated_by`, `vendor_id`, `vendor_org_assignment_id`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_vendor_org_assignments.sql`, `app\vendor_catalog_app\sql\inserts\add_vendor_org_assignment.sql`
+- `hist_vendor` [table] required_cols=9 defined_cols=9
+  - required: `change_reason`, `changed_by`, `is_current`, `snapshot_json`, `valid_from_ts`, `valid_to_ts`, `vendor_hist_id`, `vendor_id`, `version_no`
+  - defined: `change_reason`, `changed_by`, `is_current`, `snapshot_json`, `valid_from_ts`, `valid_to_ts`, `vendor_hist_id`, `vendor_id`, `version_no`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_next_hist_vendor_version.sql`, `app\vendor_catalog_app\sql\inserts\apply_vendor_hist_insert.sql`, `app\vendor_catalog_app\sql\updates\apply_vendor_hist_close_current.sql`
+- `rpt_contract_cancellations` [view] required_cols=6 defined_cols=n/a
+  - required: `cancelled_at`, `contract_id`, `notes`, `offering_id`, `reason_code`, `vendor_id`
+  - files: `app\vendor_catalog_app\sql\reporting\contract_cancellations.sql`
+- `rpt_contract_renewals` [view] required_cols=9 defined_cols=n/a
+  - required: `annual_value`, `category`, `contract_id`, `org_id`, `renewal_date`, `renewal_status`, `risk_tier`, `vendor_id`, `vendor_name`
+  - files: `app\vendor_catalog_app\sql\reporting\executive_renewal_pipeline.sql`
+- `rpt_spend_fact` [view] required_cols=4 defined_cols=n/a
+  - required: `amount`, `category`, `month`, `vendor_id`
+  - files: `app\vendor_catalog_app\sql\reporting\executive_monthly_spend_trend.sql`, `app\vendor_catalog_app\sql\reporting\executive_spend_by_category.sql`, `app\vendor_catalog_app\sql\reporting\executive_top_vendors_by_spend.sql`, `app\vendor_catalog_app\sql\reporting\vendor_monthly_spend_trend.sql`, `app\vendor_catalog_app\sql\reporting\vendor_spend_by_category.sql`
+- `sec_group_role_map` [table] required_cols=6 defined_cols=6
+  - required: `active_flag`, `granted_at`, `granted_by`, `group_principal`, `revoked_at`, `role_code`
+  - defined: `active_flag`, `granted_at`, `granted_by`, `group_principal`, `revoked_at`, `role_code`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_group_roles.sql`, `app\vendor_catalog_app\sql\inserts\grant_group_role.sql`, `app\vendor_catalog_app\sql\reporting\count_group_role_grants.sql`, `app\vendor_catalog_app\sql\reporting\list_group_role_grants.sql`, `app\vendor_catalog_app\sql\reporting\search_group_principals.sql`, `app\vendor_catalog_app\sql\updates\revoke_group_role_grant.sql`
+- `sec_role_definition` [table] required_cols=10 defined_cols=10
+  - required: `active_flag`, `approval_level`, `can_direct_apply`, `can_edit`, `can_report`, `description`, `role_code`, `role_name`, `updated_at`, `updated_by`
+  - defined: `active_flag`, `approval_level`, `can_direct_apply`, `can_edit`, `can_report`, `description`, `role_code`, `role_name`, `updated_at`, `updated_by`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_role_definition_by_code.sql`, `app\vendor_catalog_app\sql\inserts\create_role_definition.sql`, `app\vendor_catalog_app\sql\reporting\list_role_definitions.sql`, `app\vendor_catalog_app\sql\updates\delete_role_definition_by_code.sql`, `app\vendor_catalog_app\sql\updates\update_role_definition.sql`
+- `sec_role_permission` [table] required_cols=5 defined_cols=5
+  - required: `action_code`, `active_flag`, `object_name`, `role_code`, `updated_at`
+  - defined: `action_code`, `active_flag`, `object_name`, `role_code`, `updated_at`
+  - files: `app\vendor_catalog_app\sql\inserts\create_role_permission.sql`, `app\vendor_catalog_app\sql\reporting\list_role_permissions.sql`, `app\vendor_catalog_app\sql\updates\deactivate_role_permissions_by_role.sql`, `app\vendor_catalog_app\sql\updates\delete_role_permissions_by_role.sql`
+- `sec_user_org_scope` [table] required_cols=5 defined_cols=5
+  - required: `active_flag`, `granted_at`, `org_id`, `scope_level`, `user_principal`
+  - defined: `active_flag`, `granted_at`, `org_id`, `scope_level`, `user_principal`
+  - files: `app\vendor_catalog_app\sql\inserts\grant_org_scope.sql`, `app\vendor_catalog_app\sql\reporting\count_scope_grants.sql`, `app\vendor_catalog_app\sql\reporting\list_scope_grants.sql`, `app\vendor_catalog_app\sql\updates\revoke_org_scope_grant.sql`
+- `sec_user_role_map` [table] required_cols=6 defined_cols=6
+  - required: `active_flag`, `granted_at`, `granted_by`, `revoked_at`, `role_code`, `user_principal`
+  - defined: `active_flag`, `granted_at`, `granted_by`, `revoked_at`, `role_code`, `user_principal`
+  - files: `app\vendor_catalog_app\sql\ingestion\select_user_role_presence.sql`, `app\vendor_catalog_app\sql\ingestion\select_user_roles.sql`, `app\vendor_catalog_app\sql\inserts\grant_role.sql`, `app\vendor_catalog_app\sql\reporting\count_role_grants.sql`, `app\vendor_catalog_app\sql\reporting\list_role_grants.sql`, `app\vendor_catalog_app\sql\updates\revoke_all_user_role_grants.sql`, `app\vendor_catalog_app\sql\updates\revoke_role_grant.sql`
+- `vendor_help_article` [table] required_cols=12 defined_cols=12
+  - required: `article_id`, `article_type`, `content_md`, `created_at`, `created_by`, `owned_by`, `role_visibility`, `section`, `slug`, `title`, `updated_at`, `updated_by`
+  - defined: `article_id`, `article_type`, `content_md`, `created_at`, `created_by`, `owned_by`, `role_visibility`, `section`, `slug`, `title`, `updated_at`, `updated_by`
+  - files: `app\vendor_catalog_app\sql\help\select_help_article_by_slug.sql`, `app\vendor_catalog_app\sql\help\select_help_articles_full.sql`, `app\vendor_catalog_app\sql\help\select_help_articles_index.sql`, `app\vendor_catalog_app\sql\inserts\create_help_article.sql`
+- `vendor_help_feedback` [table] required_cols=8 defined_cols=8
+  - required: `article_id`, `article_slug`, `comment`, `created_at`, `feedback_id`, `page_path`, `user_principal`, `was_helpful`
+  - defined: `article_id`, `article_slug`, `comment`, `created_at`, `feedback_id`, `page_path`, `user_principal`, `was_helpful`
+  - files: `app\vendor_catalog_app\sql\inserts\create_help_feedback.sql`, `app\vendor_catalog_app\sql\reporting\list_help_feedback.sql`
+- `vendor_help_issue` [table] required_cols=8 defined_cols=8
+  - required: `article_id`, `article_slug`, `created_at`, `issue_description`, `issue_id`, `issue_title`, `page_path`, `user_principal`
+  - defined: `article_id`, `article_slug`, `created_at`, `issue_description`, `issue_id`, `issue_title`, `page_path`, `user_principal`
+  - files: `app\vendor_catalog_app\sql\inserts\create_help_issue.sql`, `app\vendor_catalog_app\sql\reporting\list_help_issues.sql`
+- `vw_employee_directory` [view] required_cols=0 defined_cols=n/a
+
+## Result: PASS

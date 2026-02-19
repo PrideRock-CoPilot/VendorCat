@@ -8,7 +8,7 @@ SELECT
   last_name,
   display_name
 FROM {employee_directory_view}
-WHERE coalesce(active_flag, true) = true
+WHERE lower(coalesce(active_flag || '', '1')) IN ('1', 'a', 'active', 'true')
   AND (
     %s = ''
     OR lower(coalesce(login_identifier, '')) LIKE %s
