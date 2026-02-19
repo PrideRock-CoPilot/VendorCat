@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
@@ -10,6 +12,8 @@ from vendor_catalog_app.web.routers.reports.common import *
 from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter()
+
+
 @router.post("/reports/email")
 @require_permission("report_email")
 async def reports_email_request(request: Request):
@@ -142,3 +146,92 @@ async def reports_email_request(request: Request):
         redirect_payload[DATABRICKS_SELECTED_REPORT_PARAM] = dbx_report
     query = _safe_query_params(redirect_payload)
     return RedirectResponse(url=f"/reports?{query}", status_code=303)
+
+
+@router.post("/reports/workspace/boards/save")
+@require_permission("report_submit")
+async def reports_workspace_save_board(request: Request):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    if user.config.locked_mode:
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url="/reports/workspace", status_code=303)
+    if not _can_use_reports(user):
+        add_flash(request, "You do not have permission to save report boards.", "error")
+        return RedirectResponse(url="/dashboard", status_code=303)
+
+    board_name = str(form.get("board_name", "")).strip()
+    board_json = str(form.get("board_json", "")).strip()
+    board_id = str(form.get("board_id", "")).strip()
+    safe_board_id = _safe_report_key(board_id, "")
+
+    try:
+        board = _workspace_upsert_board(
+            repo,
+            user_principal=user.user_principal,
+            board_name=board_name,
+            board_json=board_json,
+            board_id=safe_board_id,
+        )
+    except ValueError as exc:
+        add_flash(request, str(exc), "error")
+        if safe_board_id:
+            return RedirectResponse(url=f"/reports/workspace?board={safe_board_id}", status_code=303)
+        return RedirectResponse(url="/reports/workspace", status_code=303)
+
+    board_payload = {
+        "board_id": board.get("board_id"),
+        "board_name": board.get("board_name"),
+        "widget_count": board.get("widget_count"),
+    }
+    try:
+        parsed_payload = json.loads(board_json) if board_json else {}
+    except json.JSONDecodeError:
+        parsed_payload = {}
+    if isinstance(parsed_payload, dict):
+        source_version = parsed_payload.get("version")
+        if source_version is not None:
+            board_payload["source_version"] = source_version
+
+    repo.log_usage_event(
+        user_principal=user.user_principal,
+        page_name="reports_workspace",
+        event_type="workspace_board_save",
+        payload=board_payload,
+    )
+    add_flash(request, f"Saved report board '{board.get('board_name')}'.", "success")
+    return RedirectResponse(url=f"/reports/workspace?board={board.get('board_id')}", status_code=303)
+
+
+@router.post("/reports/workspace/boards/delete")
+@require_permission("report_submit")
+async def reports_workspace_delete_board(request: Request):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    if user.config.locked_mode:
+        add_flash(request, "Application is in locked mode. Write actions are disabled.", "error")
+        return RedirectResponse(url="/reports/workspace", status_code=303)
+    if not _can_use_reports(user):
+        add_flash(request, "You do not have permission to delete report boards.", "error")
+        return RedirectResponse(url="/dashboard", status_code=303)
+
+    board_id = _safe_report_key(str(form.get("board_id", "")).strip(), "")
+    if not board_id:
+        add_flash(request, "Select a board to remove.", "error")
+        return RedirectResponse(url="/reports/workspace", status_code=303)
+
+    removed = _workspace_delete_board(repo, user_principal=user.user_principal, board_id=board_id)
+    if not removed:
+        add_flash(request, "Board was not found or already removed.", "info")
+        return RedirectResponse(url="/reports/workspace", status_code=303)
+
+    repo.log_usage_event(
+        user_principal=user.user_principal,
+        page_name="reports_workspace",
+        event_type="workspace_board_delete",
+        payload={"board_id": board_id},
+    )
+    add_flash(request, "Report board removed.", "success")
+    return RedirectResponse(url="/reports/workspace", status_code=303)

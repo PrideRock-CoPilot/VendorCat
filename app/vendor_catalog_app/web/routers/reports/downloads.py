@@ -3,7 +3,6 @@ from __future__ import annotations
 import io
 import json
 import zipfile
-import csv
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
@@ -15,6 +14,8 @@ from vendor_catalog_app.web.http.flash import add_flash
 from vendor_catalog_app.web.routers.reports.common import *
 
 router = APIRouter()
+
+
 @router.get("/reports/download")
 def reports_download(
     request: Request,
@@ -125,164 +126,99 @@ def reports_download(
     )
 
 
-@router.get("/reports/download/powerbi")
-def reports_download_powerbi(
-    request: Request,
-    report_type: str = "vendor_inventory",
-    search: str = "",
-    vendor: str = "all",
-    lifecycle_state: str = "all",
-    project_status: str = "all",
-    outcome: str = "all",
-    owner_principal: str = "",
-    lob: str = "all",
-    org: str | None = None,
-    horizon_days: int = 180,
-    limit: int = 500,
-    cols: str = "",
-    view_mode: str = "both",
-    chart_kind: str = "bar",
-    chart_x: str = "",
-    chart_y: str = "",
-):
+@router.get("/reports/workspace/boards/export")
+def reports_workspace_export_board(request: Request, board: str = ""):
     repo = get_repo()
     user = get_user_context(request)
     if not _can_use_reports(user):
-        add_flash(request, "You do not have permission to download reports.", "error")
+        add_flash(request, "You do not have permission to export report boards.", "error")
         return RedirectResponse(url="/dashboard", status_code=303)
 
-    report_type = _safe_report_type(report_type)
-    view_mode = _safe_view_mode(view_mode)
-    chart_kind = _safe_chart_kind(chart_kind)
+    board_id = _safe_report_key(board, "")
+    if not board_id:
+        add_flash(request, "Select a board to export.", "error")
+        return RedirectResponse(url="/reports/workspace", status_code=303)
 
-    if lifecycle_state not in VENDOR_LIFECYCLE_STATES:
-        lifecycle_state = "all"
-    if project_status not in PROJECT_STATUSES:
-        project_status = "all"
-    if outcome not in DEMO_OUTCOMES:
-        outcome = "all"
-    if limit not in ROW_LIMITS:
-        limit = 500
+    boards = _workspace_load_boards(repo, user.user_principal)
+    selected_board: dict[str, object] | None = None
+    for item in boards:
+        if str(item.get("board_id") or "") == board_id:
+            selected_board = item
+            break
+    if selected_board is None:
+        add_flash(request, "Saved board was not found.", "error")
+        return RedirectResponse(url="/reports/workspace", status_code=303)
 
-    orgs = repo.available_orgs()
-    selected_lob = str(org if org is not None and str(org).strip() else lob).strip() or "all"
-    if selected_lob not in orgs:
-        selected_lob = "all"
-    horizon_days = max(30, min(horizon_days, 730))
+    bundle = io.BytesIO()
+    manifest_widgets: list[dict[str, object]] = []
+    raw_widgets = selected_board.get("widgets")
+    widgets = raw_widgets if isinstance(raw_widgets, list) else []
+    with zipfile.ZipFile(bundle, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for index, raw_widget in enumerate(widgets):
+            widget = _workspace_normalize_widget(raw_widget, index)
+            payload = _workspace_widget_query_payload(widget)
+            report_type = _safe_report_type(str(payload.get("report_type") or "vendor_inventory"))
+            search = str(payload.get("search") or "").strip()
+            vendor = str(payload.get("vendor") or "all").strip() or "all"
+            try:
+                limit = int(payload.get("limit", 500))
+            except (TypeError, ValueError):
+                limit = 500
+            if limit not in ROW_LIMITS:
+                limit = 500
 
-    frame = _build_report_frame(
-        repo,
-        report_type=report_type,
-        search=search,
-        vendor=vendor,
-        lifecycle_state=lifecycle_state,
-        project_status=project_status,
-        outcome=outcome,
-        owner_principal=owner_principal,
-        lob=selected_lob,
-        horizon_days=horizon_days,
-        limit=limit,
-    )
-    if frame.empty:
-        add_flash(request, "No rows available for download with the selected filters.", "info")
-        query = _safe_query_params(
-            _report_query_payload(
+            frame = _build_report_frame(
+                repo,
                 report_type=report_type,
                 search=search,
                 vendor=vendor,
-                lifecycle_state=lifecycle_state,
-                project_status=project_status,
-                outcome=outcome,
-                owner_principal=owner_principal,
-                lob=selected_lob,
-                horizon_days=horizon_days,
+                lifecycle_state="all",
+                project_status="all",
+                outcome="all",
+                owner_principal="",
+                lob="all",
+                horizon_days=180,
                 limit=limit,
-                cols=cols,
-                view_mode=view_mode,
-                chart_kind=chart_kind,
-                chart_x=chart_x,
-                chart_y=chart_y,
-                run=1,
             )
-        )
-        return RedirectResponse(url=f"/reports?{query}", status_code=303)
+            csv_stream = io.StringIO()
+            frame.to_csv(csv_stream, index=False)
+            safe_title = _safe_report_key(str(widget.get("title") or f"widget-{index + 1}"), f"widget-{index + 1}")
+            csv_name = f"{index + 1:02d}_{safe_title}.csv"
+            archive.writestr(csv_name, csv_stream.getvalue())
 
-    selected_cols = _resolve_selected_columns(frame, cols)
-    if selected_cols:
-        frame = frame[selected_cols]
-
-    dimension_columns, metric_columns = _chart_column_options(frame)
-    chart_kind, chart_x, chart_y, _, _ = _resolve_chart_selection(
-        report_type=report_type,
-        chart_kind=chart_kind,
-        chart_x=chart_x,
-        chart_y=chart_y,
-        dimension_columns=dimension_columns,
-        metric_columns=metric_columns,
-    )
-    chart_data = _build_chart_dataset(
-        frame,
-        chart_kind=chart_kind,
-        chart_x=chart_x,
-        chart_y=chart_y,
-    )
-
-    bundle = io.BytesIO()
-    with zipfile.ZipFile(bundle, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-        report_csv = io.StringIO()
-        frame.to_csv(report_csv, index=False)
-        archive.writestr("report_data.csv", report_csv.getvalue())
-
-        chart_rows = chart_data["rows"]
-        if chart_rows:
-            chart_csv = io.StringIO()
-            writer = csv.writer(chart_csv)
-            writer.writerow(["label", "value", "share_pct"])
-            for row in chart_rows:
-                writer.writerow([row["label"], row["value"], row["share_pct"]])
-            archive.writestr("chart_data.csv", chart_csv.getvalue())
+            manifest_widgets.append(
+                {
+                    "index": index + 1,
+                    "title": str(widget.get("title") or f"Widget {index + 1}"),
+                    "widget_type": str(widget.get("widget_type") or "chart"),
+                    "report_type": report_type,
+                    "row_count": int(len(frame)),
+                    "columns": [str(column) for column in frame.columns.tolist()],
+                    "csv_file": csv_name,
+                    "query": payload,
+                }
+            )
 
         manifest = {
-            "report_type": report_type,
-            "report_label": REPORT_TYPES[report_type]["label"],
+            "version": REPORTS_WORKSPACE_VERSION,
+            "board_id": selected_board.get("board_id"),
+            "board_name": selected_board.get("board_name"),
             "generated_utc": datetime.now(timezone.utc).isoformat(),
-            "row_count": int(len(frame)),
-            "columns": list(frame.columns),
-            "view_mode": view_mode,
-            "chart": {
-                "kind": chart_kind,
-                "x": chart_x,
-                "y": chart_y,
-                "point_count": len(chart_rows),
-            },
-            "filters": {
-                "search": search,
-                "vendor": vendor,
-                "lifecycle_state": lifecycle_state,
-                "project_status": project_status,
-                "outcome": outcome,
-                "owner_principal": owner_principal,
-                "lob": selected_lob,
-                "horizon_days": horizon_days,
-                "limit": limit,
-            },
-            "powerbi_note": "Import report_data.csv and chart_data.csv into Power BI Desktop to generate/update your PBIX report.",
+            "widget_count": len(manifest_widgets),
+            "widgets": manifest_widgets,
         }
-        archive.writestr("report_manifest.json", json.dumps(manifest, indent=2))
+        archive.writestr("board_manifest.json", json.dumps(manifest, indent=2))
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    filename = f"{report_type}_{stamp}_powerbi_seed.zip"
-
+    filename = f"reports_board_{board_id}_{stamp}.zip"
     repo.log_usage_event(
         user_principal=user.user_principal,
-        page_name="reports",
-        event_type="report_powerbi_download",
+        page_name="reports_workspace",
+        event_type="workspace_board_export",
         payload={
-            "report_type": report_type,
-            "row_count": int(len(frame)),
-            "columns": list(frame.columns),
-            "view_mode": view_mode,
-            "chart": {"kind": chart_kind, "x": chart_x, "y": chart_y, "points": len(chart_rows)},
+            "board_id": selected_board.get("board_id"),
+            "board_name": selected_board.get("board_name"),
+            "widget_count": len(manifest_widgets),
         },
     )
     return Response(

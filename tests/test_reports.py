@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import sys
 import zipfile
 from pathlib import Path
@@ -15,6 +16,7 @@ if str(APP_ROOT) not in sys.path:
 
 from vendor_catalog_app.web.app import create_app
 from vendor_catalog_app.web.core.runtime import get_config, get_repo
+from vendor_catalog_app.web.routers.reports.common import REPORT_TYPES
 
 
 @pytest.fixture()
@@ -29,7 +31,108 @@ def test_reports_page_loads_for_authorized_user(client: TestClient) -> None:
     response = client.get("/reports")
     assert response.status_code == 200
     assert "Reports" in response.text
-    assert "Build custom extracts" in response.text
+    assert "Host and run report views directly in this app" in response.text
+    assert "Ready-to-Run Hosted Reports" in response.text
+    assert "Open Workspace Designer" in response.text
+    assert "Download Power BI Bundle" not in response.text
+
+
+def test_reports_page_lists_all_ready_to_run_cards(client: TestClient) -> None:
+    response = client.get("/reports")
+    assert response.status_code == 200
+    card_keys = set(re.findall(r'data-ready-report="([^"]+)"', response.text))
+    assert len(card_keys) >= 12
+    assert card_keys == set(REPORT_TYPES.keys())
+
+
+def test_reports_catalog_has_minimum_ready_to_go_reports() -> None:
+    assert len(REPORT_TYPES) >= 12
+    assert "high_risk_vendor_inventory" in REPORT_TYPES
+    assert "active_project_portfolio" in REPORT_TYPES
+    assert "renewal_pipeline_90d" in REPORT_TYPES
+    assert "demo_selected_only" in REPORT_TYPES
+    assert "budget_overruns" in REPORT_TYPES
+    assert "open_vendor_warnings" in REPORT_TYPES
+
+
+def test_reports_workspace_page_loads_for_authorized_user(client: TestClient) -> None:
+    response = client.get("/reports/workspace")
+    assert response.status_code == 200
+    assert "Reports Workspace" in response.text
+    assert "Unified Report Catalog" in response.text
+    assert "Report Board Designer" in response.text
+
+
+def test_reports_workspace_board_save_load_delete(client: TestClient) -> None:
+    save = client.post(
+        "/reports/workspace/boards/save",
+        data={
+            "board_name": "Ops Weekly",
+            "board_id": "",
+            "board_json": (
+                '{"version":1,"widgets":[{"widget_type":"chart","title":"Ops KPIs","report_type":"vendor_inventory",'
+                '"view_mode":"chart","chart_kind":"bar","chart_x":"display_name","chart_y":"total_contract_value",'
+                '"search":"","vendor":"all","limit":500}]}'
+            ),
+        },
+        follow_redirects=False,
+    )
+    assert save.status_code == 303
+    assert save.headers["location"].startswith("/reports/workspace?board=ops-weekly")
+
+    loaded = client.get(save.headers["location"])
+    assert loaded.status_code == 200
+    assert "Saved report board &#39;Ops Weekly&#39;." in loaded.text
+    assert "Ops Weekly" in loaded.text
+    assert "Ops KPIs" in loaded.text
+
+    delete = client.post(
+        "/reports/workspace/boards/delete",
+        data={"board_id": "ops-weekly"},
+        follow_redirects=True,
+    )
+    assert delete.status_code == 200
+    assert "Report board removed." in delete.text
+
+
+def test_reports_workspace_board_presentation_and_export_bundle(client: TestClient) -> None:
+    save = client.post(
+        "/reports/workspace/boards/save",
+        data={
+            "board_name": "Leadership Packet",
+            "board_id": "",
+            "board_json": (
+                '{"version":1,"widgets":[{"widget_type":"chart","title":"Renewal Snapshot",'
+                '"report_type":"contract_renewals","view_mode":"both","chart_kind":"line","chart_x":"renewal_date",'
+                '"chart_y":"annual_value","search":"","vendor":"all","limit":500},'
+                '{"widget_type":"table","title":"Owner Coverage","report_type":"owner_coverage","view_mode":"table",'
+                '"chart_kind":"bar","chart_x":"owner_principal","chart_y":"__row_count__",'
+                '"search":"","vendor":"all","limit":250}]}'
+            ),
+        },
+        follow_redirects=False,
+    )
+    assert save.status_code == 303
+    assert save.headers["location"].startswith("/reports/workspace?board=leadership-packet")
+
+    present = client.get("/reports/workspace/present?board=leadership-packet")
+    assert present.status_code == 200
+    assert "Presentation Mode" in present.text
+    assert "Leadership Packet" in present.text
+    assert "Renewal Snapshot" in present.text
+    assert "Owner Coverage" in present.text
+    assert "Open Runner" in present.text
+
+    export = client.get("/reports/workspace/boards/export?board=leadership-packet")
+    assert export.status_code == 200
+    assert export.headers.get("content-type", "").startswith("application/zip")
+    with zipfile.ZipFile(io.BytesIO(export.content), "r") as archive:
+        names = set(archive.namelist())
+        assert "board_manifest.json" in names
+        assert any(name.endswith(".csv") for name in names if name != "board_manifest.json")
+        manifest = json.loads(archive.read("board_manifest.json").decode("utf-8"))
+    assert manifest["board_id"] == "leadership-packet"
+    assert int(manifest["widget_count"]) == 2
 
 
 def test_reports_access_denied_for_viewer(client: TestClient) -> None:
@@ -64,17 +167,11 @@ def test_reports_graph_view_renders(client: TestClient) -> None:
     assert "bar-row" in response.text
 
 
-def test_reports_powerbi_bundle_download(client: TestClient) -> None:
+def test_reports_powerbi_bundle_download_route_removed(client: TestClient) -> None:
     response = client.get(
         "/reports/download/powerbi?report_type=owner_coverage&owner_principal=cloud-platform@example.com&chart_x=owner_principal&chart_y=__row_count__&limit=250"
     )
-    assert response.status_code == 200
-    assert response.headers.get("content-type", "").startswith("application/zip")
-
-    with zipfile.ZipFile(io.BytesIO(response.content), "r") as archive:
-        names = set(archive.namelist())
-    assert "report_data.csv" in names
-    assert "report_manifest.json" in names
+    assert response.status_code == 404
 
 
 def test_reports_databricks_native_links_and_embed(

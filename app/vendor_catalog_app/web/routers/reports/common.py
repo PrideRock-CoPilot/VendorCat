@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import re
 from urllib.parse import urlencode, urlparse, urlunparse
@@ -50,6 +51,30 @@ REPORT_TYPES = {
         "label": "Vendor Data Quality Overview",
         "description": "Vendor-level counts and max dates across warning, contract, demo, invoice, ticket, and data-flow tables.",
     },
+    "high_risk_vendor_inventory": {
+        "label": "High Risk Vendors",
+        "description": "Vendor inventory narrowed to high and critical risk tiers for immediate triage.",
+    },
+    "active_project_portfolio": {
+        "label": "Active Project Portfolio",
+        "description": "Project portfolio scoped to active workstreams and current execution priorities.",
+    },
+    "renewal_pipeline_90d": {
+        "label": "Renewal Pipeline (90 Days)",
+        "description": "Contract renewal queue limited to the next 90 days for near-term planning.",
+    },
+    "demo_selected_only": {
+        "label": "Demo Outcomes (Selected)",
+        "description": "Demo outcomes filtered to selected decisions for adoption and win analysis.",
+    },
+    "budget_overruns": {
+        "label": "Budget Overruns",
+        "description": "Offering budget variance records with over-budget status to target corrective action.",
+    },
+    "open_vendor_warnings": {
+        "label": "Open Vendor Warnings",
+        "description": "Operational and data-quality warnings currently in open status.",
+    },
 }
 
 VENDOR_LIFECYCLE_STATES = ["all", "draft", "submitted", "in_review", "approved", "active", "suspended", "retired"]
@@ -72,9 +97,21 @@ CHART_PRESETS = {
     "offering_budget_variance": {"kind": "bar", "x": "offering_name", "y": "variance_amount"},
     "vendor_warnings": {"kind": "bar", "x": "warning_category", "y": ROW_COUNT_METRIC},
     "vendor_data_quality_overview": {"kind": "bar", "x": "vendor_display_name", "y": "open_warning_count"},
+    "high_risk_vendor_inventory": {"kind": "bar", "x": "display_name", "y": "total_contract_value"},
+    "active_project_portfolio": {"kind": "bar", "x": "project_name", "y": ROW_COUNT_METRIC},
+    "renewal_pipeline_90d": {"kind": "line", "x": "renewal_date", "y": "annual_value"},
+    "demo_selected_only": {"kind": "bar", "x": "vendor_display_name", "y": "overall_score"},
+    "budget_overruns": {"kind": "bar", "x": "offering_name", "y": "variance_amount"},
+    "open_vendor_warnings": {"kind": "bar", "x": "severity", "y": ROW_COUNT_METRIC},
 }
 
 DATABRICKS_SELECTED_REPORT_PARAM = "dbx_report"
+REPORTS_WORKSPACE_SETTING_KEY = "reports_workspace_boards_v1"
+REPORTS_WORKSPACE_VERSION = 1
+MAX_WORKSPACE_BOARDS = 40
+MAX_WORKSPACE_WIDGETS = 40
+MAX_WORKSPACE_NAME_LEN = 120
+MAX_WORKSPACE_SEARCH_LEN = 160
 
 
 def _can_use_reports(user) -> bool:
@@ -196,6 +233,60 @@ def _build_report_frame(
             lifecycle_state=lifecycle_state,
             limit=limit,
         )
+    elif report_type == "high_risk_vendor_inventory":
+        frame = repo.report_vendor_inventory(
+            search_text=search,
+            lifecycle_state=lifecycle_state,
+            owner_principal=owner_principal,
+            limit=limit,
+        )
+        if not frame.empty and "risk_tier" in frame.columns:
+            risk = frame["risk_tier"].astype(str).str.strip().str.lower()
+            frame = frame[risk.isin({"high", "critical"})].copy()
+    elif report_type == "active_project_portfolio":
+        frame = repo.report_project_portfolio(
+            search_text=search,
+            status="active",
+            vendor_id=vendor,
+            owner_principal=owner_principal,
+            limit=limit,
+        )
+    elif report_type == "renewal_pipeline_90d":
+        frame = repo.report_contract_renewals(
+            search_text=search,
+            vendor_id=vendor,
+            org_id=lob,
+            horizon_days=90,
+            limit=limit,
+        )
+    elif report_type == "demo_selected_only":
+        frame = repo.report_demo_outcomes(
+            search_text=search,
+            vendor_id=vendor,
+            outcome="selected",
+            limit=limit,
+        )
+    elif report_type == "budget_overruns":
+        frame = repo.report_offering_budget_variance(
+            search_text=search,
+            vendor_id=vendor,
+            lifecycle_state=lifecycle_state,
+            horizon_days=horizon_days,
+            limit=limit,
+        )
+        if not frame.empty and "alert_status" in frame.columns:
+            status = frame["alert_status"].astype(str).str.strip().str.lower()
+            frame = frame[status == "over_budget"].copy()
+    elif report_type == "open_vendor_warnings":
+        frame = repo.report_vendor_warnings(
+            search_text=search,
+            vendor_id=vendor,
+            lifecycle_state=lifecycle_state,
+            limit=limit,
+        )
+        if not frame.empty and "warning_status" in frame.columns:
+            status = frame["warning_status"].astype(str).str.strip().str.lower()
+            frame = frame[status == "open"].copy()
     else:
         frame = repo.report_owner_coverage(
             search_text=search,
@@ -530,6 +621,298 @@ def _databricks_report_options(config) -> list[dict[str, object]]:
         )
 
     return reports
+
+
+def _workspace_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _workspace_default_widget(
+    *,
+    report_type: str = "vendor_inventory",
+    widget_type: str = "chart",
+    index: int = 0,
+) -> dict[str, object]:
+    clean_report_type = _safe_report_type(report_type)
+    clean_widget_type = str(widget_type or "chart").strip().lower()
+    if clean_widget_type not in {"chart", "table", "kpi"}:
+        clean_widget_type = "chart"
+    preset = CHART_PRESETS.get(clean_report_type, {})
+    label = str(REPORT_TYPES.get(clean_report_type, {}).get("label") or "Report")
+    view_mode = "table" if clean_widget_type == "table" else "chart"
+    title = f"{label} KPI" if clean_widget_type == "kpi" else label
+    return {
+        "id": _safe_report_key(f"{clean_report_type}-{index + 1}", f"widget-{index + 1}"),
+        "widget_type": clean_widget_type,
+        "title": title[:MAX_WORKSPACE_NAME_LEN],
+        "report_type": clean_report_type,
+        "view_mode": view_mode,
+        "chart_kind": _safe_chart_kind(str(preset.get("kind") or "bar")),
+        "chart_x": str(preset.get("x") or ROW_INDEX_DIMENSION),
+        "chart_y": str(preset.get("y") or ROW_COUNT_METRIC),
+        "search": "",
+        "vendor": "all",
+        "limit": 500,
+    }
+
+
+def _workspace_normalize_widget(widget: object, index: int) -> dict[str, object]:
+    base = _workspace_default_widget(index=index)
+    if not isinstance(widget, dict):
+        return base
+
+    widget_type = str(widget.get("widget_type") or widget.get("type") or base["widget_type"]).strip().lower()
+    if widget_type not in {"chart", "table", "kpi"}:
+        widget_type = str(base["widget_type"])
+    report_type = _safe_report_type(str(widget.get("report_type") or base["report_type"]))
+    preset = CHART_PRESETS.get(report_type, {})
+
+    title = str(widget.get("title") or "").strip()
+    if not title:
+        label = str(REPORT_TYPES.get(report_type, {}).get("label") or report_type)
+        title = f"{label} KPI" if widget_type == "kpi" else label
+
+    view_mode = _safe_view_mode(str(widget.get("view_mode") or ("table" if widget_type == "table" else "chart")))
+    chart_kind = _safe_chart_kind(str(widget.get("chart_kind") or preset.get("kind") or "bar"))
+    chart_x = str(widget.get("chart_x") or preset.get("x") or ROW_INDEX_DIMENSION).strip() or ROW_INDEX_DIMENSION
+    chart_y = str(widget.get("chart_y") or preset.get("y") or ROW_COUNT_METRIC).strip() or ROW_COUNT_METRIC
+
+    try:
+        limit = int(widget.get("limit", 500))
+    except (TypeError, ValueError):
+        limit = 500
+    if limit not in ROW_LIMITS:
+        limit = 500
+
+    widget_id_seed = str(widget.get("id") or widget.get("widget_id") or f"{report_type}-{index + 1}")
+    widget_id = _safe_report_key(widget_id_seed, f"widget-{index + 1}")
+    if not widget_id:
+        widget_id = f"widget-{index + 1}"
+
+    return {
+        "id": widget_id,
+        "widget_type": widget_type,
+        "title": title[:MAX_WORKSPACE_NAME_LEN],
+        "report_type": report_type,
+        "view_mode": view_mode,
+        "chart_kind": chart_kind,
+        "chart_x": chart_x,
+        "chart_y": chart_y,
+        "search": str(widget.get("search") or "").strip()[:MAX_WORKSPACE_SEARCH_LEN],
+        "vendor": str(widget.get("vendor") or "all").strip() or "all",
+        "limit": limit,
+    }
+
+
+def _workspace_normalize_widgets(raw_widgets: object) -> list[dict[str, object]]:
+    if not isinstance(raw_widgets, list):
+        return []
+    normalized: list[dict[str, object]] = []
+    seen_ids: set[str] = set()
+    for index, raw_widget in enumerate(raw_widgets[:MAX_WORKSPACE_WIDGETS]):
+        item = _workspace_normalize_widget(raw_widget, index)
+        candidate_id = str(item.get("id") or "").strip() or f"widget-{index + 1}"
+        unique_id = candidate_id
+        suffix = 2
+        while unique_id in seen_ids:
+            unique_id = _safe_report_key(f"{candidate_id}-{suffix}", f"widget-{index + 1}-{suffix}") or f"widget-{index + 1}-{suffix}"
+            suffix += 1
+        item["id"] = unique_id
+        seen_ids.add(unique_id)
+        normalized.append(item)
+    return normalized
+
+
+def _workspace_normalize_board(raw_board: object, index: int) -> dict[str, object] | None:
+    if not isinstance(raw_board, dict):
+        return None
+    board_name = str(raw_board.get("board_name") or raw_board.get("name") or "").strip()
+    if not board_name:
+        board_name = f"Report Board {index + 1}"
+    board_name = board_name[:MAX_WORKSPACE_NAME_LEN]
+    board_id_seed = str(raw_board.get("board_id") or raw_board.get("id") or board_name).strip()
+    board_id = _safe_report_key(board_id_seed, f"board-{index + 1}") or f"board-{index + 1}"
+    widgets = _workspace_normalize_widgets(raw_board.get("widgets"))
+    if not widgets:
+        return None
+    created_at = str(raw_board.get("created_at") or "").strip() or _workspace_now_iso()
+    updated_at = str(raw_board.get("updated_at") or "").strip() or created_at
+    return {
+        "board_id": board_id,
+        "board_name": board_name,
+        "widgets": widgets,
+        "widget_count": len(widgets),
+        "created_at": created_at,
+        "updated_at": updated_at,
+    }
+
+
+def _workspace_load_boards(repo, user_principal: str) -> list[dict[str, object]]:
+    raw_payload = repo.get_user_setting(user_principal, REPORTS_WORKSPACE_SETTING_KEY)
+    raw_boards = raw_payload.get("boards", []) if isinstance(raw_payload, dict) else []
+    normalized: list[dict[str, object]] = []
+    seen_ids: set[str] = set()
+    for index, raw_board in enumerate(raw_boards):
+        board = _workspace_normalize_board(raw_board, index)
+        if board is None:
+            continue
+        board_id = str(board.get("board_id") or "")
+        if board_id in seen_ids:
+            dedupe_index = 2
+            candidate = board_id
+            while candidate in seen_ids:
+                candidate = (
+                    _safe_report_key(f"{board_id}-{dedupe_index}", f"board-{index + 1}-{dedupe_index}")
+                    or f"board-{index + 1}-{dedupe_index}"
+                )
+                dedupe_index += 1
+            board["board_id"] = candidate
+            board_id = candidate
+        seen_ids.add(board_id)
+        normalized.append(board)
+    normalized.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+    return normalized[:MAX_WORKSPACE_BOARDS]
+
+
+def _workspace_store_boards(repo, user_principal: str, boards: list[dict[str, object]]) -> None:
+    payload = {
+        "version": REPORTS_WORKSPACE_VERSION,
+        "boards": boards[:MAX_WORKSPACE_BOARDS],
+    }
+    repo.save_user_setting(user_principal, REPORTS_WORKSPACE_SETTING_KEY, payload)
+
+
+def _workspace_upsert_board(
+    repo,
+    *,
+    user_principal: str,
+    board_name: str,
+    board_json: str,
+    board_id: str = "",
+) -> dict[str, object]:
+    if not str(board_json or "").strip():
+        raise ValueError("Board JSON is required.")
+
+    try:
+        parsed = json.loads(str(board_json))
+    except json.JSONDecodeError as exc:
+        raise ValueError("Board JSON is invalid.") from exc
+
+    if isinstance(parsed, list):
+        raw_widgets = parsed
+    elif isinstance(parsed, dict):
+        raw_widgets = parsed.get("widgets", [])
+    else:
+        raise ValueError("Board JSON must be an object with widgets or a widget array.")
+
+    widgets = _workspace_normalize_widgets(raw_widgets)
+    if not widgets:
+        raise ValueError("Board must include at least one widget.")
+
+    clean_name = str(board_name or "").strip()[:MAX_WORKSPACE_NAME_LEN]
+    if not clean_name and isinstance(parsed, dict):
+        clean_name = str(parsed.get("board_name") or parsed.get("name") or "").strip()[:MAX_WORKSPACE_NAME_LEN]
+    if not clean_name:
+        clean_name = "Report Board"
+
+    boards = _workspace_load_boards(repo, user_principal)
+    now = _workspace_now_iso()
+    target_id = _safe_report_key(str(board_id or "").strip(), "") if board_id else ""
+    if not target_id:
+        target_id = _safe_report_key(clean_name, f"board-{len(boards) + 1}") or f"board-{len(boards) + 1}"
+
+    existing_index = -1
+    for idx, item in enumerate(boards):
+        if str(item.get("board_id") or "") == target_id:
+            existing_index = idx
+            break
+
+    if existing_index < 0:
+        if len(boards) >= MAX_WORKSPACE_BOARDS:
+            raise ValueError(f"Workspace supports up to {MAX_WORKSPACE_BOARDS} saved boards.")
+        used_ids = {str(item.get("board_id") or "") for item in boards}
+        candidate = target_id
+        suffix = 2
+        while candidate in used_ids:
+            candidate = _safe_report_key(f"{target_id}-{suffix}", f"board-{len(boards) + 1}-{suffix}") or f"board-{len(boards) + 1}-{suffix}"
+            suffix += 1
+        target_id = candidate
+        board = {
+            "board_id": target_id,
+            "board_name": clean_name,
+            "widgets": widgets,
+            "widget_count": len(widgets),
+            "created_at": now,
+            "updated_at": now,
+        }
+        boards.insert(0, board)
+    else:
+        existing = dict(boards[existing_index])
+        board = {
+            "board_id": target_id,
+            "board_name": clean_name,
+            "widgets": widgets,
+            "widget_count": len(widgets),
+            "created_at": str(existing.get("created_at") or now),
+            "updated_at": now,
+        }
+        boards[existing_index] = board
+
+    _workspace_store_boards(repo, user_principal, boards)
+    return board
+
+
+def _workspace_delete_board(repo, *, user_principal: str, board_id: str) -> bool:
+    target_id = _safe_report_key(str(board_id or "").strip(), "")
+    if not target_id:
+        return False
+    boards = _workspace_load_boards(repo, user_principal)
+    remaining = [item for item in boards if str(item.get("board_id") or "") != target_id]
+    if len(remaining) == len(boards):
+        return False
+    _workspace_store_boards(repo, user_principal, remaining)
+    return True
+
+
+def _workspace_widget_query_payload(widget: dict[str, object]) -> dict[str, object]:
+    clean_widget = _workspace_normalize_widget(widget, index=0)
+    report_type = _safe_report_type(str(clean_widget.get("report_type") or "vendor_inventory"))
+    vendor = str(clean_widget.get("vendor") or "all").strip() or "all"
+    search = str(clean_widget.get("search") or "").strip()[:MAX_WORKSPACE_SEARCH_LEN]
+    try:
+        limit = int(clean_widget.get("limit", 500))
+    except (TypeError, ValueError):
+        limit = 500
+    if limit not in ROW_LIMITS:
+        limit = 500
+
+    view_mode = _safe_view_mode(str(clean_widget.get("view_mode") or "both"))
+    chart_kind = _safe_chart_kind(str(clean_widget.get("chart_kind") or "bar"))
+    chart_x = str(clean_widget.get("chart_x") or "").strip()
+    chart_y = str(clean_widget.get("chart_y") or "").strip()
+    preset = CHART_PRESETS.get(report_type, {})
+    selected_chart_x = chart_x or str(preset.get("x") or ROW_INDEX_DIMENSION)
+    selected_chart_y = chart_y or str(preset.get("y") or ROW_COUNT_METRIC)
+
+    payload = _report_query_payload(
+        report_type=report_type,
+        search=search,
+        vendor=vendor,
+        lifecycle_state="all",
+        project_status="all",
+        outcome="all",
+        owner_principal="",
+        lob="all",
+        horizon_days=180,
+        limit=limit,
+        cols="",
+        view_mode=view_mode,
+        chart_kind=chart_kind,
+        chart_x=selected_chart_x,
+        chart_y=selected_chart_y,
+        run=1,
+    )
+    return payload
 
 
 # Export underscore-prefixed helper functions so modular route files can

@@ -3,9 +3,32 @@
 <div class="section-header">
   <div>
     <h1>Reports</h1>
-    <p>Build custom extracts with tabular or graphical views, download CSV, export a Power BI bundle, or queue email delivery requests.</p>
+    <p>Host and run report views directly in this app with chart/table modes, column controls, and delivery requests.</p>
+  </div>
+  <div class="button-group">
+    <a class="button-link subtle" href="/reports/workspace">Open Workspace Designer</a>
   </div>
 </div>
+
+<section class="card section-divider">
+  <div class="section-header">
+    <div>
+      <h2>Ready-to-Run Hosted Reports</h2>
+      <p>{{ ready_report_cards|length }} prebuilt reports are available now.</p>
+    </div>
+  </div>
+  <div class="reports-ready-grid">
+    {% for card in ready_report_cards %}
+    <article class="reports-ready-card{% if card.is_selected %} selected{% endif %}" data-ready-report="{{ card.key }}">
+      <h3>{{ card.label }}</h3>
+      <p class="muted">{{ card.description }}</p>
+      <div class="button-group">
+        <a class="button-link subtle{% if card.is_selected and filters.run == 1 %} active-tab{% endif %}" href="{{ card.open_url }}">Open Hosted Report</a>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
 
 <form method="get" action="/reports" class="card grid grid-3">
   <input type="hidden" name="run" value="1">
@@ -47,9 +70,6 @@
     <button type="submit">Run Report</button>
     {% if download_url %}
     <a class="button-link subtle" href="{{ download_url }}">Download CSV</a>
-    {% endif %}
-    {% if powerbi_download_url %}
-    <a class="button-link subtle" href="{{ powerbi_download_url }}">Download Power BI Bundle</a>
     {% endif %}
   </div>
 
