@@ -13,33 +13,166 @@ import pandas as pd
 
 
 class RepositoryAdminGrantMixin:
-    def list_role_grants(self) -> pd.DataFrame:
+    @staticmethod
+    def _normalized_paging(limit: int, offset: int) -> tuple[int, int]:
+        safe_limit = max(1, min(int(limit or 20), 250))
+        safe_offset = max(0, int(offset or 0))
+        return safe_limit, safe_offset
+
+    @staticmethod
+    def _normalized_filter(value: str) -> tuple[str, str]:
+        cleaned = str(value or "").strip().lower()
+        return cleaned, (f"%{cleaned}%" if cleaned else "")
+
+    @staticmethod
+    def _count_from_frame(df: pd.DataFrame) -> int:
+        if df.empty:
+            return 0
+        try:
+            return int(df.iloc[0]["total_count"])
+        except Exception:
+            return 0
+
+    def list_role_grants(
+        self,
+        *,
+        user_principal: str = "",
+        role_code: str = "",
+        query: str = "",
+        limit: int = 20,
+        offset: int = 0,
+    ) -> pd.DataFrame:
         """List role grants assigned to users."""
         columns = [
             "user_principal",
+            "user_display_name",
             "role_code",
             "active_flag",
             "granted_by",
             "granted_at",
             "revoked_at",
         ]
+        user_filter, user_like = self._normalized_filter(user_principal)
+        role_filter, role_like = self._normalized_filter(role_code)
+        query_filter, query_like = self._normalized_filter(query)
+        safe_limit, safe_offset = self._normalized_paging(limit, offset)
         return self._query_file(
             "reporting/list_role_grants.sql",
+            params=(
+                user_filter,
+                user_filter,
+                role_filter,
+                role_filter,
+                query_filter,
+                query_like,
+                query_like,
+                query_like,
+            ),
             columns=columns,
             sec_user_role_map=self._table("sec_user_role_map"),
             app_user_directory=self._table("app_user_directory"),
+            limit=safe_limit,
+            offset=safe_offset,
         )
 
-    def list_scope_grants(self) -> pd.DataFrame:
+    def count_role_grants(
+        self,
+        *,
+        user_principal: str = "",
+        role_code: str = "",
+        query: str = "",
+    ) -> int:
+        user_filter, _user_like = self._normalized_filter(user_principal)
+        role_filter, _role_like = self._normalized_filter(role_code)
+        query_filter, query_like = self._normalized_filter(query)
+        frame = self._query_file(
+            "reporting/count_role_grants.sql",
+            params=(
+                user_filter,
+                user_filter,
+                role_filter,
+                role_filter,
+                query_filter,
+                query_like,
+                query_like,
+                query_like,
+            ),
+            columns=["total_count"],
+            sec_user_role_map=self._table("sec_user_role_map"),
+            app_user_directory=self._table("app_user_directory"),
+        )
+        return self._count_from_frame(frame)
+
+    def list_scope_grants(
+        self,
+        *,
+        user_principal: str = "",
+        org_id: str = "",
+        query: str = "",
+        limit: int = 20,
+        offset: int = 0,
+    ) -> pd.DataFrame:
         """List LOB scope grants assigned to users."""
+        user_filter, _user_like = self._normalized_filter(user_principal)
+        org_filter, _org_like = self._normalized_filter(org_id)
+        query_filter, query_like = self._normalized_filter(query)
+        safe_limit, safe_offset = self._normalized_paging(limit, offset)
         return self._query_file(
             "reporting/list_scope_grants.sql",
-            columns=["user_principal", "org_id", "scope_level", "active_flag", "granted_at"],
+            params=(
+                user_filter,
+                user_filter,
+                org_filter,
+                org_filter,
+                query_filter,
+                query_like,
+                query_like,
+                query_like,
+            ),
+            columns=["user_principal", "user_display_name", "org_id", "scope_level", "active_flag", "granted_at"],
+            sec_user_org_scope=self._table("sec_user_org_scope"),
+            app_user_directory=self._table("app_user_directory"),
+            limit=safe_limit,
+            offset=safe_offset,
+        )
+
+    def count_scope_grants(
+        self,
+        *,
+        user_principal: str = "",
+        org_id: str = "",
+        query: str = "",
+    ) -> int:
+        user_filter, _user_like = self._normalized_filter(user_principal)
+        org_filter, _org_like = self._normalized_filter(org_id)
+        query_filter, query_like = self._normalized_filter(query)
+        frame = self._query_file(
+            "reporting/count_scope_grants.sql",
+            params=(
+                user_filter,
+                user_filter,
+                org_filter,
+                org_filter,
+                query_filter,
+                query_like,
+                query_like,
+                query_like,
+            ),
+            columns=["total_count"],
             sec_user_org_scope=self._table("sec_user_org_scope"),
             app_user_directory=self._table("app_user_directory"),
         )
+        return self._count_from_frame(frame)
 
-    def list_group_role_grants(self) -> pd.DataFrame:
+    def list_group_role_grants(
+        self,
+        *,
+        group_principal: str = "",
+        role_code: str = "",
+        query: str = "",
+        limit: int = 20,
+        offset: int = 0,
+    ) -> pd.DataFrame:
         """List role grants assigned to groups."""
         columns = [
             "group_principal",
@@ -49,12 +182,85 @@ class RepositoryAdminGrantMixin:
             "granted_at",
             "revoked_at",
         ]
+        group_filter, _group_like = self._normalized_filter(group_principal)
+        role_filter, _role_like = self._normalized_filter(role_code)
+        query_filter, query_like = self._normalized_filter(query)
+        safe_limit, safe_offset = self._normalized_paging(limit, offset)
         return self._query_file(
             "reporting/list_group_role_grants.sql",
+            params=(
+                group_filter,
+                group_filter,
+                role_filter,
+                role_filter,
+                query_filter,
+                query_like,
+                query_like,
+                query_like,
+            ),
             columns=columns,
             sec_group_role_map=self._table("sec_group_role_map"),
             app_user_directory=self._table("app_user_directory"),
+            limit=safe_limit,
+            offset=safe_offset,
         )
+
+    def count_group_role_grants(
+        self,
+        *,
+        group_principal: str = "",
+        role_code: str = "",
+        query: str = "",
+    ) -> int:
+        group_filter, _group_like = self._normalized_filter(group_principal)
+        role_filter, _role_like = self._normalized_filter(role_code)
+        query_filter, query_like = self._normalized_filter(query)
+        frame = self._query_file(
+            "reporting/count_group_role_grants.sql",
+            params=(
+                group_filter,
+                group_filter,
+                role_filter,
+                role_filter,
+                query_filter,
+                query_like,
+                query_like,
+                query_like,
+            ),
+            columns=["total_count"],
+            sec_group_role_map=self._table("sec_group_role_map"),
+            app_user_directory=self._table("app_user_directory"),
+        )
+        return self._count_from_frame(frame)
+
+    def has_active_access_approvers(self) -> bool:
+        frame = self._query_file(
+            "ingestion/select_access_request_approver_presence.sql",
+            columns=["has_approver"],
+            sec_user_role_map=self._table("sec_user_role_map"),
+            sec_group_role_map=self._table("sec_group_role_map"),
+        )
+        return not frame.empty
+
+    def search_group_principals(self, q: str = "", limit: int = 20) -> pd.DataFrame:
+        query_filter, query_like = self._normalized_filter(q)
+        safe_limit, _safe_offset = self._normalized_paging(limit, 0)
+        frame = self._query_file(
+            "reporting/search_group_principals.sql",
+            params=(query_filter, query_like),
+            columns=["group_principal", "label"],
+            sec_group_role_map=self._table("sec_group_role_map"),
+            limit=safe_limit,
+        )
+        if frame.empty:
+            return pd.DataFrame(columns=["group_principal", "label"])
+        frame["group_principal"] = frame["group_principal"].fillna("").astype(str).str.strip()
+        frame["label"] = frame["label"].fillna("").astype(str).str.strip()
+        frame = frame[frame["group_principal"] != ""].copy()
+        if frame.empty:
+            return pd.DataFrame(columns=["group_principal", "label"])
+        frame = frame.drop_duplicates(subset=["group_principal"], keep="first").head(safe_limit)
+        return frame[["group_principal", "label"]]
 
     def list_owner_reassignment_assignments(self, source_user_principal: str) -> list[dict[str, Any]]:
         source_candidate = str(source_user_principal or "").strip()
@@ -340,6 +546,7 @@ class RepositoryAdminGrantMixin:
         target_user_principal: str,
         role_code: str,
         revoked_by: str,
+        reason: str | None = None,
     ) -> None:
         target_ref = self.resolve_user_id(target_user_principal, allow_create=True)
         revoked_by_ref = self.resolve_user_id(revoked_by, allow_create=True)
@@ -356,12 +563,15 @@ class RepositoryAdminGrantMixin:
             sec_user_role_map=self._table("sec_user_role_map"),
         )
         self.bump_security_policy_version(updated_by=revoked_by)
+        note = f"Role {role_key} revoked through admin UI."
+        if str(reason or "").strip():
+            note = f"{note} Reason: {str(reason).strip()}"
         self._audit_access(
             actor_user_principal=revoked_by_ref,
             action_type="revoke_role",
             target_user_principal=target_ref,
             target_role=role_key,
-            notes=f"Role {role_key} revoked through admin UI.",
+            notes=note,
         )
 
     def grant_group_role(self, group_principal: str, role_code: str, granted_by: str) -> None:

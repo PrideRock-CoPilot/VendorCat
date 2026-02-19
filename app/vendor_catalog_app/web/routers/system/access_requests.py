@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import hmac
 import logging
 from urllib.parse import quote, unquote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
+from vendor_catalog_app.core.env import (
+    TVENDOR_INITIAL_ADMIN_BOOTSTRAP_PASSWORD,
+    get_env,
+)
 from vendor_catalog_app.core.repository_constants import UNKNOWN_USER_PRINCIPAL
-from vendor_catalog_app.core.security import ACCESS_REQUEST_ALLOWED_ROLES
+from vendor_catalog_app.core.security import ACCESS_REQUEST_ALLOWED_ROLES, ROLE_ADMIN
 from vendor_catalog_app.web.core.activity import ensure_session_started, log_page_view
 from vendor_catalog_app.web.core.identity import resolve_databricks_request_identity
 from vendor_catalog_app.web.core.runtime import get_repo
@@ -25,6 +30,9 @@ router = APIRouter(prefix="/access")
 LOGGER = logging.getLogger(__name__)
 TERMINAL_ACCESS_REQUEST_STATUSES = {"approved", "rejected"}
 ACCESS_REQUEST_JUST_SUBMITTED_SESSION_KEY = "access_request_just_submitted_request_id"
+IDENTITY_SYNC_SESSION_KEY_PREFIX = "tvendor_identity_synced_at"
+POLICY_SNAPSHOT_SESSION_KEY_PREFIX = "tvendor_policy_snapshot"
+ADMIN_ROLE_OVERRIDE_SESSION_KEY = "tvendor_admin_role_override"
 
 
 def _safe_next_path(raw_next: str) -> str:
@@ -150,6 +158,27 @@ def _has_open_access_request(repo, *, requestor_user_principal: str) -> bool:
     return any(bool(row.get("is_open")) for row in rows)
 
 
+def _resolve_access_approver_state(repo) -> tuple[bool, bool]:
+    try:
+        return bool(repo.has_active_access_approvers()), True
+    except Exception:
+        LOGGER.warning("Could not verify active access approvers.", exc_info=True)
+        return False, False
+
+
+def _bootstrap_password() -> str:
+    return get_env(TVENDOR_INITIAL_ADMIN_BOOTSTRAP_PASSWORD, "")
+
+
+def _clear_user_context_session_state(session: dict, user_principal: str) -> None:
+    principal = str(user_principal or "").strip()
+    if not principal:
+        return
+    session.pop(f"{IDENTITY_SYNC_SESSION_KEY_PREFIX}:{principal}", None)
+    session.pop(f"{POLICY_SNAPSHOT_SESSION_KEY_PREFIX}:{principal}", None)
+    session.pop(ADMIN_ROLE_OVERRIDE_SESSION_KEY, None)
+
+
 @router.get("/request")
 def access_request_page(request: Request):
     repo = get_repo()
@@ -166,6 +195,9 @@ def access_request_page(request: Request):
     ensure_session_started(request, user)
     log_page_view(request, user, "Request Access")
     requested_role_options = _allowed_role_options(repo)
+    has_access_approvers, approver_check_ok = _resolve_access_approver_state(repo)
+    initial_admin_bootstrap_required = approver_check_ok and not has_access_approvers
+    initial_admin_bootstrap_password_configured = bool(_bootstrap_password())
 
     # Fetch access requests for this user.
     access_requests: list[dict] = []
@@ -210,6 +242,9 @@ def access_request_page(request: Request):
             "open_requests": open_requests,
             "open_request_exists": bool(open_requests),
             "just_submitted_request_id": just_submitted_request_id,
+            "initial_admin_bootstrap_required": initial_admin_bootstrap_required,
+            "initial_admin_bootstrap_password_configured": initial_admin_bootstrap_password_configured,
+            "initial_admin_bootstrap_check_ok": approver_check_ok,
             # Temporary compatibility with older templates.
             "pending_requests": open_requests,
         },
@@ -238,6 +273,24 @@ async def submit_access_request(request: Request):
         return RedirectResponse(url="/access/request", status_code=303)
     if user.config.locked_mode:
         add_flash(request, "Application is in locked mode. Access requests are disabled.", "error")
+        return RedirectResponse(url="/access/request", status_code=303)
+    has_access_approvers, approver_check_ok = _resolve_access_approver_state(repo)
+    if not approver_check_ok:
+        add_flash(
+            request,
+            "Could not verify approver availability right now. Please try again.",
+            "error",
+        )
+        return RedirectResponse(url="/access/request", status_code=303)
+    if not has_access_approvers:
+        add_flash(
+            request,
+            (
+                "No active approvers are configured yet. "
+                "Use the initial admin bootstrap password form first."
+            ),
+            "info",
+        )
         return RedirectResponse(url="/access/request", status_code=303)
     try:
         if _has_open_access_request(repo, requestor_user_principal=user.user_principal):
@@ -282,6 +335,85 @@ async def submit_access_request(request: Request):
         return RedirectResponse(url="/access/request", status_code=303)
     except Exception as exc:
         add_flash(request, f"Could not submit access request: {exc}", "error")
+        return RedirectResponse(url="/access/request", status_code=303)
+
+
+@router.post("/bootstrap-admin")
+async def bootstrap_initial_admin(request: Request):
+    repo = get_repo()
+    user = get_user_context(request)
+    form = await request.form()
+    submitted_password = str(form.get("bootstrap_password", "") or "")
+    configured_password = _bootstrap_password()
+
+    if user.user_principal == UNKNOWN_USER_PRINCIPAL:
+        add_flash(request, "A valid user identity is required before bootstrap.", "error")
+        return RedirectResponse(url="/access/request", status_code=303)
+    if user.config.locked_mode:
+        add_flash(request, "Application is in locked mode. Bootstrap is disabled.", "error")
+        return RedirectResponse(url="/access/request", status_code=303)
+    if not configured_password:
+        add_flash(
+            request,
+            "Initial admin bootstrap password is not configured for this deployment.",
+            "error",
+        )
+        return RedirectResponse(url="/access/request", status_code=303)
+    has_access_approvers, approver_check_ok = _resolve_access_approver_state(repo)
+    if not approver_check_ok:
+        add_flash(
+            request,
+            "Could not verify approver availability right now. Please try again.",
+            "error",
+        )
+        return RedirectResponse(url="/access/request", status_code=303)
+    if has_access_approvers:
+        add_flash(
+            request,
+            "An approver is already configured. Use the standard access request workflow.",
+            "info",
+        )
+        return RedirectResponse(url="/access/request", status_code=303)
+    if not submitted_password:
+        add_flash(request, "Bootstrap password is required.", "error")
+        return RedirectResponse(url="/access/request", status_code=303)
+    if not hmac.compare_digest(submitted_password, configured_password):
+        LOGGER.warning(
+            "Initial admin bootstrap denied for principal '%s'. request_id=%s",
+            user.user_principal,
+            str(getattr(request.state, "request_id", "") or "-"),
+        )
+        add_flash(request, "Invalid bootstrap password.", "error")
+        return RedirectResponse(url="/access/request", status_code=303)
+
+    try:
+        repo.grant_role(
+            target_user_principal=user.user_principal,
+            role_code=ROLE_ADMIN,
+            granted_by=user.user_principal,
+        )
+        session = request.scope.get("session")
+        if isinstance(session, dict):
+            _clear_user_context_session_state(session, user.user_principal)
+        LOGGER.info(
+            "Initial admin bootstrap succeeded for principal '%s'. request_id=%s",
+            user.user_principal,
+            str(getattr(request.state, "request_id", "") or "-"),
+        )
+        add_flash(request, "Admin access activated for your account.", "success")
+        return RedirectResponse(url="/dashboard", status_code=303)
+    except Exception:
+        LOGGER.warning(
+            "Initial admin bootstrap failed for principal '%s'. request_id=%s",
+            user.user_principal,
+            str(getattr(request.state, "request_id", "") or "-"),
+            exc_info=True,
+        )
+        add_flash(
+            request,
+            "Could not activate admin access. Contact your platform administrator.",
+            "error",
+        )
         return RedirectResponse(url="/access/request", status_code=303)
 
 

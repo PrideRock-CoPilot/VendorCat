@@ -45,6 +45,27 @@ def _access_request_rows_for_user(repo, user_principal: str) -> list[dict]:
     return out
 
 
+def _disable_all_access_approvers(repo) -> None:
+    revoked_at = repo._now()
+    repo.client.execute(
+        """
+        UPDATE sec_user_role_map
+        SET active_flag = 0, revoked_at = ?
+        WHERE lower(role_code) IN ('vendor_admin', 'vendor_steward', 'vendor_approver')
+        """,
+        params=(revoked_at,),
+    )
+    repo.client.execute(
+        """
+        UPDATE sec_group_role_map
+        SET active_flag = 0, revoked_at = ?
+        WHERE lower(role_code) IN ('vendor_admin', 'vendor_steward', 'vendor_approver')
+        """,
+        params=(revoked_at,),
+    )
+    repo._cache_clear()
+
+
 @pytest.fixture()
 def client(monkeypatch: pytest.MonkeyPatch, isolated_local_db: Path) -> TestClient:
     get_config.cache_clear()
@@ -194,3 +215,44 @@ def test_access_request_shows_thank_you_then_in_progress_on_reload(client: TestC
     assert "Thank you for submitting your access request." not in second_view.text
     assert "You already have an open access request." in second_view.text
     assert "Your Access Requests" in second_view.text
+
+
+def test_access_request_shows_initial_admin_bootstrap_when_no_approvers(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TVENDOR_INITIAL_ADMIN_BOOTSTRAP_PASSWORD", "test-bootstrap-password")
+    repo = get_repo()
+    _disable_all_access_approvers(repo)
+
+    response = client.get("/access/request")
+    assert response.status_code == 200
+    assert "Initial Admin Setup Required" in response.text
+    assert 'action="/access/bootstrap-admin"' in response.text
+    assert "No approvers are configured yet. Activate an initial admin first." in response.text
+
+
+def test_initial_admin_bootstrap_password_grants_admin_and_disables_prompt(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TVENDOR_INITIAL_ADMIN_BOOTSTRAP_PASSWORD", "test-bootstrap-password")
+    repo = get_repo()
+    _disable_all_access_approvers(repo)
+    repo._cache_clear()
+    assert "vendor_admin" not in repo.get_user_roles("admin@example.com")
+
+    response = client.post(
+        "/access/bootstrap-admin",
+        data={"bootstrap_password": "test-bootstrap-password"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert str(response.headers.get("location", "")) == "/dashboard"
+
+    repo._cache_clear()
+    assert "vendor_admin" in repo.get_user_roles("admin@example.com")
+
+    request_page = client.get("/access/request")
+    assert request_page.status_code == 200
+    assert "Initial Admin Setup Required" not in request_page.text

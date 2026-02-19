@@ -167,6 +167,7 @@ If required tables are missing or inaccessible, startup fails with a schema/boot
 - `TVENDOR_REQUEST_ID_HEADER_ENABLED` (`true`/`false`, default `true`): include `X-Request-ID` response header.
 - `TVENDOR_ERROR_INCLUDE_DETAILS` (`true`/`false`, default `false`): include internal exception details in API error payloads.
 - `TVENDOR_IDENTITY_SYNC_TTL_SEC` (default `300`): throttle user directory identity upsert frequency per session/user.
+- `TVENDOR_INITIAL_ADMIN_BOOTSTRAP_PASSWORD` (default unset): one-time password that allows claiming the first `vendor_admin` role only when no active approvers exist; clear after initial bootstrap.
 - `TVENDOR_SQL_PRELOAD_ON_STARTUP` (`true`/`false`, default `false`): preload all `app/vendor_catalog_app/sql/**/*.sql` templates at startup (fail-fast for missing/unreadable files).
 
 ## Local Start

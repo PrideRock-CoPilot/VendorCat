@@ -81,6 +81,8 @@ env:
   #   value: "default-src 'self'; ..."
   - name: "TVENDOR_TRUST_FORWARDED_IDENTITY_HEADERS"
     value: "true" # enable forwarded identity from Databricks Apps
+  - name: "TVENDOR_INITIAL_ADMIN_BOOTSTRAP_PASSWORD"
+    value: "" # set only for first-admin bootstrap, then clear after initial admin is active
   - name: "TVENDOR_TERMS_ENFORCEMENT_ENABLED"
     value: "true" # require acceptance of current terms version before protected pages
   # - name: "TVENDOR_FORWARDED_GROUP_HEADERS"

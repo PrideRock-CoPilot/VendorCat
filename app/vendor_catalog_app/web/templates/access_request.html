@@ -366,6 +366,69 @@
       color: #14532d;
     }
 
+    .ar-bootstrap-card {
+      margin-bottom: 18px;
+      border: 1px solid #f59e0b;
+      background: #fffbeb;
+      color: #92400e;
+      border-radius: 12px;
+      padding: 14px 16px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .ar-bootstrap-card h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      color: #78350f;
+    }
+
+    .ar-bootstrap-form {
+      margin-top: 10px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .ar-bootstrap-form input[type="password"] {
+      border-radius: 12px;
+      border: 1px solid #f3d19b;
+      padding: 11px 12px;
+      font-size: 14px;
+      color: #0f172a;
+      background: #fff;
+    }
+
+    .ar-bootstrap-form input[type="password"]:focus {
+      outline: none;
+      border-color: #d97706;
+      box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.2);
+    }
+
+    .ar-bootstrap-button {
+      width: fit-content;
+      border: 0;
+      border-radius: 10px;
+      min-height: 40px;
+      padding: 9px 14px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      color: #fff;
+      cursor: pointer;
+      background: linear-gradient(90deg, #b45309 0%, #b91c1c 100%);
+      box-shadow: 0 8px 16px rgba(180, 83, 9, 0.22);
+    }
+
+    .ar-bootstrap-button:hover {
+      filter: brightness(1.03);
+    }
+
+    .ar-bootstrap-help {
+      margin-top: 6px;
+      font-size: 12px;
+      color: #92400e;
+    }
+
     @media (max-width: 980px) {
       .ar-shell {
         grid-template-columns: 1fr;
@@ -433,6 +496,37 @@
           {% endfor %}
         {% endif %}
 
+        {% if initial_admin_bootstrap_required %}
+        <section class="ar-bootstrap-card">
+          <h3>Initial Admin Setup Required</h3>
+          <div>
+            No active approvers are configured yet. Access requests are disabled until the first admin account is activated.
+          </div>
+          {% if initial_admin_bootstrap_password_configured %}
+          <form method="post" action="/access/bootstrap-admin" class="ar-bootstrap-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label for="bootstrap_password">Bootstrap Password
+              <input
+                id="bootstrap_password"
+                name="bootstrap_password"
+                type="password"
+                autocomplete="current-password"
+                required
+              >
+            </label>
+            <button type="submit" class="ar-bootstrap-button">Activate Initial Admin Access</button>
+          </form>
+          <div class="ar-bootstrap-help">
+            This option is available only while zero approvers exist.
+          </div>
+          {% elif initial_admin_bootstrap_check_ok %}
+          <div class="ar-bootstrap-help">
+            Bootstrap password is not configured. Set <code>TVENDOR_INITIAL_ADMIN_BOOTSTRAP_PASSWORD</code> in <code>app.yaml</code>.
+          </div>
+          {% endif %}
+        </section>
+        {% endif %}
+
         {% if just_submitted_request_id %}
         <div class="ar-submitted-card">
           Thank you for submitting your access request. Your request has been received and routed for review.
@@ -476,22 +570,23 @@
         </div>
         {% endif %}
         
+        {% set request_submission_blocked = open_request_exists or (not identity_is_valid) or initial_admin_bootstrap_required %}
         <form method="post" action="/access/request" class="ar-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <label for="requested_role">Requested Role
-            <select id="requested_role" name="requested_role" required {% if open_request_exists or not identity_is_valid %}disabled{% endif %}>
+            <select id="requested_role" name="requested_role" required {% if request_submission_blocked %}disabled{% endif %}>
               {% for role in requested_role_options %}
               <option value="{{ role }}" {% if role == selected_role %}selected{% endif %}>{{ role }}</option>
               {% endfor %}
             </select>
           </label>
           <label for="justification">Justification
-            <textarea id="justification" name="justification" rows="6" required {% if open_request_exists or not identity_is_valid %}disabled{% endif %} placeholder="Explain business need and scope."></textarea>
+            <textarea id="justification" name="justification" rows="6" required {% if request_submission_blocked %}disabled{% endif %} placeholder="Explain business need and scope."></textarea>
           </label>
           <button
             type="submit"
             class="ar-submit"
-            {% if open_request_exists %}disabled title="An access request is already open for your account."{% elif not identity_is_valid %}disabled title="Valid user identity required before submitting."{% endif %}
+            {% if initial_admin_bootstrap_required %}disabled title="No approvers are configured yet. Activate an initial admin first."{% elif open_request_exists %}disabled title="An access request is already open for your account."{% elif not identity_is_valid %}disabled title="Valid user identity required before submitting."{% endif %}
           >Submit Access Request</button>
         </form>
       </section>
