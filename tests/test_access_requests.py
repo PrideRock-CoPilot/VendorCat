@@ -129,3 +129,33 @@ def test_access_request_submit_allowed_after_terminal_decision(client: TestClien
 
     after_count = len(_access_request_rows_for_user(repo, "admin@example.com"))
     assert after_count == before_count + 1
+
+
+def test_roleless_user_can_submit_access_request(client: TestClient) -> None:
+    repo = get_repo()
+    principal = "bob.smith@example.com"
+    for row in _access_request_rows_for_user(repo, principal):
+        status_value = str(row.get("status") or "").strip().lower()
+        if status_value in {"approved", "rejected"}:
+            continue
+        repo.update_change_request_status(
+            change_request_id=str(row.get("change_request_id") or ""),
+            new_status="rejected",
+            actor_user_principal="admin@example.com",
+            notes="Test cleanup: close prior open request.",
+        )
+    before_count = len(_access_request_rows_for_user(repo, principal))
+
+    response = client.post(
+        f"/access/request?as_user={principal}",
+        data={
+            "requested_role": "vendor_viewer",
+            "justification": "Need read-only access for onboarding.",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert str(response.headers.get("location", "")) == "/access/request"
+
+    after_count = len(_access_request_rows_for_user(repo, principal))
+    assert after_count == before_count + 1

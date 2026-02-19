@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vendor Catalog</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <div class="app-chrome">
+    <header class="topbar">
+      <div class="brand">Vendor Catalog</div>
+      <div class="user-meta">
+        <span class="pill">Access Denied</span>
+      </div>
+    </header>
+    <nav class="nav">
+      <a href="/dashboard">Dashboard</a>
+      <a href="/access/request">Request Access</a>
+      <a href="/access/terms/view">Terms</a>
+      <a href="/help">Help</a>
+    </nav>
+  </div>
+
+  <main class="container">
+    <section class="not-found-page">
+      <div class="not-found-shell">
+        <div class="not-found-hero">
+          <span class="not-found-tag">Security Gate</span>
+          <p class="not-found-code">403</p>
+          <h1 class="not-found-title">Ah ah ah, access denied.</h1>
+          <p class="not-found-lead">
+            You did not say the magic word. This action is blocked until the required permission is granted.
+          </p>
+          <pre class="not-found-dino">   [NO]
+  / || \
+ /  ||  \
+====  ====
+</pre>
+        </div>
+        <div class="not-found-body">
+          <h2>Permission Required</h2>
+          <p>Requested path:</p>
+          <p class="not-found-path">{{ blocked_path }}</p>
+          <p>Details:</p>
+          <p class="not-found-path">{{ error_message }}</p>
+          <p>Request ID:</p>
+          <p class="not-found-path">{{ request_id }}</p>
+          <div class="not-found-actions">
+            <a class="button-link" href="/access/request">Open Request Form</a>
+            <a class="button-link subtle" href="/dashboard">Back To Dashboard</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -119,6 +119,18 @@ def register_exception_handlers(app: FastAPI, templates: Jinja2Templates) -> Non
                     },
                     status_code=404,
                 )
+            if int(getattr(exc, "status_code", 500) or 500) == 403:
+                return templates.TemplateResponse(
+                    request,
+                    "403.html",
+                    {
+                        "request": request,
+                        "error_message": str(getattr(exc, "detail", "") or "Access denied."),
+                        "blocked_path": str(request.url.path or "/"),
+                        "request_id": str(getattr(request.state, "request_id", "-")),
+                    },
+                    status_code=403,
+                )
             return await http_exception_handler(request, exc)
         spec = normalize_exception(exc)
         return api_error_response(

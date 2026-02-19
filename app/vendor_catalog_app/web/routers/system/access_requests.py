@@ -20,7 +20,6 @@ from vendor_catalog_app.web.core.terms import (
 )
 from vendor_catalog_app.web.core.user_context_service import get_user_context
 from vendor_catalog_app.web.http.flash import add_flash
-from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/access")
 LOGGER = logging.getLogger(__name__)
@@ -211,7 +210,6 @@ def access_request_page(request: Request):
 
 
 @router.post("/request")
-@require_permission("access_request")
 async def submit_access_request(request: Request):
     repo = get_repo()
     user = get_user_context(request)
@@ -325,7 +323,6 @@ def access_terms_view_page(request: Request):
 
 
 @router.post("/terms/accept")
-@require_permission("access_request")
 async def accept_terms(request: Request):
     repo = get_repo()
     user = get_user_context(request)
