@@ -21,7 +21,7 @@
       <ul style="line-height: 1.8;">
         <li><strong>Missing SQL Warehouse:</strong> The app requires a SQL warehouse resource binding in app.yaml</li>
         <li><strong>Warehouse Permissions:</strong> The app service principal needs CAN_USE permission on the warehouse</li>
-        <li><strong>Schema Not Created:</strong> Run the V1 schema bootstrap notebook to create tables</li>
+        <li><strong>Schema Not Created:</strong> Run the production bootstrap notebook to create runtime objects</li>
         <li><strong>Missing Permissions:</strong> Grant Unity Catalog permissions (USE_CATALOG, USE_SCHEMA, SELECT)</li>
       </ul>
       
@@ -29,6 +29,9 @@
       <p><strong>1. View Detailed Diagnostics:</strong></p>
       <p style="margin-left: 2rem;">
         <a href="/bootstrap-diagnostics" style="display: inline-block; padding: 0.5rem 1rem; background: #007bff; color: white; text-decoration: none; border-radius: 4px;">View Full Diagnostics</a>
+        {% if connection_lab_enabled %}
+        <a href="/connection-lab?next=%2Fdashboard" style="display: inline-block; margin-left: 0.75rem; padding: 0.5rem 1rem; background: #0f766e; color: white; text-decoration: none; border-radius: 4px;">Advanced Connection Lab</a>
+        {% endif %}
         <small style="display: block; margin-top: 0.5rem; color: #666;">
           API: <a href="/api/bootstrap-diagnostics">/api/bootstrap-diagnostics</a>
         </small>
@@ -36,8 +39,9 @@
       
       <p><strong>2. Run Bootstrap Notebook:</strong></p>
       <p style="margin-left: 2rem;">
-        <code>setup/databricks/notebooks/v1_create_schema.ipynb</code>
-        <br><small style="color: #666;">This creates all tables and grants permissions automatically</small>
+        <code>setup/production_push/production_push_setup.ipynb</code>
+        <br><small style="color: #666;">Use operation=apply and include_seed=true</small>
+        <br><small style="color: #666;">Alternate: <code>setup/databricks/notebooks/v1_apply_database_changes.ipynb</code></small>
       </p>
       
       <p><strong>3. Check App Configuration:</strong></p>

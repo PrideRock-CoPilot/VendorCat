@@ -49,6 +49,21 @@ class ApiError(RuntimeError):
         self.details = details
 
 
+def _exception_chain(exc: BaseException, limit: int = 8) -> list[BaseException]:
+    chain: list[BaseException] = []
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and len(chain) < limit and id(current) not in seen:
+        seen.add(id(current))
+        chain.append(current)
+        current = current.__cause__ or current.__context__
+    return chain
+
+
+def _has_connection_error_in_chain(exc: BaseException) -> bool:
+    return any(isinstance(item, DataConnectionError) for item in _exception_chain(exc))
+
+
 def is_api_request(request: Request) -> bool:
     route = request.scope.get("route")
     route_path = str(getattr(route, "path", "") or "").strip()
@@ -152,6 +167,13 @@ def normalize_exception(exc: Exception) -> ApiErrorSpec:
         )
 
     if isinstance(exc, DataQueryError):
+        if _has_connection_error_in_chain(exc):
+            return ApiErrorSpec(
+                status_code=503,
+                code=ERROR_CODE_DB_CONNECTION,
+                message="Database connection is unavailable. Please try again shortly.",
+                details={"reason": str(exc)},
+            )
         return ApiErrorSpec(
             status_code=500,
             code=ERROR_CODE_DB_QUERY,
@@ -160,6 +182,13 @@ def normalize_exception(exc: Exception) -> ApiErrorSpec:
         )
 
     if isinstance(exc, DataExecutionError):
+        if _has_connection_error_in_chain(exc):
+            return ApiErrorSpec(
+                status_code=503,
+                code=ERROR_CODE_DB_CONNECTION,
+                message="Database connection is unavailable. Please try again shortly.",
+                details={"reason": str(exc)},
+            )
         return ApiErrorSpec(
             status_code=500,
             code=ERROR_CODE_DB_EXECUTION,

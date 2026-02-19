@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vendor Catalog Connection Error</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <main class="container">
+    <section class="card section-divider">
+      <h1>Database Connection Issue</h1>
+      <p><strong>The application could not connect to Databricks for this request.</strong></p>
+      <p>Path: <code>{{ path }}</code></p>
+      <p>Request ID: <code>{{ request_id }}</code></p>
+
+      {% if error_message %}
+      <div class="flash error" style="white-space: pre-wrap;">{{ error_message }}</div>
+      {% endif %}
+
+      {% if flashes %}
+        {% for flash in flashes %}
+        <div class="flash {{ flash.level }}">{{ flash.message }}</div>
+        {% endfor %}
+      {% endif %}
+
+      <h2>Next Steps</h2>
+      <ul>
+        <li>Verify workspace host, warehouse path, and auth settings.</li>
+        <li>Run bootstrap diagnostics for detailed object and permission checks.</li>
+        <li>Use Connection Lab to test temporary connection values in this browser session.</li>
+      </ul>
+
+      <div class="button-group">
+        <a class="button-link" href="/bootstrap-diagnostics">Open Diagnostics</a>
+        {% if connection_lab_enabled %}
+        <a class="button-link subtle" href="/connection-lab?next={{ path|urlencode }}">Advanced Connection Lab</a>
+        {% endif %}
+        <a class="button-link subtle" href="/dashboard">Retry Dashboard</a>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

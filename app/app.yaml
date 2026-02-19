@@ -65,6 +65,12 @@ env:
     value: "true" # default: true in dev, false in prod
   # - name: "TVENDOR_BOOTSTRAP_DIAGNOSTICS_TOKEN"
   #   value: "your-token" # default: unset
+  # - name: "TVENDOR_CONNECTION_LAB_TOKEN"
+  #   value: "set-a-secret-token-to-enable-connection-lab-in-prod"
+  # - name: "TVENDOR_CONNECTION_LAB_AUTH_TTL_SEC"
+  #   value: "1800"
+  # - name: "TVENDOR_CONNECTION_LAB_OVERRIDE_TTL_SEC"
+  #   value: "3600"
 
   # Session, security, identity
   # - name: "TVENDOR_ALLOW_DEFAULT_SESSION_SECRET"

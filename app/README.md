@@ -124,6 +124,8 @@ If required tables are missing or inaccessible, startup fails with a schema/boot
 - Returns staged diagnostics (`config`, `connectivity_probe`, runtime table/column probes) with recommendation hints.
 - Use this endpoint when the UI shows `Schema Bootstrap Required` to identify whether the issue is auth/binding/UC access or missing schema objects.
 - Diagnostics also include `resolved_connection` (safe previews + env-key presence map) to detect variable name mismatches.
+- UI: `GET /connection-lab`
+- Advanced connection test page (requires a secret token in prod) for temporary session-scoped host/path/auth overrides.
 
 ## Observability And Errors
 - Prometheus metrics endpoint is enabled at `TVENDOR_METRICS_PROMETHEUS_PATH` (default `/api/metrics`) when metrics are enabled.
@@ -168,6 +170,9 @@ If required tables are missing or inaccessible, startup fails with a schema/boot
 - `TVENDOR_ERROR_INCLUDE_DETAILS` (`true`/`false`, default `false`): include internal exception details in API error payloads.
 - `TVENDOR_IDENTITY_SYNC_TTL_SEC` (default `300`): throttle user directory identity upsert frequency per session/user.
 - `TVENDOR_INITIAL_ADMIN_BOOTSTRAP_PASSWORD` (default unset): one-time password that allows claiming the first `vendor_admin` role only when no active approvers exist; clear after initial bootstrap.
+- `TVENDOR_CONNECTION_LAB_TOKEN` (default unset): secret token required to unlock Connection Lab in non-dev environments.
+- `TVENDOR_CONNECTION_LAB_AUTH_TTL_SEC` (default `1800`): unlock duration in seconds for Connection Lab browser session access.
+- `TVENDOR_CONNECTION_LAB_OVERRIDE_TTL_SEC` (default `3600`): lifetime of temporary runtime connection overrides kept in server memory.
 - `TVENDOR_SQL_PRELOAD_ON_STARTUP` (`true`/`false`, default `false`): preload all `app/vendor_catalog_app/sql/**/*.sql` templates at startup (fail-fast for missing/unreadable files).
 
 ## Local Start

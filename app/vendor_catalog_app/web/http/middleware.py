@@ -95,7 +95,19 @@ def register_request_perf_middleware(app: FastAPI, settings: AppRuntimeSettings,
         started = time.perf_counter()
         response = None
         status_code = 500
+        runtime_override_tokens = None
         try:
+            session = request.scope.get("session")
+            if isinstance(session, dict):
+                from vendor_catalog_app.web.system.connection_lab import load_runtime_override_from_session
+
+                runtime_override = load_runtime_override_from_session(session)
+                if runtime_override:
+                    from vendor_catalog_app.web.core.runtime import activate_request_runtime_override
+
+                    runtime_override_tokens = activate_request_runtime_override(runtime_override)
+                    request.state.runtime_override_active = True
+
             path = str(request.url.path or "/")
             if _is_protected_ui_path(path):
                 from vendor_catalog_app.web.core.user_context_service import get_user_context
@@ -298,4 +310,8 @@ def register_request_perf_middleware(app: FastAPI, settings: AppRuntimeSettings,
                         f"total_ms={elapsed_ms:.2f};db_ms={db_total_ms:.2f};db_calls={db_calls};cache_hits={db_cache_hits}"
                     )
 
+            if runtime_override_tokens is not None:
+                from vendor_catalog_app.web.core.runtime import deactivate_request_runtime_override
+
+                deactivate_request_runtime_override(runtime_override_tokens)
             clear_request_perf_context(token)

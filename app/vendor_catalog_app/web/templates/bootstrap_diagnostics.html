@@ -35,6 +35,9 @@
       </div>
       {% endif %}
       <p>JSON endpoint: <a href="/api/bootstrap-diagnostics">/api/bootstrap-diagnostics</a></p>
+      {% if connection_lab_enabled %}
+      <p><a class="button-link subtle" href="/connection-lab?next=%2Fdashboard">Advanced Connection Lab</a></p>
+      {% endif %}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;">
         <div class="card">
           <strong>Overall Status</strong>

@@ -9,13 +9,16 @@ from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from vendor_catalog_app.core.repository_errors import EmployeeDirectoryError, SchemaBootstrapRequiredError
+from vendor_catalog_app.infrastructure.db import DataConnectionError
 from vendor_catalog_app.web.core.identity import resolve_databricks_request_identity
 from vendor_catalog_app.web.core.runtime import get_config, get_repo
 from vendor_catalog_app.web.http.errors import ApiError, api_error_response, is_api_request, normalize_exception
+from vendor_catalog_app.web.http.flash import pop_flashes
 from vendor_catalog_app.web.system.bootstrap_diagnostics import (
     bootstrap_diagnostics_authorized,
     build_bootstrap_diagnostics_payload,
 )
+from vendor_catalog_app.web.system.connection_lab import connection_lab_enabled
 
 LOGGER = logging.getLogger(__name__)
 
@@ -38,6 +41,30 @@ def _generic_web_error_response(
             "message": str(message),
             "request_id": str(getattr(request.state, "request_id", "-")),
             "path": str(request.url.path or "/"),
+        },
+        status_code=int(status_code),
+    )
+
+
+def _connection_web_error_response(
+    request: Request,
+    templates: Jinja2Templates,
+    *,
+    status_code: int,
+    error_message: str,
+) -> object:
+    config = get_config()
+    return templates.TemplateResponse(
+        request,
+        "error_connection.html",
+        {
+            "request": request,
+            "status_code": int(status_code),
+            "error_message": str(error_message or ""),
+            "request_id": str(getattr(request.state, "request_id", "-")),
+            "path": str(request.url.path or "/"),
+            "flashes": pop_flashes(request),
+            "connection_lab_enabled": bool(connection_lab_enabled(config)),
         },
         status_code=int(status_code),
     )
@@ -68,16 +95,59 @@ def register_exception_handlers(app: FastAPI, templates: Jinja2Templates) -> Non
                         "request": request,
                         "diagnostics": diagnostics,
                         "error_message": str(exc),
+                        "connection_lab_enabled": bool(connection_lab_enabled(config)),
                     },
                     status_code=503,
                 )
         except Exception:
             pass
+        config = get_config()
         return templates.TemplateResponse(
             request,
             "bootstrap_required.html",
-            {"request": request, "error_message": str(exc)},
+            {
+                "request": request,
+                "error_message": str(exc),
+                "connection_lab_enabled": bool(connection_lab_enabled(config)),
+            },
             status_code=503,
+        )
+
+    @app.exception_handler(DataConnectionError)
+    async def _data_connection_exception_handler(request: Request, exc: DataConnectionError):
+        if is_api_request(request):
+            spec = normalize_exception(exc)
+            return api_error_response(
+                request,
+                status_code=spec.status_code,
+                code=spec.code,
+                message=spec.message,
+                details=spec.details,
+            )
+        try:
+            repo = get_repo()
+            config = get_config()
+            if bootstrap_diagnostics_authorized(request, config):
+                identity = resolve_databricks_request_identity(request)
+                diagnostics, _status_code = build_bootstrap_diagnostics_payload(repo, config, identity)
+                return templates.TemplateResponse(
+                    request,
+                    "bootstrap_diagnostics.html",
+                    {
+                        "request": request,
+                        "diagnostics": diagnostics,
+                        "error_message": str(exc),
+                        "connection_lab_enabled": bool(connection_lab_enabled(config)),
+                    },
+                    status_code=503,
+                )
+        except Exception:
+            pass
+        return _connection_web_error_response(
+            request,
+            templates,
+            status_code=503,
+            error_message=str(exc),
         )
 
     @app.exception_handler(EmployeeDirectoryError)
@@ -177,6 +247,7 @@ def register_exception_handlers(app: FastAPI, templates: Jinja2Templates) -> Non
 
     @app.exception_handler(Exception)
     async def _unhandled_exception_handler(request: Request, exc: Exception):
+        spec = normalize_exception(exc)
         if not is_api_request(request):
             LOGGER.exception(
                 "Unhandled web request error. path=%s method=%s",
@@ -189,6 +260,13 @@ def register_exception_handlers(app: FastAPI, templates: Jinja2Templates) -> Non
                     "path": str(request.url.path),
                 },
             )
+            if spec.code == "DB_CONNECTION_ERROR":
+                return _connection_web_error_response(
+                    request,
+                    templates,
+                    status_code=503,
+                    error_message=spec.message,
+                )
             return _generic_web_error_response(
                 request,
                 templates,
@@ -197,7 +275,6 @@ def register_exception_handlers(app: FastAPI, templates: Jinja2Templates) -> Non
                 message="An unexpected error occurred while processing this request.",
             )
 
-        spec = normalize_exception(exc)
         log_fn = LOGGER.warning if spec.status_code < 500 else LOGGER.exception
         log_fn(
             "API request failed. code=%s status=%s path=%s method=%s",
