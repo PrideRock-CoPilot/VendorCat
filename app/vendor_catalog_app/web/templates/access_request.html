@@ -6,7 +6,7 @@
   <meta name="csrf-token" content="{{ csrf_token }}">
   <title>Vendor Catalog</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/app.css?v={{ static_asset_version }}">
   <style>
     .ar-body {
       margin: 0;
@@ -316,6 +316,16 @@
       color: #92400e;
     }
 
+    .status-submitted {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .status-in-review {
+      background: #e0f2fe;
+      color: #0c4a6e;
+    }
+
     .status-approved {
       background: #dcfce7;
       color: #166534;
@@ -406,12 +416,21 @@
           {% endfor %}
         {% endif %}
         
-        {% if pending_requests %}
+        {% if open_request_exists %}
+        <div class="flash info">
+          You already have an open access request. New submissions are disabled until that request is approved or rejected.
+        </div>
+        {% endif %}
+
+        {% if access_requests %}
         <div class="ar-pending-requests">
-          <h3>📋 Your Pending Requests</h3>
+          <h3>Your Access Requests</h3>
           <div class="ar-pending-list">
-            {% for req in pending_requests %}
+            {% for req in access_requests %}
             <div class="ar-pending-item">
+              <div class="ar-pending-role">
+                <strong>Request ID:</strong> {{ req.change_request_id }}
+              </div>
               <div class="ar-pending-role">
                 <strong>Role:</strong> {{ req.requested_payload_json | extract_role }}
               </div>
@@ -422,13 +441,11 @@
                 </span>
               </div>
               <div class="ar-pending-date">
-                <strong>Submitted:</strong> {{ req.created_at | format_date }}
+                <strong>Submitted:</strong> {{ req.submitted_at | format_date }}
               </div>
-              {% if req.requestor_notes_latest %}
-              <div class="ar-pending-notes">
-                <strong>Latest Update:</strong> {{ req.requestor_notes_latest }}
+              <div class="ar-pending-date">
+                <strong>Last Updated:</strong> {{ req.last_updated_at | format_date }}
               </div>
-              {% endif %}
             </div>
             {% endfor %}
           </div>
@@ -438,19 +455,19 @@
         <form method="post" action="/access/request" class="ar-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <label for="requested_role">Requested Role
-            <select id="requested_role" name="requested_role" required>
+            <select id="requested_role" name="requested_role" required {% if open_request_exists or not identity_is_valid %}disabled{% endif %}>
               {% for role in requested_role_options %}
               <option value="{{ role }}" {% if role == selected_role %}selected{% endif %}>{{ role }}</option>
               {% endfor %}
             </select>
           </label>
           <label for="justification">Justification
-            <textarea id="justification" name="justification" rows="6" required placeholder="Explain business need and scope."></textarea>
+            <textarea id="justification" name="justification" rows="6" required {% if open_request_exists or not identity_is_valid %}disabled{% endif %} placeholder="Explain business need and scope."></textarea>
           </label>
           <button
             type="submit"
             class="ar-submit"
-            {% if not identity_is_valid %}disabled title="Valid user identity required before submitting."{% endif %}
+            {% if open_request_exists %}disabled title="An access request is already open for your account."{% elif not identity_is_valid %}disabled title="Valid user identity required before submitting."{% endif %}
           >Submit Access Request</button>
         </form>
       </section>
@@ -480,6 +497,6 @@
   </div>
   <noscript><style>#loading-overlay { display: none !important; }</style></noscript>
 
-  <script src="/static/js/app.js"></script>
+  <script src="/static/js/app.js?v={{ static_asset_version }}"></script>
 </body>
 </html>

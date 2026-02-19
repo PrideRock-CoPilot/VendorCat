@@ -31,7 +31,8 @@ def _extract_role_from_json(payload_json_str: str | dict) -> str:
             payload = payload_json_str
         else:
             payload = json.loads(payload_json_str) if payload_json_str else {}
-        return payload.get("role", "Unknown")
+        role = str(payload.get("requested_role") or payload.get("role") or "").strip()
+        return role or "Unknown"
     except (json.JSONDecodeError, TypeError, AttributeError):
         return "Unknown"
 

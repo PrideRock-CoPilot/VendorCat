@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from urllib.parse import quote, unquote
 
 from fastapi import APIRouter, Request
@@ -19,8 +20,11 @@ from vendor_catalog_app.web.core.terms import (
 )
 from vendor_catalog_app.web.core.user_context_service import get_user_context
 from vendor_catalog_app.web.http.flash import add_flash
+from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter(prefix="/access")
+LOGGER = logging.getLogger(__name__)
+TERMINAL_ACCESS_REQUEST_STATUSES = {"approved", "rejected"}
 
 
 def _safe_next_path(raw_next: str) -> str:
@@ -43,6 +47,109 @@ def _allowed_role_options(repo) -> list[str]:
     return list(ACCESS_REQUEST_ALLOWED_ROLES)
 
 
+def _status_code(value: str) -> str:
+    cleaned = str(value or "").strip().lower()
+    return cleaned or "submitted"
+
+
+def _user_principal_refs(repo, user_principal: str) -> set[str]:
+    refs: set[str] = set()
+    principal = str(user_principal or "").strip()
+    if not principal:
+        return refs
+    refs.add(principal.lower())
+    try:
+        login_identifier = str(repo.resolve_user_login_identifier(principal) or "").strip().lower()
+        if login_identifier:
+            refs.add(login_identifier)
+    except Exception:
+        LOGGER.debug("Could not resolve login identifier for '%s'.", principal, exc_info=True)
+    try:
+        actor_ref = str(repo._actor_ref(principal) or "").strip().lower()
+        if actor_ref:
+            refs.add(actor_ref)
+    except Exception:
+        LOGGER.debug("Could not resolve actor reference for '%s'.", principal, exc_info=True)
+    return {ref for ref in refs if ref}
+
+
+def _request_belongs_to_user(row: dict, user_refs: set[str]) -> bool:
+    if not user_refs:
+        return False
+    requestor_ref = str(
+        row.get("requestor_user_principal_raw")
+        or row.get("requestor_user_principal")
+        or ""
+    ).strip().lower()
+    return requestor_ref in user_refs
+
+
+def _load_access_requests(
+    repo,
+    *,
+    requestor_user_principal: str,
+    limit: int = 20,
+) -> list[dict]:
+    user_principal = str(requestor_user_principal or "").strip()
+    if not user_principal or user_principal == UNKNOWN_USER_PRINCIPAL:
+        return []
+    user_refs = _user_principal_refs(repo, user_principal)
+    if not user_refs:
+        return []
+
+    safe_limit = max(1, min(int(limit or 20), 100))
+    rows: list[dict] = []
+
+    # Compatibility path if a filtered helper exists on the repository.
+    list_vendor_change_requests = getattr(repo, "list_vendor_change_requests", None)
+    if callable(list_vendor_change_requests):
+        raw_rows = list_vendor_change_requests(
+            change_type="request_access",
+            requestor_user_principal=user_principal,
+            status_filter="all",
+            limit=safe_limit,
+        )
+        if hasattr(raw_rows, "to_dict"):
+            rows = list(raw_rows.to_dict("records"))
+        elif isinstance(raw_rows, list):
+            rows = [dict(item) for item in raw_rows if isinstance(item, dict)]
+    else:
+        rows = repo.list_change_requests(status="all").to_dict("records")
+
+    out: list[dict] = []
+    for row in rows:
+        if str(row.get("change_type") or "").strip().lower() != "request_access":
+            continue
+        if not _request_belongs_to_user(row, user_refs):
+            continue
+        status = _status_code(str(row.get("status") or ""))
+        normalized = dict(row)
+        normalized["status_code"] = status
+        normalized["status_label"] = status.replace("_", " ").title()
+        normalized["is_open"] = status not in TERMINAL_ACCESS_REQUEST_STATUSES
+        normalized["submitted_at"] = row.get("submitted_at")
+        normalized["last_updated_at"] = row.get("updated_at") or row.get("submitted_at")
+        out.append(normalized)
+
+    out.sort(
+        key=lambda item: (
+            str(item.get("submitted_at") or ""),
+            str(item.get("last_updated_at") or ""),
+        ),
+        reverse=True,
+    )
+    return out[:safe_limit]
+
+
+def _has_open_access_request(repo, *, requestor_user_principal: str) -> bool:
+    rows = _load_access_requests(
+        repo,
+        requestor_user_principal=requestor_user_principal,
+        limit=50,
+    )
+    return any(bool(row.get("is_open")) for row in rows)
+
+
 @router.get("/request")
 def access_request_page(request: Request):
     repo = get_repo()
@@ -53,21 +160,27 @@ def access_request_page(request: Request):
     ensure_session_started(request, user)
     log_page_view(request, user, "Request Access")
     requested_role_options = _allowed_role_options(repo)
-    
-    # Fetch pending access requests for this user
-    pending_requests = []
+
+    # Fetch access requests for this user.
+    access_requests: list[dict] = []
+    open_requests: list[dict] = []
     if identity_is_valid:
         try:
-            pending_requests = repo.list_vendor_change_requests(
-                change_type="request_access",
+            access_requests = _load_access_requests(
+                repo,
                 requestor_user_principal=user_principal,
-                status_filter="pending",
-                limit=10,
-            ) or []
+                limit=20,
+            )
+            open_requests = [row for row in access_requests if bool(row.get("is_open"))]
         except Exception:
-            # If query fails, just show the form without pending requests
-            pending_requests = []
-    
+            LOGGER.warning(
+                "Could not load access request status for user '%s'.",
+                user_principal,
+                exc_info=True,
+            )
+            access_requests = []
+            open_requests = []
+
     context = base_template_context(
         request=request,
         context=user,
@@ -87,13 +200,18 @@ def access_request_page(request: Request):
                     "In Databricks Apps, verify forwarded identity headers are available."
                 )
             ),
-            "pending_requests": pending_requests,
+            "access_requests": access_requests,
+            "open_requests": open_requests,
+            "open_request_exists": bool(open_requests),
+            # Temporary compatibility with older templates.
+            "pending_requests": open_requests,
         },
     )
     return request.app.state.templates.TemplateResponse(request, "access_request.html", context)
 
 
 @router.post("/request")
+@require_permission("access_request")
 async def submit_access_request(request: Request):
     repo = get_repo()
     user = get_user_context(request)
@@ -115,6 +233,26 @@ async def submit_access_request(request: Request):
     if user.config.locked_mode:
         add_flash(request, "Application is in locked mode. Access requests are disabled.", "error")
         return RedirectResponse(url="/access/request", status_code=303)
+    try:
+        if _has_open_access_request(repo, requestor_user_principal=user.user_principal):
+            add_flash(
+                request,
+                "An access request is already open for your account. Wait for a decision before submitting another request.",
+                "info",
+            )
+            return RedirectResponse(url="/access/request", status_code=303)
+    except Exception:
+        LOGGER.warning(
+            "Could not verify open access requests for '%s'.",
+            user.user_principal,
+            exc_info=True,
+        )
+        add_flash(
+            request,
+            "Could not verify existing access requests right now. Please try again.",
+            "error",
+        )
+        return RedirectResponse(url="/access/request", status_code=303)
 
     allowed_roles = set(_allowed_role_options(repo))
     if requested_role not in allowed_roles:
@@ -131,7 +269,7 @@ async def submit_access_request(request: Request):
             justification=justification,
         )
         add_flash(request, f"Access request submitted: {request_id}", "success")
-        return RedirectResponse(url="/workflows?status=pending&queue=my_submissions", status_code=303)
+        return RedirectResponse(url="/access/request", status_code=303)
     except Exception as exc:
         add_flash(request, f"Could not submit access request: {exc}", "error")
         return RedirectResponse(url="/access/request", status_code=303)
@@ -161,13 +299,33 @@ def access_terms_page(request: Request, next: str = "/dashboard"):
         active_nav="",
         extra={
             "next_path": next_path,
-            "terms": terms_document(),
+            "terms": terms_document(repo=repo),
+        },
+    )
+    return request.app.state.templates.TemplateResponse(request, "access_terms.html", context)
+
+
+@router.get("/terms/view")
+def access_terms_view_page(request: Request):
+    repo = get_repo()
+    user = get_user_context(request)
+    ensure_session_started(request, user)
+    log_page_view(request, user, "Terms Of Use View")
+    context = base_template_context(
+        request=request,
+        context=user,
+        title="User Agreement",
+        active_nav="",
+        extra={
+            "terms": terms_document(repo=repo),
+            "show_accept": False,
         },
     )
     return request.app.state.templates.TemplateResponse(request, "access_terms.html", context)
 
 
 @router.post("/terms/accept")
+@require_permission("access_request")
 async def accept_terms(request: Request):
     repo = get_repo()
     user = get_user_context(request)
@@ -178,13 +336,9 @@ async def accept_terms(request: Request):
     form = await request.form()
     next_path = _safe_next_path(str(form.get("next", "/dashboard") or "/dashboard"))
     agree = str(form.get("agree_terms", "")).strip().lower() in {"1", "true", "on", "yes"}
-    scrolled = str(form.get("scrolled_to_end", "")).strip().lower() in {"1", "true", "yes"}
     accepted_version = str(form.get("terms_version", "")).strip()
     if not agree:
         add_flash(request, "You must agree to the terms before continuing.", "error")
-        return RedirectResponse(url=f"/access/terms?next={quote(next_path, safe='/%?=&')}", status_code=303)
-    if not scrolled:
-        add_flash(request, "Scroll through the full terms before accepting.", "error")
         return RedirectResponse(url=f"/access/terms?next={quote(next_path, safe='/%?=&')}", status_code=303)
     try:
         record_terms_acceptance(
