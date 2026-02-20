@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
 import re
+from datetime import UTC, datetime
 from urllib.parse import urlencode, urlparse, urlunparse
 
 import pandas as pd
-from fastapi import APIRouter
 
 from vendor_catalog_app.core.env import (
     TVENDOR_DATABRICKS_REPORTS_ALLOW_EMBED,
@@ -15,8 +14,6 @@ from vendor_catalog_app.core.env import (
     get_env,
     get_env_bool,
 )
-
-router = APIRouter()
 
 REPORT_TYPES = {
     "vendor_inventory": {
@@ -76,6 +73,38 @@ REPORT_TYPES = {
         "description": "Operational and data-quality warnings currently in open status.",
     },
 }
+REPORT_ICON_META = {
+    "vendor_inventory": {"badge": "VI", "tone": "teal"},
+    "project_portfolio": {"badge": "PP", "tone": "indigo"},
+    "contract_renewals": {"badge": "CR", "tone": "cyan"},
+    "demo_outcomes": {"badge": "DO", "tone": "purple"},
+    "owner_coverage": {"badge": "OC", "tone": "emerald"},
+    "offering_budget_variance": {"badge": "BV", "tone": "amber"},
+    "vendor_warnings": {"badge": "VW", "tone": "rose"},
+    "vendor_data_quality_overview": {"badge": "DQ", "tone": "sky"},
+    "high_risk_vendor_inventory": {"badge": "HR", "tone": "red"},
+    "active_project_portfolio": {"badge": "AP", "tone": "blue"},
+    "renewal_pipeline_90d": {"badge": "R9", "tone": "orange"},
+    "demo_selected_only": {"badge": "DS", "tone": "lime"},
+    "budget_overruns": {"badge": "BO", "tone": "fuchsia"},
+    "open_vendor_warnings": {"badge": "OW", "tone": "red"},
+}
+REPORT_ICON_TONES = {
+    "teal",
+    "indigo",
+    "cyan",
+    "purple",
+    "emerald",
+    "amber",
+    "rose",
+    "sky",
+    "red",
+    "blue",
+    "orange",
+    "lime",
+    "fuchsia",
+    "slate",
+}
 
 VENDOR_LIFECYCLE_STATES = ["all", "draft", "submitted", "in_review", "approved", "active", "suspended", "retired"]
 PROJECT_STATUSES = ["all", "draft", "active", "blocked", "complete", "cancelled"]
@@ -112,6 +141,15 @@ MAX_WORKSPACE_BOARDS = 40
 MAX_WORKSPACE_WIDGETS = 40
 MAX_WORKSPACE_NAME_LEN = 120
 MAX_WORKSPACE_SEARCH_LEN = 160
+
+
+def _report_icon_meta(report_type: str) -> dict[str, str]:
+    meta = REPORT_ICON_META.get(str(report_type or "").strip().lower(), {})
+    badge = str(meta.get("badge") or "RP").strip().upper()[:3] or "RP"
+    tone = str(meta.get("tone") or "slate").strip().lower()
+    if tone not in REPORT_ICON_TONES:
+        tone = "slate"
+    return {"badge": badge, "tone": tone}
 
 
 def _can_use_reports(user) -> bool:
@@ -507,6 +545,122 @@ def _report_query_payload(
     return payload
 
 
+def _normalize_report_filters(
+    repo,
+    *,
+    report_type: str,
+    search: str,
+    vendor: str,
+    lifecycle_state: str,
+    project_status: str,
+    outcome: str,
+    owner_principal: str,
+    lob: str,
+    org: str | None,
+    horizon_days: int | str,
+    limit: int | str,
+    view_mode: str,
+    chart_kind: str,
+) -> dict[str, object]:
+    clean_report_type = _safe_report_type(report_type)
+    clean_view_mode = _safe_view_mode(view_mode)
+    clean_chart_kind = _safe_chart_kind(chart_kind)
+    clean_search = str(search or "").strip()
+    clean_owner_principal = str(owner_principal or "").strip()
+
+    clean_lifecycle_state = str(lifecycle_state or "").strip()
+    if clean_lifecycle_state not in VENDOR_LIFECYCLE_STATES:
+        clean_lifecycle_state = "all"
+
+    clean_project_status = str(project_status or "").strip()
+    if clean_project_status not in PROJECT_STATUSES:
+        clean_project_status = "all"
+
+    clean_outcome = str(outcome or "").strip()
+    if clean_outcome not in DEMO_OUTCOMES:
+        clean_outcome = "all"
+
+    try:
+        clean_limit = int(limit)
+    except (TypeError, ValueError):
+        clean_limit = 500
+    if clean_limit not in ROW_LIMITS:
+        clean_limit = 500
+
+    try:
+        clean_horizon_days = int(horizon_days)
+    except (TypeError, ValueError):
+        clean_horizon_days = 180
+    clean_horizon_days = max(30, min(clean_horizon_days, 730))
+
+    orgs = repo.available_orgs()
+    selected_lob = str(org if org is not None and str(org).strip() else lob).strip() or "all"
+    if selected_lob not in orgs:
+        selected_lob = "all"
+
+    vendor_options = _vendor_options(repo)
+    valid_vendor_ids = {row["vendor_id"] for row in vendor_options}
+    clean_vendor = str(vendor or "all").strip() or "all"
+    if clean_vendor not in valid_vendor_ids:
+        clean_vendor = "all"
+
+    return {
+        "report_type": clean_report_type,
+        "search": clean_search,
+        "vendor": clean_vendor,
+        "lifecycle_state": clean_lifecycle_state,
+        "project_status": clean_project_status,
+        "outcome": clean_outcome,
+        "owner_principal": clean_owner_principal,
+        "lob": selected_lob,
+        "horizon_days": clean_horizon_days,
+        "limit": clean_limit,
+        "view_mode": clean_view_mode,
+        "chart_kind": clean_chart_kind,
+        "orgs": orgs,
+        "vendor_options": vendor_options,
+    }
+
+
+def _report_catalog_entries() -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
+    for key, info in REPORT_TYPES.items():
+        preset = CHART_PRESETS.get(key, {})
+        preset_kind = _safe_chart_kind(str(preset.get("kind") or "bar"))
+        preset_x = str(preset.get("x") or ROW_INDEX_DIMENSION)
+        preset_y = str(preset.get("y") or ROW_COUNT_METRIC)
+        payload = _report_query_payload(
+            report_type=key,
+            search="",
+            vendor="all",
+            lifecycle_state="all",
+            project_status="all",
+            outcome="all",
+            owner_principal="",
+            lob="all",
+            horizon_days=180,
+            limit=500,
+            cols="",
+            view_mode="both",
+            chart_kind=preset_kind,
+            chart_x=preset_x,
+            chart_y=preset_y,
+            run=1,
+        )
+        entries.append(
+            {
+                "key": key,
+                "label": str(info.get("label") or key),
+                "description": str(info.get("description") or ""),
+                "preset_kind": preset_kind,
+                "preset_x": preset_x,
+                "preset_y": preset_y,
+                "query": _safe_query_params(payload),
+            }
+        )
+    return entries
+
+
 def _to_bool(value: object, *, default: bool = False) -> bool:
     if isinstance(value, bool):
         return value
@@ -624,7 +778,7 @@ def _databricks_report_options(config) -> list[dict[str, object]]:
 
 
 def _workspace_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _workspace_default_widget(
@@ -913,9 +1067,4 @@ def _workspace_widget_query_payload(widget: dict[str, object]) -> dict[str, obje
         run=1,
     )
     return payload
-
-
-# Export underscore-prefixed helper functions so modular route files can
-# `from ...common import *` without changing runtime behavior.
-__all__ = [name for name in globals() if not name.startswith("__")]
 

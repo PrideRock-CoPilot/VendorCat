@@ -119,6 +119,42 @@ IMPORT_STAGING_AREAS: dict[str, dict[str, Any]] = {
             ("description", "Project - Description"),
         ),
     },
+    "invoice": {
+        "label": "Invoice",
+        "stage_table": "app_import_stage_invoice",
+        "fields": (
+            ("invoice_id", "Invoice - ID"),
+            ("invoice_number", "Invoice - Number"),
+            ("invoice_date", "Invoice - Date"),
+            ("amount", "Invoice - Amount"),
+            ("currency_code", "Invoice - Currency"),
+            ("invoice_status", "Invoice - Status"),
+            ("notes", "Invoice - Notes"),
+            ("vendor_id", "Invoice - Vendor ID"),
+            ("vendor_name", "Invoice - Vendor Name"),
+            ("offering_id", "Invoice - Offering ID"),
+            ("offering_name", "Invoice - Offering Name"),
+        ),
+    },
+    "payment": {
+        "label": "Payment",
+        "stage_table": "app_import_stage_payment",
+        "fields": (
+            ("payment_id", "Payment - ID"),
+            ("payment_reference", "Payment - Reference"),
+            ("payment_date", "Payment - Date"),
+            ("amount", "Payment - Amount"),
+            ("currency_code", "Payment - Currency"),
+            ("payment_status", "Payment - Status"),
+            ("notes", "Payment - Notes"),
+            ("invoice_id", "Payment - Invoice ID"),
+            ("invoice_number", "Payment - Invoice Number"),
+            ("vendor_id", "Payment - Vendor ID"),
+            ("vendor_name", "Payment - Vendor Name"),
+            ("offering_id", "Payment - Offering ID"),
+            ("offering_name", "Payment - Offering Name"),
+        ),
+    },
 }
 
 IMPORT_LAYOUT_FIELD_TARGET_KEYS: dict[str, dict[str, str]] = {
@@ -157,6 +193,34 @@ IMPORT_LAYOUT_FIELD_TARGET_KEYS: dict[str, dict[str, str]] = {
         "target_date": "project.target_date",
         "owner_principal": "project.owner_principal",
         "description": "project.description",
+    },
+    "invoices": {
+        "invoice_id": "invoice.invoice_id",
+        "invoice_number": "invoice.invoice_number",
+        "invoice_date": "invoice.invoice_date",
+        "amount": "invoice.amount",
+        "currency_code": "invoice.currency_code",
+        "invoice_status": "invoice.invoice_status",
+        "notes": "invoice.notes",
+        "vendor_id": "invoice.vendor_id",
+        "vendor_name": "invoice.vendor_name",
+        "offering_id": "invoice.offering_id",
+        "offering_name": "invoice.offering_name",
+    },
+    "payments": {
+        "payment_id": "payment.payment_id",
+        "payment_reference": "payment.payment_reference",
+        "payment_date": "payment.payment_date",
+        "amount": "payment.amount",
+        "currency_code": "payment.currency_code",
+        "payment_status": "payment.payment_status",
+        "notes": "payment.notes",
+        "invoice_id": "payment.invoice_id",
+        "invoice_number": "payment.invoice_number",
+        "vendor_id": "payment.vendor_id",
+        "vendor_name": "payment.vendor_name",
+        "offering_id": "payment.offering_id",
+        "offering_name": "payment.offering_name",
     },
 }
 
@@ -289,6 +353,80 @@ IMPORT_LAYOUTS: dict[str, dict[str, Any]] = {
                 "target_date": "2026-06-30",
                 "owner_principal": "jane.doe@example.com",
                 "description": "Renewal and right-sizing workstream.",
+            }
+        ],
+    },
+    "invoices": {
+        "label": "Invoices",
+        "description": (
+            "Stage and apply offering invoices. If the vendor/offering is missing, "
+            "rows remain blocked until dependencies exist."
+        ),
+        "fields": [
+            "invoice_id",
+            "invoice_number",
+            "invoice_date",
+            "amount",
+            "currency_code",
+            "invoice_status",
+            "notes",
+            "vendor_id",
+            "vendor_name",
+            "offering_id",
+            "offering_name",
+        ],
+        "sample_rows": [
+            {
+                "invoice_id": "",
+                "invoice_number": "INV-2026-0001",
+                "invoice_date": "2026-02-01",
+                "amount": "12500.00",
+                "currency_code": "USD",
+                "invoice_status": "received",
+                "notes": "Initial monthly charge.",
+                "vendor_id": "vnd-70231",
+                "vendor_name": "Blue Ridge Procurement",
+                "offering_id": "",
+                "offering_name": "Procurement Platform",
+            }
+        ],
+    },
+    "payments": {
+        "label": "Payments",
+        "description": (
+            "Stage and apply payment events. Payments depend on invoice availability and "
+            "are reprocessed when matching invoices become available."
+        ),
+        "fields": [
+            "payment_id",
+            "payment_reference",
+            "payment_date",
+            "amount",
+            "currency_code",
+            "payment_status",
+            "notes",
+            "invoice_id",
+            "invoice_number",
+            "vendor_id",
+            "vendor_name",
+            "offering_id",
+            "offering_name",
+        ],
+        "sample_rows": [
+            {
+                "payment_id": "",
+                "payment_reference": "PMT-2026-101",
+                "payment_date": "2026-02-15",
+                "amount": "12500.00",
+                "currency_code": "USD",
+                "payment_status": "settled",
+                "notes": "ACH settlement batch.",
+                "invoice_id": "",
+                "invoice_number": "INV-2026-0001",
+                "vendor_id": "vnd-70231",
+                "vendor_name": "Blue Ridge Procurement",
+                "offering_id": "",
+                "offering_name": "Procurement Platform",
             }
         ],
     },

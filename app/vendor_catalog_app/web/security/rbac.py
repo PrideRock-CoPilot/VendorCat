@@ -6,8 +6,11 @@ Provides decorators and utilities for enforcing permission checks on API endpoin
 
 from collections.abc import Callable
 from functools import wraps
+import logging
 
 from fastapi import HTTPException, Request
+
+logger = logging.getLogger(__name__)
 
 
 def require_permission(change_type: str) -> Callable:
@@ -61,7 +64,11 @@ def require_permission(change_type: str) -> Callable:
                 )
 
             # Check permission
-            if not user.can_apply_change(change_type):
+            if not user.can_apply_change(change_type):  # type: ignore
+                logger.warning(
+                    f"Permission denied: user={user.user_principal} "  # type: ignore
+                    f"permission={change_type} endpoint={request.url.path}"
+                )
                 raise HTTPException(
                     status_code=403,
                     detail=f"Insufficient permissions: {change_type} required"

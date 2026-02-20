@@ -16,11 +16,22 @@ from vendor_catalog_app.web.core import identity, user_context_service
 
 
 class _FakeRepo:
-    def __init__(self, current_user: str, roles: set[str]) -> None:
+    def __init__(
+        self,
+        current_user: str,
+        roles: set[str],
+        directory_alias_map: dict[str, str] | None = None,
+    ) -> None:
         self.current_user = current_user
         self.roles = roles
+        self.directory_alias_map = {
+            str(key).strip().lower(): str(value).strip()
+            for key, value in (directory_alias_map or {}).items()
+            if str(key).strip() and str(value).strip()
+        }
         self.policy_version = 1
         self.bootstrap_called = 0
+        self.last_bootstrap_principal = ""
         self.ensure_called = 0
         self.resolve_policy_called = 0
         self.synced_users: list[str] = []
@@ -35,6 +46,7 @@ class _FakeRepo:
 
     def bootstrap_user_access(self, user_principal: str, group_principals: set[str] | None = None) -> set[str]:
         self.bootstrap_called += 1
+        self.last_bootstrap_principal = user_principal
         self.last_group_principals = set(group_principals or set())
         return self.roles
 
@@ -62,6 +74,12 @@ class _FakeRepo:
 
     def get_security_policy_version(self) -> int:
         return self.policy_version
+
+    def resolve_user_login_identifier(self, user_value: str) -> str | None:
+        candidate = str(user_value or "").strip().lower()
+        if not candidate:
+            return None
+        return self.directory_alias_map.get(candidate)
 
 
 def _request(
@@ -135,6 +153,36 @@ def test_forwarded_identity_header_takes_precedence(monkeypatch) -> None:
     assert repo.synced_identity_payloads[-1].get("first_name") == "Jane"
     assert repo.synced_identity_payloads[-1].get("last_name") == "Doe"
     assert repo.synced_identity_payloads[-1].get("network_id") == "jane.doe"
+
+
+def test_forwarded_identity_uses_directory_alias_resolution(monkeypatch) -> None:
+    repo = _FakeRepo(
+        current_user="service_principal@databricks",
+        roles={"vendor_editor"},
+        directory_alias_map={
+            "john_ext_contoso.com#ext#@tenant.onmicrosoft.com": "john.smith",
+            "john.smith@example.com": "john.smith",
+            "john.smith": "john.smith",
+        },
+    )
+    config = AppConfig("", "", "", use_local_db=False, env="prod")
+    monkeypatch.setattr(user_context_service, "get_repo", lambda: repo)
+    monkeypatch.setattr(user_context_service, "get_config", lambda: config)
+    monkeypatch.setattr(identity, "get_config", lambda: config)
+    monkeypatch.setenv("TVENDOR_TRUST_FORWARDED_IDENTITY_HEADERS", "true")
+    request = _request(
+        headers=[
+            (b"x-forwarded-preferred-username", b"john_ext_contoso.com#EXT#@tenant.onmicrosoft.com"),
+            (b"x-forwarded-email", b"john.smith@example.com"),
+            (b"x-forwarded-network-id", b"john.smith"),
+        ]
+    )
+
+    context = user_context_service.get_user_context(request)
+
+    assert context.user_principal == "john.smith"
+    assert repo.last_bootstrap_principal == "john.smith"
+    assert "john.smith" in repo.synced_users
 
 
 def test_resolve_databricks_identity_uses_explicit_name_and_network_headers(monkeypatch) -> None:

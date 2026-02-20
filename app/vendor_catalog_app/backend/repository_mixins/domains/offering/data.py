@@ -151,6 +151,58 @@ class RepositoryOfferingDataMixin:
             out["amount"] = 0.0
         return out
 
+    def find_offering_invoice_candidates(
+        self,
+        *,
+        invoice_id: str | None = None,
+        invoice_number: str | None = None,
+        vendor_id: str | None = None,
+        offering_id: str | None = None,
+        limit: int = 20,
+    ) -> pd.DataFrame:
+        self._ensure_local_offering_extension_tables()
+        clauses = ["active_flag = 1"]
+        params: list[Any] = []
+        if str(invoice_id or "").strip():
+            clauses.append("invoice_id = %s")
+            params.append(str(invoice_id).strip())
+        if str(invoice_number or "").strip():
+            clauses.append("lower(invoice_number) = lower(%s)")
+            params.append(str(invoice_number).strip())
+        if str(vendor_id or "").strip():
+            clauses.append("vendor_id = %s")
+            params.append(str(vendor_id).strip())
+        if str(offering_id or "").strip():
+            clauses.append("offering_id = %s")
+            params.append(str(offering_id).strip())
+        params.append(int(max(1, min(int(limit or 20), 200))))
+        rows = self._query_file(
+            "ingestion/select_offering_invoice_candidates.sql",
+            params=tuple(params),
+            columns=[
+                "invoice_id",
+                "offering_id",
+                "vendor_id",
+                "invoice_number",
+                "invoice_date",
+                "amount",
+                "currency_code",
+                "invoice_status",
+                "notes",
+                "active_flag",
+                "created_at",
+                "created_by",
+                "updated_at",
+                "updated_by",
+            ],
+            app_offering_invoice=self._table("app_offering_invoice"),
+            where_clause=" AND ".join(clauses),
+        )
+        if rows.empty:
+            return rows
+        rows["amount"] = pd.to_numeric(rows.get("amount"), errors="coerce").fillna(0.0)
+        return rows
+
     def add_offering_invoice(
         self,
         *,
@@ -238,6 +290,158 @@ class RepositoryOfferingDataMixin:
             request_id=None,
         )
         return invoice_id
+
+    def find_offering_payment_candidates(
+        self,
+        *,
+        payment_reference: str | None = None,
+        invoice_id: str | None = None,
+        vendor_id: str | None = None,
+        offering_id: str | None = None,
+        limit: int = 20,
+    ) -> pd.DataFrame:
+        self._ensure_local_offering_extension_tables()
+        clauses = ["active_flag = 1"]
+        params: list[Any] = []
+        if str(payment_reference or "").strip():
+            clauses.append("lower(payment_reference) = lower(%s)")
+            params.append(str(payment_reference).strip())
+        if str(invoice_id or "").strip():
+            clauses.append("invoice_id = %s")
+            params.append(str(invoice_id).strip())
+        if str(vendor_id or "").strip():
+            clauses.append("vendor_id = %s")
+            params.append(str(vendor_id).strip())
+        if str(offering_id or "").strip():
+            clauses.append("offering_id = %s")
+            params.append(str(offering_id).strip())
+        params.append(int(max(1, min(int(limit or 20), 200))))
+        rows = self._query_file(
+            "ingestion/select_offering_payment_candidates.sql",
+            params=tuple(params),
+            columns=[
+                "payment_id",
+                "invoice_id",
+                "offering_id",
+                "vendor_id",
+                "payment_reference",
+                "payment_date",
+                "amount",
+                "currency_code",
+                "payment_status",
+                "notes",
+                "active_flag",
+                "created_at",
+                "created_by",
+                "updated_at",
+                "updated_by",
+            ],
+            app_offering_payment=self._table("app_offering_payment"),
+            where_clause=" AND ".join(clauses),
+        )
+        if rows.empty:
+            return rows
+        rows["amount"] = pd.to_numeric(rows.get("amount"), errors="coerce").fillna(0.0)
+        return rows
+
+    def add_offering_payment(
+        self,
+        *,
+        vendor_id: str,
+        offering_id: str,
+        invoice_id: str,
+        payment_reference: str | None,
+        payment_date: str,
+        amount: float,
+        currency_code: str | None,
+        payment_status: str | None,
+        notes: str | None,
+        actor_user_principal: str,
+    ) -> str:
+        if not self.offering_belongs_to_vendor(vendor_id, offering_id):
+            raise ValueError("Offering does not belong to this vendor.")
+        invoice_rows = self.find_offering_invoice_candidates(
+            invoice_id=invoice_id,
+            vendor_id=vendor_id,
+            offering_id=offering_id,
+            limit=1,
+        )
+        if invoice_rows.empty:
+            raise ValueError("Invoice was not found for vendor/offering.")
+
+        parsed_payment_date = pd.to_datetime(str(payment_date or "").strip(), errors="coerce")
+        if pd.isna(parsed_payment_date):
+            raise ValueError("Payment date is required and must be valid.")
+        payment_date_value = parsed_payment_date.date().isoformat()
+
+        try:
+            amount_value = float(amount)
+        except Exception as exc:
+            raise ValueError("Payment amount must be numeric.") from exc
+        if amount_value <= 0:
+            raise ValueError("Payment amount must be greater than zero.")
+
+        status_value = str(payment_status or "").strip().lower() or "settled"
+        allowed_statuses = {"settled", "pending", "failed", "reversed"}
+        if status_value not in allowed_statuses:
+            raise ValueError(f"Payment status must be one of: {', '.join(sorted(allowed_statuses))}.")
+
+        currency_value = str(currency_code or "").strip().upper() or "USD"
+        if len(currency_value) > 8:
+            raise ValueError("Currency code must be 8 characters or fewer.")
+
+        payment_id = self._new_id("pmt")
+        now = self._now()
+        actor_ref = self._actor_ref(actor_user_principal)
+        row = {
+            "payment_id": payment_id,
+            "invoice_id": invoice_id,
+            "offering_id": offering_id,
+            "vendor_id": vendor_id,
+            "payment_reference": str(payment_reference or "").strip() or None,
+            "payment_date": payment_date_value,
+            "amount": amount_value,
+            "currency_code": currency_value,
+            "payment_status": status_value,
+            "notes": str(notes or "").strip() or None,
+            "active_flag": True,
+            "created_at": now.isoformat(),
+            "created_by": actor_ref,
+            "updated_at": now.isoformat(),
+            "updated_by": actor_ref,
+        }
+        self._ensure_local_offering_extension_tables()
+        self._execute_file(
+            "inserts/create_offering_payment.sql",
+            params=(
+                row["payment_id"],
+                row["invoice_id"],
+                row["offering_id"],
+                row["vendor_id"],
+                row["payment_reference"],
+                row["payment_date"],
+                row["amount"],
+                row["currency_code"],
+                row["payment_status"],
+                row["notes"],
+                row["active_flag"],
+                now,
+                actor_ref,
+                now,
+                actor_ref,
+            ),
+            app_offering_payment=self._table("app_offering_payment"),
+        )
+        self._write_audit_entity_change(
+            entity_name="app_offering_payment",
+            entity_id=payment_id,
+            action_type="insert",
+            actor_user_principal=actor_user_principal,
+            before_json=None,
+            after_json=row,
+            request_id=None,
+        )
+        return payment_id
 
     def remove_offering_invoice(
         self,

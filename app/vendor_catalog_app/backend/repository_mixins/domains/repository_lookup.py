@@ -413,6 +413,15 @@ class RepositoryLookupMixin:
 
         self._ensure_local_lookup_option_table()
         for close_row in rows_to_close.values():
+            close_code = self._normalize_lookup_code(str(close_row.get("option_code") or ""))
+            if close_code:
+                self.client.execute(
+                    (
+                        f"DELETE FROM {self._table('app_lookup_option')} "
+                        "WHERE lookup_type = %s AND option_code = %s AND coalesce(is_current, true) = false"
+                    ),
+                    (lookup_key, close_code),
+                )
             self._execute_file(
                 "updates/close_lookup_option_version.sql",
                 params=(now, False, now, actor_ref, str(close_row.get("option_id") or "")),
@@ -457,6 +466,14 @@ class RepositoryLookupMixin:
         actor_ref = self._actor_ref(updated_by)
 
         self._ensure_local_lookup_option_table()
+        target_code = self._normalize_lookup_code(str(target.get("option_code") or "removed"))
+        self.client.execute(
+            (
+                f"DELETE FROM {self._table('app_lookup_option')} "
+                "WHERE lookup_type = %s AND option_code = %s AND coalesce(is_current, true) = false"
+            ),
+            (lookup_key, target_code),
+        )
         self._execute_file(
             "updates/close_lookup_option_version.sql",
             params=(now, False, now, actor_ref, target_id),
@@ -519,6 +536,15 @@ class RepositoryLookupMixin:
                 }
             )
         for close_row in rows_to_close:
+            close_code = self._normalize_lookup_code(str(close_row.get("option_code") or ""))
+            if close_code:
+                self.client.execute(
+                    (
+                        f"DELETE FROM {self._table('app_lookup_option')} "
+                        "WHERE lookup_type = %s AND option_code = %s AND coalesce(is_current, true) = false"
+                    ),
+                    (lookup_key, close_code),
+                )
             self._execute_file(
                 "updates/close_lookup_option_version.sql",
                 params=(now, False, now, actor_ref, str(close_row.get("option_id") or "")),

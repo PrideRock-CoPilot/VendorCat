@@ -8,7 +8,40 @@ from vendor_catalog_app.web.core.runtime import get_repo
 from vendor_catalog_app.web.core.template_context import base_template_context
 from vendor_catalog_app.web.core.user_context_service import get_user_context
 from vendor_catalog_app.web.http.flash import add_flash
-from vendor_catalog_app.web.routers.reports.common import *
+from vendor_catalog_app.web.routers.reports.common import (
+    CHART_KINDS,
+    CHART_PRESETS,
+    DATABRICKS_SELECTED_REPORT_PARAM,
+    DEMO_OUTCOMES,
+    PROJECT_STATUSES,
+    REPORT_TYPES,
+    ROW_COUNT_METRIC,
+    ROW_INDEX_DIMENSION,
+    ROW_LIMITS,
+    VENDOR_LIFECYCLE_STATES,
+    VIEW_MODES,
+    _build_chart_dataset,
+    _build_report_frame,
+    _can_use_reports,
+    _chart_column_options,
+    _chart_dimension_items,
+    _chart_metric_items,
+    _databricks_report_options,
+    _normalize_report_filters,
+    _report_catalog_entries,
+    _report_icon_meta,
+    _report_query_payload,
+    _resolve_chart_selection,
+    _resolve_selected_columns,
+    _safe_chart_kind,
+    _safe_query_params,
+    _safe_report_key,
+    _safe_report_type,
+    _vendor_options,
+    _workspace_load_boards,
+    _workspace_normalize_widget,
+    _workspace_widget_query_payload,
+)
 
 router = APIRouter()
 
@@ -16,7 +49,7 @@ router = APIRouter()
 @router.get("/reports")
 def reports_home(
     request: Request,
-    run: int = 0,
+    run: int = 1,
     report_type: str = "vendor_inventory",
     search: str = "",
     vendor: str = "all",
@@ -45,33 +78,41 @@ def reports_home(
         return RedirectResponse(url="/dashboard", status_code=303)
 
     report_type = _safe_report_type(report_type)
-    view_mode = _safe_view_mode(view_mode)
     preset = CHART_PRESETS.get(report_type, {})
     preset_kind = _safe_chart_kind(str(preset.get("kind") or "bar"))
-    chart_kind = _safe_chart_kind(chart_kind or preset_kind)
+    normalized = _normalize_report_filters(
+        repo,
+        report_type=report_type,
+        search=search,
+        vendor=vendor,
+        lifecycle_state=lifecycle_state,
+        project_status=project_status,
+        outcome=outcome,
+        owner_principal=owner_principal,
+        lob=lob,
+        org=org,
+        horizon_days=horizon_days,
+        limit=limit,
+        view_mode=view_mode,
+        chart_kind=chart_kind or preset_kind,
+    )
+    report_type = str(normalized["report_type"])
+    search = str(normalized["search"])
+    vendor = str(normalized["vendor"])
+    lifecycle_state = str(normalized["lifecycle_state"])
+    project_status = str(normalized["project_status"])
+    outcome = str(normalized["outcome"])
+    owner_principal = str(normalized["owner_principal"])
+    selected_lob = str(normalized["lob"])
+    horizon_days = int(normalized["horizon_days"])
+    limit = int(normalized["limit"])
+    view_mode = str(normalized["view_mode"])
+    chart_kind = str(normalized["chart_kind"])
+    orgs = list(normalized["orgs"])
+    vendor_options = list(normalized["vendor_options"])
+    preset = CHART_PRESETS.get(report_type, {})
     preset_x = str(preset.get("x") or ROW_INDEX_DIMENSION)
     preset_y = str(preset.get("y") or ROW_COUNT_METRIC)
-
-    if lifecycle_state not in VENDOR_LIFECYCLE_STATES:
-        lifecycle_state = "all"
-    if project_status not in PROJECT_STATUSES:
-        project_status = "all"
-    if outcome not in DEMO_OUTCOMES:
-        outcome = "all"
-    if limit not in ROW_LIMITS:
-        limit = 500
-
-    orgs = repo.available_orgs()
-    selected_lob = str(org if org is not None and str(org).strip() else lob).strip() or "all"
-    if selected_lob not in orgs:
-        selected_lob = "all"
-
-    vendor_options = _vendor_options(repo)
-    valid_vendor_ids = {row["vendor_id"] for row in vendor_options}
-    if vendor not in valid_vendor_ids:
-        vendor = "all"
-
-    horizon_days = max(30, min(horizon_days, 730))
 
     rows: list[dict] = []
     columns: list[str] = []
@@ -82,8 +123,6 @@ def reports_home(
     chart_rows: list[dict[str, object]] = []
     chart_line_points: list[dict[str, object]] = []
     chart_line_path = ""
-    chart_total_value = 0.0
-    chart_max_value = 0.0
     chart_empty_message = "Run a report to build a graph."
 
     dimension_seed = [ROW_INDEX_DIMENSION]
@@ -100,39 +139,48 @@ def reports_home(
     selected_report = REPORT_TYPES[report_type]
     databricks_reports = _databricks_report_options(user.config)
     selected_databricks_report: dict[str, object] | None = None
+    ready_nav_payload = _report_query_payload(
+        report_type=report_type,
+        search=search,
+        vendor=vendor,
+        lifecycle_state=lifecycle_state,
+        project_status=project_status,
+        outcome=outcome,
+        owner_principal=owner_principal,
+        lob=selected_lob,
+        horizon_days=horizon_days,
+        limit=limit,
+        cols=cols,
+        view_mode=view_mode,
+        chart_kind=chart_kind,
+        chart_x=selected_chart_x,
+        chart_y=selected_chart_y,
+        run=1,
+    )
     ready_report_cards: list[dict[str, object]] = []
-    for key, info in REPORT_TYPES.items():
-        preset = CHART_PRESETS.get(key, {})
-        preset_kind = _safe_chart_kind(str(preset.get("kind") or "bar"))
-        preset_x = str(preset.get("x") or ROW_INDEX_DIMENSION)
-        preset_y = str(preset.get("y") or ROW_COUNT_METRIC)
-        ready_payload = _report_query_payload(
-            report_type=key,
-            search="",
-            vendor="all",
-            lifecycle_state="all",
-            project_status="all",
-            outcome="all",
-            owner_principal="",
-            lob="all",
-            horizon_days=180,
-            limit=500,
-            cols="",
-            view_mode="both",
-            chart_kind=preset_kind,
-            chart_x=preset_x,
-            chart_y=preset_y,
-            run=1,
-        )
+    for entry in _report_catalog_entries():
+        key = str(entry["key"])
+        icon_meta = _report_icon_meta(key)
+        nav_payload = dict(ready_nav_payload)
+        nav_payload["report_type"] = key
+        nav_payload["chart_kind"] = str(entry["preset_kind"])
+        nav_payload["chart_x"] = str(entry["preset_x"])
+        nav_payload["chart_y"] = str(entry["preset_y"])
+        nav_payload["cols"] = ""
         ready_report_cards.append(
             {
                 "key": key,
-                "label": str(info.get("label") or key),
-                "description": str(info.get("description") or ""),
-                "open_url": f"/reports?{_safe_query_params(ready_payload)}",
+                "label": str(entry["label"]),
+                "description": str(entry["description"]),
+                "open_url": f"/reports?{_safe_query_params(nav_payload)}",
                 "is_selected": key == report_type,
+                "icon_badge": icon_meta["badge"],
+                "icon_tone": icon_meta["tone"],
             }
         )
+    selected_ready_report = next((card for card in ready_report_cards if bool(card.get("is_selected"))), None)
+    if selected_ready_report is None and ready_report_cards:
+        selected_ready_report = ready_report_cards[0]
 
     if run == 1:
         frame = _build_report_frame(
@@ -182,8 +230,6 @@ def reports_home(
         chart_rows = chart_data["rows"]
         chart_line_points = chart_data["line_points"]
         chart_line_path = str(chart_data["line_path"])
-        chart_max_value = float(chart_data["max_value"])
-        chart_total_value = float(chart_data["total_value"])
         if not chart_rows:
             chart_empty_message = "No chartable rows with the selected visualization settings."
 
@@ -316,14 +362,13 @@ def reports_home(
             "chart_rows": chart_rows,
             "chart_line_points": chart_line_points,
             "chart_line_path": chart_line_path,
-            "chart_max_value": chart_max_value,
-            "chart_total_value": chart_total_value,
             "chart_empty_message": chart_empty_message,
             "chart_dimension_options": chart_dimension_options,
             "chart_metric_options": chart_metric_options,
             "chart_dimension_label": chart_dimension_label,
             "chart_metric_label": chart_metric_label,
             "ready_report_cards": ready_report_cards,
+            "selected_ready_report": selected_ready_report,
             "databricks_reports": databricks_report_items,
             "selected_databricks_report": selected_databricks_report,
         },
@@ -342,52 +387,27 @@ def reports_workspace(request: Request, board: str = ""):
         add_flash(request, "You do not have permission to access Reports Workspace.", "error")
         return RedirectResponse(url="/dashboard", status_code=303)
 
-    report_cards: list[dict[str, str]] = []
-    report_type_options: list[dict[str, str]] = []
-    for key, info in REPORT_TYPES.items():
-        preset = CHART_PRESETS.get(key, {})
-        preset_kind = _safe_chart_kind(str(preset.get("kind") or "bar"))
-        preset_x = str(preset.get("x") or ROW_INDEX_DIMENSION)
-        preset_y = str(preset.get("y") or ROW_COUNT_METRIC)
-
-        report_type_options.append(
-            {
-                "key": key,
-                "label": str(info.get("label") or key),
-                "description": str(info.get("description") or ""),
-                "preset_kind": preset_kind,
-                "preset_x": preset_x,
-                "preset_y": preset_y,
-            }
-        )
-
-        query_payload = _report_query_payload(
-            report_type=key,
-            search="",
-            vendor="all",
-            lifecycle_state="all",
-            project_status="all",
-            outcome="all",
-            owner_principal="",
-            lob="all",
-            horizon_days=180,
-            limit=500,
-            cols="",
-            view_mode="both",
-            chart_kind=preset_kind,
-            chart_x=preset_x,
-            chart_y=preset_y,
-            run=1,
-        )
-        query = _safe_query_params(query_payload)
-        report_cards.append(
-            {
-                "key": key,
-                "label": str(info.get("label") or key),
-                "description": str(info.get("description") or ""),
-                "open_url": f"/reports?{query}",
-            }
-        )
+    catalog_entries = _report_catalog_entries()
+    report_cards: list[dict[str, str]] = [
+        {
+            "key": str(entry["key"]),
+            "label": str(entry["label"]),
+            "description": str(entry["description"]),
+            "open_url": f"/reports?{entry['query']}",
+        }
+        for entry in catalog_entries
+    ]
+    report_type_options: list[dict[str, str]] = [
+        {
+            "key": str(entry["key"]),
+            "label": str(entry["label"]),
+            "description": str(entry["description"]),
+            "preset_kind": str(entry["preset_kind"]),
+            "preset_x": str(entry["preset_x"]),
+            "preset_y": str(entry["preset_y"]),
+        }
+        for entry in catalog_entries
+    ]
 
     databricks_reports = _databricks_report_options(user.config)
     saved_boards = _workspace_load_boards(repo, user.user_principal)
@@ -458,36 +478,36 @@ def reports_workspace_present(request: Request, board: str = ""):
     widget_views: list[dict[str, object]] = []
     raw_widgets = selected_board.get("widgets")
     widgets = raw_widgets if isinstance(raw_widgets, list) else []
+    frame_cache: dict[tuple[str, str, str, int], object] = {}
     for index, raw_widget in enumerate(widgets):
         widget = _workspace_normalize_widget(raw_widget, index)
         payload = _workspace_widget_query_payload(widget)
-        report_type = _safe_report_type(str(payload.get("report_type") or "vendor_inventory"))
+        report_type = str(payload.get("report_type") or "vendor_inventory")
         search = str(payload.get("search") or "").strip()
         vendor = str(payload.get("vendor") or "all").strip() or "all"
-        try:
-            limit = int(payload.get("limit", 500))
-        except (TypeError, ValueError):
-            limit = 500
-        if limit not in ROW_LIMITS:
-            limit = 500
-        view_mode = _safe_view_mode(str(payload.get("view_mode") or "both"))
-        chart_kind = _safe_chart_kind(str(payload.get("chart_kind") or "bar"))
+        limit = int(payload.get("limit") or 500)
+        view_mode = str(payload.get("view_mode") or "both")
+        chart_kind = str(payload.get("chart_kind") or "bar")
         chart_x = str(payload.get("chart_x") or "").strip() or ROW_INDEX_DIMENSION
         chart_y = str(payload.get("chart_y") or "").strip() or ROW_COUNT_METRIC
 
-        frame = _build_report_frame(
-            repo,
-            report_type=report_type,
-            search=search,
-            vendor=vendor,
-            lifecycle_state="all",
-            project_status="all",
-            outcome="all",
-            owner_principal="",
-            lob="all",
-            horizon_days=180,
-            limit=limit,
-        )
+        frame_key = (report_type, search, vendor, limit)
+        frame = frame_cache.get(frame_key)
+        if frame is None:
+            frame = _build_report_frame(
+                repo,
+                report_type=report_type,
+                search=search,
+                vendor=vendor,
+                lifecycle_state="all",
+                project_status="all",
+                outcome="all",
+                owner_principal="",
+                lob="all",
+                horizon_days=180,
+                limit=limit,
+            )
+            frame_cache[frame_key] = frame
         preview = frame.head(12).fillna("")
         preview_rows = preview.to_dict("records")
         preview_columns = [str(column) for column in preview.columns.tolist()]

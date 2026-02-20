@@ -394,6 +394,307 @@ def _project_updates_from_row(row_data: dict[str, str]) -> dict[str, Any]:
     return updates
 
 
+def _search_vendor_id_by_name(repo, vendor_name: str) -> str:
+    query = str(vendor_name or "").strip()
+    if not query or not hasattr(repo, "search_vendors_typeahead"):
+        return ""
+    try:
+        rows = repo.search_vendors_typeahead(q=query, limit=10).to_dict("records")
+    except Exception:
+        return ""
+    lowered = query.lower()
+    exact = [
+        row
+        for row in rows
+        if str(row.get("vendor_id") or "").strip().lower() == lowered
+        or str(row.get("display_name") or "").strip().lower() == lowered
+        or str(row.get("legal_name") or "").strip().lower() == lowered
+    ]
+    if len(exact) == 1:
+        return str(exact[0].get("vendor_id") or "").strip()
+    if len(rows) == 1:
+        return str(rows[0].get("vendor_id") or "").strip()
+    return ""
+
+
+def _resolve_vendor_id_for_financial_row(repo, *, row_data: dict[str, str], fallback_vendor_id: str = "") -> str:
+    explicit_vendor_id = str(row_data.get("vendor_id") or "").strip() or str(fallback_vendor_id or "").strip()
+    if explicit_vendor_id:
+        return explicit_vendor_id
+    vendor_name = str(row_data.get("vendor_name") or row_data.get("legal_name") or row_data.get("display_name") or "").strip()
+    return _search_vendor_id_by_name(repo, vendor_name)
+
+
+def _resolve_offering_id_for_financial_row(
+    repo,
+    *,
+    row_data: dict[str, str],
+    vendor_id: str,
+    actor_user_principal: str,
+    allow_create: bool,
+) -> str:
+    explicit_offering_id = str(row_data.get("offering_id") or "").strip()
+    if explicit_offering_id and hasattr(repo, "get_offerings_by_ids"):
+        try:
+            existing = repo.get_offerings_by_ids([explicit_offering_id])
+            if not existing.empty:
+                return explicit_offering_id
+        except Exception:
+            pass
+
+    offering_name = str(row_data.get("offering_name") or "").strip()
+    if offering_name and hasattr(repo, "search_offerings_typeahead"):
+        try:
+            rows = repo.search_offerings_typeahead(vendor_id=vendor_id or None, q=offering_name, limit=10).to_dict("records")
+        except Exception:
+            rows = []
+        lowered = offering_name.lower()
+        exact = [
+            row
+            for row in rows
+            if str(row.get("offering_id") or "").strip().lower() == lowered
+            or str(row.get("offering_name") or "").strip().lower() == lowered
+        ]
+        if len(exact) == 1:
+            return str(exact[0].get("offering_id") or "").strip()
+        if len(rows) == 1:
+            return str(rows[0].get("offering_id") or "").strip()
+
+    if not allow_create or not vendor_id or not hasattr(repo, "create_offering"):
+        return ""
+    resolved_name = offering_name or "Imported Financial Feed"
+    try:
+        created_id = repo.create_offering(
+            vendor_id=vendor_id,
+            actor_user_principal=actor_user_principal,
+            offering_name=resolved_name,
+            offering_type="service",
+            lob=None,
+            service_type=None,
+            lifecycle_state="draft",
+            criticality_tier=None,
+        )
+    except Exception:
+        return ""
+    return str(created_id or "").strip()
+
+
+def _find_invoice_candidate(
+    repo,
+    *,
+    invoice_id: str,
+    invoice_number: str,
+    vendor_id: str,
+    offering_id: str,
+) -> dict[str, Any] | None:
+    if hasattr(repo, "find_offering_invoice_candidates"):
+        try:
+            frame = repo.find_offering_invoice_candidates(
+                invoice_id=invoice_id or None,
+                invoice_number=invoice_number or None,
+                vendor_id=vendor_id or None,
+                offering_id=offering_id or None,
+                limit=5,
+            )
+            if not frame.empty:
+                return frame.iloc[0].to_dict()
+        except Exception:
+            return None
+    if hasattr(repo, "list_offering_invoices") and vendor_id and offering_id and invoice_number:
+        try:
+            rows = repo.list_offering_invoices(vendor_id=vendor_id, offering_id=offering_id).to_dict("records")
+        except Exception:
+            rows = []
+        invoice_lower = invoice_number.lower()
+        for row in rows:
+            if str(row.get("invoice_number") or "").strip().lower() == invoice_lower:
+                return row
+    return None
+
+
+def _find_payment_candidate(
+    repo,
+    *,
+    payment_reference: str,
+    invoice_id: str,
+    vendor_id: str,
+    offering_id: str,
+) -> dict[str, Any] | None:
+    if not hasattr(repo, "find_offering_payment_candidates"):
+        return None
+    try:
+        frame = repo.find_offering_payment_candidates(
+            payment_reference=payment_reference or None,
+            invoice_id=invoice_id or None,
+            vendor_id=vendor_id or None,
+            offering_id=offering_id or None,
+            limit=5,
+        )
+        if frame.empty:
+            return None
+        return frame.iloc[0].to_dict()
+    except Exception:
+        return None
+
+
+def _apply_invoice_payload(
+    repo,
+    *,
+    row_data: dict[str, str],
+    fallback_vendor_id: str,
+    actor_user_principal: str,
+) -> tuple[str, str, dict[str, str]]:
+    invoice_id = str(row_data.get("invoice_id") or "").strip()
+    invoice_number = str(row_data.get("invoice_number") or "").strip()
+    invoice_date = str(row_data.get("invoice_date") or "").strip()
+    amount = _safe_float(row_data.get("amount"))
+    if not invoice_date:
+        raise ValueError("invoice_date is required for invoice records.")
+    if amount is None or amount <= 0:
+        raise ValueError("amount must be greater than zero for invoice records.")
+    vendor_id = _resolve_vendor_id_for_financial_row(repo, row_data=row_data, fallback_vendor_id=fallback_vendor_id)
+    if not vendor_id:
+        raise ValueError("Missing vendor dependency for invoice row.")
+    offering_id = _resolve_offering_id_for_financial_row(
+        repo,
+        row_data=row_data,
+        vendor_id=vendor_id,
+        actor_user_principal=actor_user_principal,
+        allow_create=True,
+    )
+    if not offering_id:
+        raise ValueError("Missing offering dependency for invoice row.")
+
+    existing = _find_invoice_candidate(
+        repo,
+        invoice_id=invoice_id,
+        invoice_number=invoice_number,
+        vendor_id=vendor_id,
+        offering_id=offering_id,
+    )
+    if existing is not None:
+        existing_id = str(existing.get("invoice_id") or "").strip()
+        return (
+            "merged",
+            f"Invoice already exists: {existing_id}",
+            {
+                "entity_type": "invoice",
+                "invoice_id": existing_id,
+                "vendor_id": vendor_id,
+                "offering_id": offering_id,
+            },
+        )
+
+    if not hasattr(repo, "add_offering_invoice"):
+        raise ValueError("Invoice writes are not supported in this runtime.")
+    created_invoice_id = repo.add_offering_invoice(
+        vendor_id=vendor_id,
+        offering_id=offering_id,
+        invoice_number=invoice_number or None,
+        invoice_date=invoice_date,
+        amount=float(amount),
+        currency_code=str(row_data.get("currency_code") or "").strip() or "USD",
+        invoice_status=str(row_data.get("invoice_status") or "").strip() or "received",
+        notes=str(row_data.get("notes") or "").strip() or None,
+        actor_user_principal=actor_user_principal,
+    )
+    return (
+        "created",
+        f"Invoice created: {created_invoice_id}",
+        {
+            "entity_type": "invoice",
+            "invoice_id": str(created_invoice_id or "").strip(),
+            "vendor_id": vendor_id,
+            "offering_id": offering_id,
+        },
+    )
+
+
+def _apply_payment_payload(
+    repo,
+    *,
+    row_data: dict[str, str],
+    fallback_vendor_id: str,
+    actor_user_principal: str,
+) -> tuple[str, str, dict[str, str]]:
+    payment_date = str(row_data.get("payment_date") or "").strip()
+    amount = _safe_float(row_data.get("amount"))
+    if not payment_date:
+        raise ValueError("payment_date is required for payment records.")
+    if amount is None or amount <= 0:
+        raise ValueError("amount must be greater than zero for payment records.")
+    vendor_id = _resolve_vendor_id_for_financial_row(repo, row_data=row_data, fallback_vendor_id=fallback_vendor_id)
+    offering_id = _resolve_offering_id_for_financial_row(
+        repo,
+        row_data=row_data,
+        vendor_id=vendor_id,
+        actor_user_principal=actor_user_principal,
+        allow_create=False,
+    )
+    invoice_id = str(row_data.get("invoice_id") or "").strip()
+    invoice_number = str(row_data.get("invoice_number") or "").strip()
+    invoice_candidate = _find_invoice_candidate(
+        repo,
+        invoice_id=invoice_id,
+        invoice_number=invoice_number,
+        vendor_id=vendor_id,
+        offering_id=offering_id,
+    )
+    if invoice_candidate is None:
+        raise ValueError("Missing invoice dependency for payment row.")
+    resolved_invoice_id = str(invoice_candidate.get("invoice_id") or "").strip()
+    resolved_vendor_id = str(invoice_candidate.get("vendor_id") or "").strip() or vendor_id
+    resolved_offering_id = str(invoice_candidate.get("offering_id") or "").strip() or offering_id
+
+    payment_reference = str(row_data.get("payment_reference") or row_data.get("payment_id") or "").strip()
+    existing = _find_payment_candidate(
+        repo,
+        payment_reference=payment_reference,
+        invoice_id=resolved_invoice_id,
+        vendor_id=resolved_vendor_id,
+        offering_id=resolved_offering_id,
+    )
+    if existing is not None:
+        existing_id = str(existing.get("payment_id") or "").strip()
+        return (
+            "merged",
+            f"Payment already exists: {existing_id}",
+            {
+                "entity_type": "payment",
+                "payment_id": existing_id,
+                "invoice_id": resolved_invoice_id,
+                "vendor_id": resolved_vendor_id,
+                "offering_id": resolved_offering_id,
+            },
+        )
+
+    if not hasattr(repo, "add_offering_payment"):
+        raise ValueError("Payment writes are not supported in this runtime.")
+    created_payment_id = repo.add_offering_payment(
+        vendor_id=resolved_vendor_id,
+        offering_id=resolved_offering_id,
+        invoice_id=resolved_invoice_id,
+        payment_reference=payment_reference or None,
+        payment_date=payment_date,
+        amount=float(amount),
+        currency_code=str(row_data.get("currency_code") or "").strip() or "USD",
+        payment_status=str(row_data.get("payment_status") or "").strip() or "settled",
+        notes=str(row_data.get("notes") or "").strip() or None,
+        actor_user_principal=actor_user_principal,
+    )
+    return (
+        "created",
+        f"Payment created: {created_payment_id}",
+        {
+            "entity_type": "payment",
+            "payment_id": str(created_payment_id or "").strip(),
+            "invoice_id": resolved_invoice_id,
+            "vendor_id": resolved_vendor_id,
+            "offering_id": resolved_offering_id,
+        },
+    )
+
+
 def apply_import_row(
     repo,
     *,
@@ -528,6 +829,34 @@ def apply_import_row(
                 "vendor_id": str(target_vendor_id or "").strip(),
                 "offering_id": str(target_id or "").strip(),
             },
+        )
+
+    if layout_key == "invoices":
+        if selected_action == "merge" and target_id:
+            return (
+                "merged",
+                f"Invoice retained: {target_id}",
+                {"entity_type": "invoice", "invoice_id": str(target_id or "").strip()},
+            )
+        return _apply_invoice_payload(
+            repo,
+            row_data=row_data,
+            fallback_vendor_id=fallback_target_vendor_id,
+            actor_user_principal=actor_user_principal,
+        )
+
+    if layout_key == "payments":
+        if selected_action == "merge" and target_id:
+            return (
+                "merged",
+                f"Payment retained: {target_id}",
+                {"entity_type": "payment", "payment_id": str(target_id or "").strip()},
+            )
+        return _apply_payment_payload(
+            repo,
+            row_data=row_data,
+            fallback_vendor_id=fallback_target_vendor_id,
+            actor_user_principal=actor_user_principal,
         )
 
     if selected_action == "new":
@@ -816,5 +1145,35 @@ def apply_stage_area_rows_for_row(
         )
         if str(created_project_id or "").strip():
             child_counts["project"] = child_counts.get("project", 0) + 1
+
+    for area_row in area_rows_by_area.get("invoice", []):
+        payload = dict(area_row.get("payload") or {})
+        payload_vendor_id = _payload_value(payload, "vendor_id") or resolved_vendor_id
+        try:
+            status, _message, _result = _apply_invoice_payload(
+                repo,
+                row_data={str(k): str(v or "") for k, v in payload.items()},
+                fallback_vendor_id=payload_vendor_id,
+                actor_user_principal=actor_user_principal,
+            )
+        except Exception:
+            continue
+        if status in {"created", "merged"}:
+            child_counts["invoice"] = child_counts.get("invoice", 0) + 1
+
+    for area_row in area_rows_by_area.get("payment", []):
+        payload = dict(area_row.get("payload") or {})
+        payload_vendor_id = _payload_value(payload, "vendor_id") or resolved_vendor_id
+        try:
+            status, _message, _result = _apply_payment_payload(
+                repo,
+                row_data={str(k): str(v or "") for k, v in payload.items()},
+                fallback_vendor_id=payload_vendor_id,
+                actor_user_principal=actor_user_principal,
+            )
+        except Exception:
+            continue
+        if status in {"created", "merged"}:
+            child_counts["payment"] = child_counts.get("payment", 0) + 1
 
     return {k: int(v) for k, v in child_counts.items() if int(v or 0) > 0}

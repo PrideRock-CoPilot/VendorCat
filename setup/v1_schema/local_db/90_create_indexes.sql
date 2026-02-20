@@ -72,4 +72,5 @@ CREATE INDEX IF NOT EXISTS idx_app_vendor_change_request_vendor ON app_vendor_ch
 CREATE INDEX IF NOT EXISTS idx_app_offering_profile_vendor ON app_offering_profile(vendor_id);
 CREATE INDEX IF NOT EXISTS idx_app_offering_ticket_offering ON app_offering_ticket(offering_id, status, active_flag);
 CREATE INDEX IF NOT EXISTS idx_app_offering_invoice_offering ON app_offering_invoice(offering_id, invoice_date, active_flag);
+CREATE INDEX IF NOT EXISTS idx_app_offering_payment_invoice ON app_offering_payment(invoice_id, payment_date, active_flag);
 CREATE INDEX IF NOT EXISTS idx_app_offering_data_flow_offering ON app_offering_data_flow(offering_id, direction, active_flag);

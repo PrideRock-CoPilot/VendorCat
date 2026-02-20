@@ -24,6 +24,8 @@ LOOKUP_CODE_PATTERN = re.compile(r"^[a-z0-9_][a-z0-9_-]{1,63}$")
 ADMIN_SECTION_ACCESS = "access"
 ADMIN_SECTION_DEFAULTS = "defaults"
 ADMIN_SECTION_OWNERSHIP = "ownership"
+ADMIN_SECTION_HELP_INBOX = "help-inbox"
+ADMIN_SECTION_TERMS = "terms"
 LOOKUP_STATUS_OPTIONS = {"all", "active", "historical", "future"}
 LOOKUP_TYPE_LABELS = {
     LOOKUP_TYPE_DOC_SOURCE: "Document Sources",
@@ -47,21 +49,31 @@ def _admin_redirect_url(
     as_of: str | None = None,
 ) -> str:
     if section == ADMIN_SECTION_OWNERSHIP:
-        return f"/admin?section={ADMIN_SECTION_OWNERSHIP}"
+        return f"/admin/{ADMIN_SECTION_OWNERSHIP}"
+    if section == ADMIN_SECTION_HELP_INBOX:
+        return f"/admin/{ADMIN_SECTION_HELP_INBOX}"
+    if section == ADMIN_SECTION_TERMS:
+        return f"/admin/{ADMIN_SECTION_TERMS}"
     if section == ADMIN_SECTION_DEFAULTS:
         selected_lookup = lookup_type if lookup_type in LOOKUP_TYPE_LABELS else LOOKUP_TYPE_DOC_SOURCE
         selected_status = lookup_status if lookup_status in LOOKUP_STATUS_OPTIONS else "active"
         selected_as_of = str(as_of or "").strip() or datetime.now(UTC).date().isoformat()
         return (
-            f"/admin?section={ADMIN_SECTION_DEFAULTS}&lookup_type={selected_lookup}"
+            f"/admin/{ADMIN_SECTION_DEFAULTS}?lookup_type={selected_lookup}"
             f"&status={selected_status}&as_of={selected_as_of}"
         )
-    return f"/admin?section={ADMIN_SECTION_ACCESS}"
+    return f"/admin/{ADMIN_SECTION_ACCESS}"
 
 
 def _normalize_admin_section(raw: str | None) -> str:
     value = str(raw or "").strip().lower()
-    if value in {ADMIN_SECTION_ACCESS, ADMIN_SECTION_DEFAULTS, ADMIN_SECTION_OWNERSHIP}:
+    if value in {
+        ADMIN_SECTION_ACCESS,
+        ADMIN_SECTION_DEFAULTS,
+        ADMIN_SECTION_OWNERSHIP,
+        ADMIN_SECTION_HELP_INBOX,
+        ADMIN_SECTION_TERMS,
+    }:
         return value
     return ADMIN_SECTION_ACCESS
 

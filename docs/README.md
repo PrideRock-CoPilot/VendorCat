@@ -40,6 +40,7 @@ How to build, test, deploy, and monitor the system.
 - **[Migrations & Schema](operations/migrations-and-schema.md)**: Migration workflow, version tracking, Databricks optimization
 - **[Observability & Audit](operations/observability-and-audit.md)**: Logging, metrics, audit retention, alerting
 - **[Security Checklist](operations/security-checklist.md)**: URL validation, XSS, secrets, rate limiting, dependency updates
+- **[Imports Bundles Operations](operations/imports-bundles.md)**: Multi-file/ZIP imports wizard flow, dependency apply order, and reprocess behavior
 - **[Current Application Capabilities, Gaps, and Enhancements](operations/current-application-capabilities-gaps-and-enhancements.md)**: Consolidated current-state and enhancement roadmap
 - **[V1 Functional Parity Checklist](operations/v1-functional-parity-checklist.md)**: Cutover checklist to prevent functionality regressions
 

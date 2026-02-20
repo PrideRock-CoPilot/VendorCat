@@ -24,6 +24,8 @@ MIN_CHANGE_APPROVAL_LEVEL = 1
 DEFAULT_APPROVAL_LEVEL = 6
 
 CHANGE_APPROVAL_LEVELS = {
+    "feedback_submit": 0,
+    "report_submit": 0,
     "request_access": 3,
     "create_vendor_profile": 9,
     "update_vendor_profile": 6,

@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-02-18T13:00:00Z | VC-20260218-130000-9811
+- Expanded Imports to support bundle ingestion from multi-file uploads and ZIP uploads.
+- Added new import layouts and staging targets for `invoices` and `payments`.
+- Added bundle preview summaries with per-file ready/review/blocked/error counts.
+- Added bundle apply modes:
+  - `Stage Only`
+  - `Apply Eligible Now`
+  - `Reprocess Blocked`
+- Added dependency-aware financial import behavior:
+  - invoice apply resolves vendor/offering dependencies
+  - payment apply resolves invoice dependencies
+  - blocked dependency rows remain staged for retry
+- Added repository APIs and SQL for invoice/payment candidate matching and payment inserts.
+- Added local/Databricks schema updates for:
+  - `app_import_stage_invoice`
+  - `app_import_stage_payment`
+  - `app_offering_payment`
+- Updated imports UI status model with explicit `blocked` row state.
+- Added bundle fixtures and integration coverage for supplier/invoice/payment XML ingestion.
+- Added operations doc: `docs/operations/imports-bundles.md` and updated `docs/user-guide.md`.
+
 ## 2026-02-09T21:48:09Z | VC-20260209-214809-5452
 - Added a centralized application SQL catalog under `app/vendor_catalog_app/sql/` with domain folders for:
   - `ingestion/`

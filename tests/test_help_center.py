@@ -11,9 +11,17 @@ APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
-from vendor_catalog_app.core.help_validator import validate_help_articles
-from vendor_catalog_app.web.app import create_app
-from vendor_catalog_app.web.core.runtime import get_config, get_repo
+from vendor_catalog_app.core.help_validator import validate_help_articles  # noqa: E402
+from vendor_catalog_app.web.app import create_app  # noqa: E402
+from vendor_catalog_app.web.core.runtime import get_config, get_repo  # noqa: E402
+
+HELP_SCREENSHOT_DIR = APP_ROOT / "vendor_catalog_app" / "web" / "static" / "help" / "screenshots"
+
+
+def _allowed_screenshot_paths() -> set[str]:
+    if not HELP_SCREENSHOT_DIR.exists():
+        return set()
+    return {f"/static/help/screenshots/{path.name}" for path in HELP_SCREENSHOT_DIR.glob("*.png")}
 
 
 @pytest.fixture()
@@ -79,8 +87,23 @@ def test_help_feedback_persists(client: TestClient) -> None:
     assert str(rows.iloc[0]["article_slug"]) == "add-vendor"
 
 
+def test_help_articles_have_no_screenshot_placeholders(client: TestClient) -> None:
+    repo = get_repo()
+    articles = repo.list_help_articles_full()
+    placeholder_pattern = re.compile(r"\[screenshot:[^\]]+\]", flags=re.IGNORECASE)
+    offenders = [
+        str(article.get("slug") or "unknown")
+        for article in articles
+        if placeholder_pattern.search(str(article.get("content_md") or ""))
+    ]
+    assert not offenders
+
+
 def test_help_content_validator(client: TestClient) -> None:
     repo = get_repo()
     articles = repo.list_help_articles_full()
-    errors = validate_help_articles(articles)
+    errors = validate_help_articles(
+        articles,
+        allowed_screenshot_paths=_allowed_screenshot_paths(),
+    )
     assert not errors

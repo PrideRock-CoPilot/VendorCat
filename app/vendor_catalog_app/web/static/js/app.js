@@ -1,18 +1,23 @@
 document.addEventListener("DOMContentLoaded", () => {
-  // Theme toggle
+  // Theme controls
   const themeToggle = document.getElementById("theme-toggle");
+  const themeSelect = document.getElementById("theme-select");
   const body = document.body;
   const themeKey = "vendor-catalog-theme";
 
   const setTheme = (isDark) => {
     if (isDark) {
       body.classList.add("dark-mode");
-      themeToggle.textContent = "☀️";
       localStorage.setItem(themeKey, "dark");
     } else {
       body.classList.remove("dark-mode");
-      themeToggle.textContent = "🌙";
       localStorage.setItem(themeKey, "light");
+    }
+    if (themeSelect instanceof HTMLSelectElement) {
+      themeSelect.value = isDark ? "dark" : "light";
+    }
+    if (themeToggle instanceof HTMLElement) {
+      themeToggle.textContent = isDark ? "Light" : "Dark";
     }
   };
 
@@ -31,6 +36,52 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (themeToggle) {
     themeToggle.addEventListener("click", toggleTheme);
+  }
+  if (themeSelect instanceof HTMLSelectElement) {
+    themeSelect.addEventListener("change", () => {
+      setTheme(themeSelect.value === "dark");
+    });
+  }
+
+  const userMenuButton = document.getElementById("user-menu-button");
+  const userMenuDropdown = document.getElementById("user-menu-dropdown");
+  const closeUserMenu = () => {
+    if (!(userMenuButton instanceof HTMLButtonElement) || !(userMenuDropdown instanceof HTMLElement)) return;
+    userMenuDropdown.classList.add("hidden");
+    userMenuButton.setAttribute("aria-expanded", "false");
+  };
+  const openUserMenu = () => {
+    if (!(userMenuButton instanceof HTMLButtonElement) || !(userMenuDropdown instanceof HTMLElement)) return;
+    userMenuDropdown.classList.remove("hidden");
+    userMenuButton.setAttribute("aria-expanded", "true");
+  };
+  const toggleUserMenu = () => {
+    if (!(userMenuDropdown instanceof HTMLElement)) return;
+    if (userMenuDropdown.classList.contains("hidden")) {
+      openUserMenu();
+      return;
+    }
+    closeUserMenu();
+  };
+
+  if (userMenuButton instanceof HTMLButtonElement && userMenuDropdown instanceof HTMLElement) {
+    userMenuButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleUserMenu();
+    });
+    document.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      const clickedInButton = userMenuButton.contains(target);
+      const clickedInDropdown = userMenuDropdown.contains(target);
+      if (!clickedInButton && !clickedInDropdown) closeUserMenu();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        closeUserMenu();
+      }
+    });
   }
 
   // Utility functions
@@ -1329,3 +1380,4 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   observer.observe(document.body, { childList: true, subtree: true });
 });
+

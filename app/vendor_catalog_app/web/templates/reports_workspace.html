@@ -436,7 +436,7 @@
   const runUrl = (widget) => `/reports?${reportParams(widget).toString()}`;
 
   const syncSaveForm = () => {
-    activeBoardId = text(activeBoardId || boardIdInput.value || selectedBoardId);
+    activeBoardId = text(activeBoardId || boardIdInput.value);
     boardIdInput.value = activeBoardId;
     const boardName = text(boardNameInput.value) || "Report Board";
     if (!text(boardNameInput.value)) {
@@ -692,22 +692,10 @@
     });
   });
 
-  [
-    propTitle,
-    propReportType,
-    propViewMode,
-    propChartKind,
-    propChartX,
-    propChartY,
-    propSearch,
-    propVendor,
-    propLimit,
-  ].forEach((input) => input.addEventListener("input", updateSelectedWidget));
-  propReportType.addEventListener("change", updateSelectedWidget);
-  propViewMode.addEventListener("change", updateSelectedWidget);
-  propChartKind.addEventListener("change", updateSelectedWidget);
-  propVendor.addEventListener("change", updateSelectedWidget);
-  propLimit.addEventListener("change", updateSelectedWidget);
+  [propTitle, propChartX, propChartY, propSearch].forEach((input) => input.addEventListener("input", updateSelectedWidget));
+  [propReportType, propViewMode, propChartKind, propVendor, propLimit].forEach((input) =>
+    input.addEventListener("change", updateSelectedWidget),
+  );
 
   const openSelectedButton = document.getElementById("report-designer-open-selected");
   if (openSelectedButton) {

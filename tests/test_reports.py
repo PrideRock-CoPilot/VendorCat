@@ -14,9 +14,9 @@ APP_ROOT = Path(__file__).resolve().parents[1] / "app"
 if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
-from vendor_catalog_app.web.app import create_app
-from vendor_catalog_app.web.core.runtime import get_config, get_repo
-from vendor_catalog_app.web.routers.reports.common import REPORT_TYPES
+from vendor_catalog_app.web.app import create_app  # noqa: E402
+from vendor_catalog_app.web.core.runtime import get_config, get_repo  # noqa: E402
+from vendor_catalog_app.web.routers.reports.common import REPORT_TYPES  # noqa: E402
 
 
 @pytest.fixture()
@@ -43,6 +43,30 @@ def test_reports_page_lists_all_ready_to_run_cards(client: TestClient) -> None:
     card_keys = set(re.findall(r'data-ready-report="([^"]+)"', response.text))
     assert len(card_keys) >= 12
     assert card_keys == set(REPORT_TYPES.keys())
+
+
+def test_reports_page_ready_nav_shows_icons_and_selected_report(client: TestClient) -> None:
+    response = client.get("/reports?report_type=contract_renewals")
+    assert response.status_code == 200
+    assert "reports-ready-shell" in response.text
+    assert "reports-ready-nav" in response.text
+    assert "reports-ready-main" in response.text
+    assert "Apply Slicers" in response.text
+    assert "Open Hosted Report" not in response.text
+    assert (
+        re.search(
+            r'class="reports-ready-nav-item selected"[^>]*data-ready-report="contract_renewals"',
+            response.text,
+        )
+        is not None
+    )
+    nav_item_blocks = re.findall(
+        r'<a\s+class="reports-ready-nav-item[^>]*data-ready-report="[^"]+"[^>]*>.*?</a>',
+        response.text,
+        flags=re.S,
+    )
+    assert len(nav_item_blocks) == len(REPORT_TYPES)
+    assert all("reports-ready-icon tone-" in block for block in nav_item_blocks)
 
 
 def test_reports_catalog_has_minimum_ready_to_go_reports() -> None:

@@ -13,6 +13,8 @@ IMPORT_STAGE_AREA_TABLES = {
     "offering_contact": "app_import_stage_offering_contact",
     "contract": "app_import_stage_contract",
     "project": "app_import_stage_project",
+    "invoice": "app_import_stage_invoice",
+    "payment": "app_import_stage_payment",
 }
 
 

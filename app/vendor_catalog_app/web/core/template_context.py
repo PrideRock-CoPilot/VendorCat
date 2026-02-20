@@ -243,6 +243,7 @@ def base_template_context(
         "request": request,
         "title": title,
         "active_nav": active_nav,
+        "static_asset_version": str(getattr(request.app.state, "startup_splash_run_id", "") or ""),
         "user_principal": context.user_principal,
         "user_display_name": user_display_name,
         "raw_roles": sorted(raw_roles),

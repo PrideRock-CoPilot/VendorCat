@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import io
 from typing import Any
+import zipfile
 
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
@@ -105,6 +107,130 @@ def _profile_source_target_mapping(profile: dict[str, Any] | None) -> dict[str, 
     return converted
 
 
+def _guess_bundle_layout(*, file_name: str, fallback_layout: str) -> str:
+    name = str(file_name or "").strip().lower()
+    if "invoice" in name:
+        return "invoices"
+    if "payment" in name:
+        return "payments"
+    if "supplier" in name or "vendor" in name:
+        return "vendors"
+    if "offering" in name or "product" in name or "service" in name:
+        return "offerings"
+    if "project" in name:
+        return "projects"
+    return safe_layout(fallback_layout)
+
+
+async def _read_upload_bytes(upload: Any) -> bytes:
+    if upload is None or not hasattr(upload, "read"):
+        return b""
+    return await upload.read()
+
+
+def _extract_zip_members(raw_bytes: bytes) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    if not raw_bytes:
+        return out
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw_bytes), "r") as archive:
+            for info in archive.infolist():
+                if info.is_dir():
+                    continue
+                member_name = str(info.filename or "").strip()
+                if not member_name:
+                    continue
+                member_bytes = archive.read(info)
+                if not member_bytes:
+                    continue
+                out.append(
+                    {
+                        "file_name": member_name.split("/")[-1],
+                        "raw_bytes": member_bytes,
+                        "content_type": "",
+                    }
+                )
+    except Exception:
+        return []
+    return out
+
+
+async def _collect_import_uploads(form: Any) -> list[dict[str, Any]]:
+    uploads: list[dict[str, Any]] = []
+    candidates: list[Any] = []
+    primary = form.get("file")
+    if primary is not None:
+        candidates.append(primary)
+    for item in form.getlist("files"):
+        candidates.append(item)
+    bundle_file = form.get("bundle_file")
+    if bundle_file is not None:
+        candidates.append(bundle_file)
+
+    seen: set[str] = set()
+    for upload in candidates:
+        if upload is None or not hasattr(upload, "filename"):
+            continue
+        file_name = str(getattr(upload, "filename", "") or "").strip()
+        if not file_name:
+            continue
+        raw_bytes = await _read_upload_bytes(upload)
+        if not raw_bytes:
+            continue
+        lower_name = file_name.lower()
+        if lower_name.endswith(".zip"):
+            for member in _extract_zip_members(raw_bytes):
+                member_name = str(member.get("file_name") or "").strip()
+                if not member_name:
+                    continue
+                dedupe = member_name.lower()
+                if dedupe in seen:
+                    continue
+                seen.add(dedupe)
+                uploads.append(member)
+            continue
+        dedupe = lower_name
+        if dedupe in seen:
+            continue
+        seen.add(dedupe)
+        uploads.append(
+            {
+                "file_name": file_name,
+                "raw_bytes": raw_bytes,
+                "content_type": str(getattr(upload, "content_type", "") or "").strip(),
+            }
+        )
+    return uploads
+
+
+def _bundle_file_summaries(bundle_files: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    rows: list[dict[str, Any]] = []
+    totals = {"ready": 0, "review": 0, "blocked": 0, "error": 0, "total": 0}
+    for index, item in enumerate(bundle_files):
+        preview_rows = list(item.get("rows") or [])
+        status_counts = {"ready": 0, "review": 0, "blocked": 0, "error": 0}
+        for row in preview_rows:
+            status = str(row.get("row_status") or "ready").strip().lower()
+            if status not in status_counts:
+                status = "review"
+            status_counts[status] += 1
+        totals["ready"] += int(status_counts.get("ready", 0))
+        totals["review"] += int(status_counts.get("review", 0))
+        totals["blocked"] += int(status_counts.get("blocked", 0))
+        totals["error"] += int(status_counts.get("error", 0))
+        totals["total"] += len(preview_rows)
+        rows.append(
+            {
+                "index": index,
+                "file_name": str(item.get("file_name") or ""),
+                "layout_key": str(item.get("layout_key") or "vendors"),
+                "import_job_id": str(item.get("import_job_id") or ""),
+                "row_count": len(preview_rows),
+                "status_counts": status_counts,
+            }
+        )
+    return rows, totals
+
 @router.post("/imports/preview")
 @require_permission("import_preview")
 async def imports_preview(request: Request):
@@ -140,126 +266,291 @@ async def imports_preview(request: Request):
         selected_mapping_profile_name = str(selected_profile.get("profile_name") or "").strip()
     requested_source_target_mapping.update(_source_target_mapping_from_form(form))
 
-    upload = form.get("file")
-    if upload is None or not hasattr(upload, "filename"):
-        add_flash(request, "Select a file to upload.", "error")
-        return RedirectResponse(url="/imports", status_code=303)
-    source_file_name = str(getattr(upload, "filename", "") or "").strip()
-    raw_bytes = await upload.read()
-    if not raw_bytes:
-        add_flash(request, "Uploaded file is empty.", "error")
+    uploads = await _collect_import_uploads(form)
+    if not uploads:
+        add_flash(request, "Select one or more files to upload.", "error")
         return RedirectResponse(url="/imports", status_code=303)
 
-    try:
-        parse_result = parse_layout_rows(
-            selected_layout,
-            raw_bytes,
-            file_name=source_file_name,
-            format_hint=format_hint,
-            delimiter=delimiter,
-            json_record_path=json_record_path,
-            xml_record_tag=xml_record_tag,
-            strict_layout=(flow_mode == "quick"),
-            source_target_mapping=requested_source_target_mapping,
-        )
-        parsed_rows = list(parse_result.get("rows") or [])
-        source_rows = list(parse_result.get("source_rows") or [])
-        source_fields = list(parse_result.get("source_fields") or [])
-        resolved_field_mapping = dict(parse_result.get("field_mapping") or {})
-        resolved_source_target_mapping = dict(parse_result.get("source_target_mapping") or {})
-        stage_area_rows = {
-            str(area): list(rows or [])
-            for area, rows in dict(parse_result.get("stage_area_rows") or {}).items()
-        }
-        detected_format = str(parse_result.get("detected_format") or "")
-        effective_format = str(parse_result.get("effective_format") or "")
-        parser_options = dict(parse_result.get("parser_options") or {})
-        parser_warnings = list(parse_result.get("warnings") or [])
-        compatible = compatible_profiles(
-            profiles=available_profiles,
-            file_format=effective_format,
-            source_fields=source_fields,
-        )
-        if selected_mapping_profile_id and find_profile_by_id(compatible, selected_mapping_profile_id) is None:
-            parser_warnings.append(
-                "Selected mapping profile signature does not match detected source tags/columns. "
-                "Review mapping before apply."
+    if len(uploads) == 1:
+        source_file_name = str(uploads[0].get("file_name") or "").strip()
+        raw_bytes = bytes(uploads[0].get("raw_bytes") or b"")
+        if not raw_bytes:
+            add_flash(request, "Uploaded file is empty.", "error")
+            return RedirectResponse(url="/imports", status_code=303)
+
+        try:
+            parse_result = parse_layout_rows(
+                selected_layout,
+                raw_bytes,
+                file_name=source_file_name,
+                format_hint=format_hint,
+                delimiter=delimiter,
+                json_record_path=json_record_path,
+                xml_record_tag=xml_record_tag,
+                strict_layout=(flow_mode == "quick"),
+                source_target_mapping=requested_source_target_mapping,
             )
-        preview_rows_full = build_preview_rows(repo, selected_layout, parsed_rows)
-    except Exception as exc:
-        add_flash(request, f"Failed to parse import file: {exc}", "error")
+            parsed_rows = list(parse_result.get("rows") or [])
+            source_rows = list(parse_result.get("source_rows") or [])
+            source_fields = list(parse_result.get("source_fields") or [])
+            resolved_field_mapping = dict(parse_result.get("field_mapping") or {})
+            resolved_source_target_mapping = dict(parse_result.get("source_target_mapping") or {})
+            stage_area_rows = {
+                str(area): list(rows or [])
+                for area, rows in dict(parse_result.get("stage_area_rows") or {}).items()
+            }
+            detected_format = str(parse_result.get("detected_format") or "")
+            effective_format = str(parse_result.get("effective_format") or "")
+            parser_options = dict(parse_result.get("parser_options") or {})
+            parser_warnings = list(parse_result.get("warnings") or [])
+            compatible = compatible_profiles(
+                profiles=available_profiles,
+                file_format=effective_format,
+                source_fields=source_fields,
+            )
+            if selected_mapping_profile_id and find_profile_by_id(compatible, selected_mapping_profile_id) is None:
+                parser_warnings.append(
+                    "Selected mapping profile signature does not match detected source tags/columns. "
+                    "Review mapping before apply."
+                )
+            preview_rows_full = build_preview_rows(repo, selected_layout, parsed_rows)
+        except Exception as exc:
+            add_flash(request, f"Failed to parse import file: {exc}", "error")
+            return RedirectResponse(url="/imports", status_code=303)
+
+        import_job_id, staged_row_count, staging_warning = stage_import_preview(
+            repo,
+            layout_key=selected_layout,
+            source_system=source_system,
+            source_object=source_object,
+            file_name=source_file_name,
+            file_type=str(source_file_name.rsplit(".", 1)[-1].lower() if "." in source_file_name else ""),
+            detected_format=effective_format,
+            parser_options=parser_options,
+            preview_rows=preview_rows_full,
+            stage_area_rows=stage_area_rows,
+            actor_user_principal=user.user_principal,
+        )
+
+        preview_payload = {
+            "layout_key": selected_layout,
+            "source_system": source_system,
+            "source_object": source_object,
+            "source_file_name": source_file_name,
+            "flow_mode": flow_mode,
+            "detected_format": detected_format,
+            "effective_format": effective_format,
+            "parser_options": parser_options,
+            "parser_warnings": parser_warnings,
+            "import_job_id": import_job_id,
+            "source_rows": source_rows,
+            "source_fields": source_fields,
+            "source_target_mapping": resolved_source_target_mapping,
+            "field_mapping": resolved_field_mapping,
+            "stage_area_rows": stage_area_rows,
+            "selected_mapping_profile_id": selected_mapping_profile_id,
+            "selected_mapping_profile_name": selected_mapping_profile_name,
+            "rows": preview_rows_full,
+        }
+        preview_token = save_preview_payload(preview_payload)
+        preview_rows = preview_rows_full[:IMPORT_PREVIEW_RENDER_LIMIT]
+        preview_total_rows = len(preview_rows_full)
+        preview_hidden_count = max(0, preview_total_rows - len(preview_rows))
+
+        context = imports_module.base_template_context(
+            request,
+            user,
+            title="Data Imports",
+            active_nav="imports",
+            extra=render_context(
+                selected_layout=selected_layout,
+                selected_flow_mode=flow_mode,
+                selected_source_system=source_system,
+                source_object=source_object,
+                source_file_name=source_file_name,
+                detected_file_type=detected_format,
+                effective_file_type=effective_format,
+                parser_options=parser_options,
+                parser_warnings=parser_warnings,
+                staging_job_id=import_job_id,
+                staged_row_count=staged_row_count,
+                staging_warning=staging_warning,
+                preview_token=preview_token,
+                preview_rows=preview_rows,
+                preview_total_rows=preview_total_rows,
+                preview_hidden_count=preview_hidden_count,
+                source_field_map=source_fields,
+                selected_source_target_mapping=resolved_source_target_mapping,
+                mapping_profiles=_decorate_mapping_profiles(
+                    profiles=available_profiles,
+                    compatible=compatible,
+                ),
+                selected_mapping_profile_id=selected_mapping_profile_id,
+                import_reason="",
+            ),
+        )
+        return request.app.state.templates.TemplateResponse(request, "imports.html", context)
+
+    bundle_files: list[dict[str, Any]] = []
+    bundle_warnings: list[str] = []
+    for upload in uploads:
+        file_name = str(upload.get("file_name") or "").strip()
+        raw_bytes = bytes(upload.get("raw_bytes") or b"")
+        if not file_name or not raw_bytes:
+            continue
+        bundle_layout = _guess_bundle_layout(file_name=file_name, fallback_layout=selected_layout)
+        try:
+            parse_result = parse_layout_rows(
+                bundle_layout,
+                raw_bytes,
+                file_name=file_name,
+                format_hint=format_hint,
+                delimiter=delimiter,
+                json_record_path=json_record_path,
+                xml_record_tag=xml_record_tag,
+                strict_layout=False,
+                source_target_mapping={},
+            )
+            parsed_rows = list(parse_result.get("rows") or [])
+            source_rows = list(parse_result.get("source_rows") or [])
+            source_fields = list(parse_result.get("source_fields") or [])
+            resolved_field_mapping = dict(parse_result.get("field_mapping") or {})
+            resolved_source_target_mapping = dict(parse_result.get("source_target_mapping") or {})
+            stage_area_rows = {
+                str(area): list(rows or [])
+                for area, rows in dict(parse_result.get("stage_area_rows") or {}).items()
+            }
+            detected_format = str(parse_result.get("detected_format") or "")
+            effective_format = str(parse_result.get("effective_format") or "")
+            parser_options = dict(parse_result.get("parser_options") or {})
+            parser_warnings = list(parse_result.get("warnings") or [])
+            preview_rows_full = build_preview_rows(repo, bundle_layout, parsed_rows)
+        except Exception as exc:
+            bundle_warnings.append(f"{file_name}: parse failed ({exc})")
+            continue
+
+        import_job_id, staged_row_count, staging_warning = stage_import_preview(
+            repo,
+            layout_key=bundle_layout,
+            source_system=source_system,
+            source_object=source_object or "bundle_upload",
+            file_name=file_name,
+            file_type=str(file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""),
+            detected_format=effective_format,
+            parser_options=parser_options,
+            preview_rows=preview_rows_full,
+            stage_area_rows=stage_area_rows,
+            actor_user_principal=user.user_principal,
+        )
+        if staging_warning:
+            parser_warnings.append(staging_warning)
+
+        bundle_files.append(
+            {
+                "layout_key": bundle_layout,
+                "file_name": file_name,
+                "detected_format": detected_format,
+                "effective_format": effective_format,
+                "parser_options": parser_options,
+                "parser_warnings": parser_warnings,
+                "import_job_id": import_job_id,
+                "staged_row_count": int(staged_row_count or 0),
+                "source_rows": source_rows,
+                "source_fields": source_fields,
+                "source_target_mapping": resolved_source_target_mapping,
+                "field_mapping": resolved_field_mapping,
+                "stage_area_rows": stage_area_rows,
+                "rows": preview_rows_full,
+            }
+        )
+
+    if not bundle_files:
+        add_flash(request, "No valid files were parsed from the upload bundle.", "error")
         return RedirectResponse(url="/imports", status_code=303)
 
-    import_job_id, staged_row_count, staging_warning = stage_import_preview(
-        repo,
-        layout_key=selected_layout,
-        source_system=source_system,
-        source_object=source_object,
-        file_name=source_file_name,
-        file_type=str(source_file_name.rsplit(".", 1)[-1].lower() if "." in source_file_name else ""),
-        detected_format=effective_format,
-        parser_options=parser_options,
-        preview_rows=preview_rows_full,
-        stage_area_rows=stage_area_rows,
-        actor_user_principal=user.user_principal,
+    selected_bundle_index = 0
+    selected_bundle_file = bundle_files[selected_bundle_index]
+    bundle_summaries, bundle_totals = _bundle_file_summaries(bundle_files)
+    bundle_layout = safe_layout(str(selected_bundle_file.get("layout_key") or "vendors"))
+    source_fields = list(selected_bundle_file.get("source_fields") or [])
+    available_profiles = load_mapping_profiles(repo, user_principal=user.user_principal, layout_key=bundle_layout)
+    compatible = compatible_profiles(
+        profiles=available_profiles,
+        file_format=str(selected_bundle_file.get("effective_format") or ""),
+        source_fields=source_fields,
     )
 
     preview_payload = {
-        "layout_key": selected_layout,
+        "is_bundle": True,
+        "bundle_files": bundle_files,
+        "bundle_selected_index": selected_bundle_index,
+        "bundle_warnings": bundle_warnings,
+        "layout_key": bundle_layout,
         "source_system": source_system,
         "source_object": source_object,
-        "source_file_name": source_file_name,
-        "flow_mode": flow_mode,
-        "detected_format": detected_format,
-        "effective_format": effective_format,
-        "parser_options": parser_options,
-        "parser_warnings": parser_warnings,
-        "import_job_id": import_job_id,
-        "source_rows": source_rows,
+        "source_file_name": str(selected_bundle_file.get("file_name") or ""),
+        "flow_mode": "wizard",
+        "detected_format": str(selected_bundle_file.get("detected_format") or ""),
+        "effective_format": str(selected_bundle_file.get("effective_format") or ""),
+        "parser_options": dict(selected_bundle_file.get("parser_options") or {}),
+        "parser_warnings": list(selected_bundle_file.get("parser_warnings") or []),
+        "import_job_id": str(selected_bundle_file.get("import_job_id") or ""),
+        "source_rows": list(selected_bundle_file.get("source_rows") or []),
         "source_fields": source_fields,
-        "source_target_mapping": resolved_source_target_mapping,
-        "field_mapping": resolved_field_mapping,
-        "stage_area_rows": stage_area_rows,
-        "selected_mapping_profile_id": selected_mapping_profile_id,
-        "selected_mapping_profile_name": selected_mapping_profile_name,
-        "rows": preview_rows_full,
+        "source_target_mapping": dict(selected_bundle_file.get("source_target_mapping") or {}),
+        "field_mapping": dict(selected_bundle_file.get("field_mapping") or {}),
+        "stage_area_rows": dict(selected_bundle_file.get("stage_area_rows") or {}),
+        "rows": list(selected_bundle_file.get("rows") or []),
+        "selected_mapping_profile_id": "",
+        "selected_mapping_profile_name": "",
     }
     preview_token = save_preview_payload(preview_payload)
-    preview_rows = preview_rows_full[:IMPORT_PREVIEW_RENDER_LIMIT]
-    preview_total_rows = len(preview_rows_full)
+    selected_preview_rows_full = list(selected_bundle_file.get("rows") or [])
+    preview_rows = selected_preview_rows_full[:IMPORT_PREVIEW_RENDER_LIMIT]
+    preview_total_rows = len(selected_preview_rows_full)
     preview_hidden_count = max(0, preview_total_rows - len(preview_rows))
 
+    parser_warnings = list(selected_bundle_file.get("parser_warnings") or [])
+    parser_warnings.extend(bundle_warnings)
+    context_payload = render_context(
+        selected_layout=bundle_layout,
+        selected_flow_mode="wizard",
+        selected_source_system=source_system,
+        source_object=source_object,
+        source_file_name=str(selected_bundle_file.get("file_name") or ""),
+        detected_file_type=str(selected_bundle_file.get("detected_format") or ""),
+        effective_file_type=str(selected_bundle_file.get("effective_format") or ""),
+        parser_options=dict(selected_bundle_file.get("parser_options") or {}),
+        parser_warnings=parser_warnings,
+        staging_job_id=str(selected_bundle_file.get("import_job_id") or ""),
+        staged_row_count=int(selected_bundle_file.get("staged_row_count") or 0),
+        preview_token=preview_token,
+        preview_rows=preview_rows,
+        preview_total_rows=preview_total_rows,
+        preview_hidden_count=preview_hidden_count,
+        source_field_map=source_fields,
+        selected_source_target_mapping=dict(selected_bundle_file.get("source_target_mapping") or {}),
+        mapping_profiles=_decorate_mapping_profiles(
+            profiles=available_profiles,
+            compatible=compatible,
+        ),
+        selected_mapping_profile_id="",
+        import_reason="",
+    )
+    context_payload.update(
+        {
+            "bundle_mode": True,
+            "bundle_files": bundle_summaries,
+            "bundle_totals": bundle_totals,
+            "bundle_selected_index": selected_bundle_index,
+        }
+    )
     context = imports_module.base_template_context(
         request,
         user,
         title="Data Imports",
         active_nav="imports",
-        extra=render_context(
-            selected_layout=selected_layout,
-            selected_flow_mode=flow_mode,
-            selected_source_system=source_system,
-            source_object=source_object,
-            source_file_name=source_file_name,
-            detected_file_type=detected_format,
-            effective_file_type=effective_format,
-            parser_options=parser_options,
-            parser_warnings=parser_warnings,
-            staging_job_id=import_job_id,
-            staged_row_count=staged_row_count,
-            staging_warning=staging_warning,
-            preview_token=preview_token,
-            preview_rows=preview_rows,
-            preview_total_rows=preview_total_rows,
-            preview_hidden_count=preview_hidden_count,
-            source_field_map=source_fields,
-            selected_source_target_mapping=resolved_source_target_mapping,
-            mapping_profiles=_decorate_mapping_profiles(
-                profiles=available_profiles,
-                compatible=compatible,
-            ),
-            selected_mapping_profile_id=selected_mapping_profile_id,
-            import_reason="",
-        ),
+        extra=context_payload,
     )
     return request.app.state.templates.TemplateResponse(request, "imports.html", context)
 
@@ -285,6 +576,9 @@ async def imports_remap(request: Request):
     payload = load_preview_payload(preview_token)
     if payload is None:
         add_flash(request, "Import preview expired. Upload the file again.", "error")
+        return RedirectResponse(url="/imports", status_code=303)
+    if bool(payload.get("is_bundle")):
+        add_flash(request, "Bundle remap is not available in this view. Apply eligible rows or upload a single file to remap.", "info")
         return RedirectResponse(url="/imports", status_code=303)
 
     layout_key = safe_layout(str(payload.get("layout_key") or "vendors"))
@@ -454,10 +748,250 @@ async def imports_apply(request: Request):
     form = await request.form()
     preview_token = str(form.get("preview_token", "")).strip()
     reason = str(form.get("reason", "")).strip()
+    apply_mode = str(form.get("apply_mode", "apply_eligible") or "apply_eligible").strip().lower()
+    if apply_mode not in {"stage_only", "apply_eligible", "reprocess"}:
+        apply_mode = "apply_eligible"
     payload = load_preview_payload(preview_token)
     if payload is None:
         add_flash(request, "Import preview expired. Upload the file again.", "error")
         return RedirectResponse(url="/imports", status_code=303)
+
+    if bool(payload.get("is_bundle")):
+        bundle_files_payload = [dict(item) for item in list(payload.get("bundle_files") or [])]
+        if not bundle_files_payload:
+            add_flash(request, "Bundle preview expired. Upload files again.", "error")
+            return RedirectResponse(url="/imports", status_code=303)
+
+        if apply_mode == "stage_only":
+            add_flash(request, "Bundle rows are staged. No core-table writes were executed.", "success")
+        else:
+            apply_context = ImportApplyContext(repo)
+            order_rank = {"vendors": 0, "offerings": 1, "projects": 2, "invoices": 3, "payments": 4}
+            ordered_files = sorted(
+                list(enumerate(bundle_files_payload)),
+                key=lambda item: int(order_rank.get(str(item[1].get("layout_key") or "").strip().lower(), 99)),
+            )
+            global_created = 0
+            global_merged = 0
+            global_skipped = 0
+            global_failed = 0
+            global_blocked = 0
+            child_apply_counts: dict[str, int] = {}
+            bundle_results: list[dict[str, Any]] = []
+
+            for file_index, file_payload in ordered_files:
+                file_layout = safe_layout(str(file_payload.get("layout_key") or "vendors"))
+                file_rows = list(file_payload.get("rows") or [])
+                file_stage_rows = {
+                    str(area): list(rows or [])
+                    for area, rows in dict(file_payload.get("stage_area_rows") or {}).items()
+                }
+                file_created = 0
+                file_merged = 0
+                file_skipped = 0
+                file_failed = 0
+                file_blocked = 0
+
+                for preview_row in file_rows:
+                    row_index = int(preview_row.get("row_index") or 0)
+                    row_data = dict(preview_row.get("row_data") or {})
+                    row_status = str(preview_row.get("row_status") or "").strip().lower()
+                    if row_status == "error":
+                        file_skipped += 1
+                        if len(bundle_results) < IMPORT_RESULTS_RENDER_LIMIT:
+                            bundle_results.append(
+                                {
+                                    "row_index": row_index,
+                                    "status": "skipped",
+                                    "message": f"{file_payload.get('file_name')}: skipped due to preview errors.",
+                                }
+                            )
+                        continue
+
+                    selected_action = "new"
+                    target_id = str(preview_row.get("suggested_target_id") or "").strip()
+                    fallback_target_vendor_id = str(preview_row.get("suggested_target_vendor_id") or "").strip()
+                    try:
+                        status, message, apply_result = apply_import_row(
+                            repo,
+                            layout_key=file_layout,
+                            row_data=row_data,
+                            action=selected_action,
+                            target_id=target_id,
+                            fallback_target_vendor_id=fallback_target_vendor_id,
+                            actor_user_principal=user.user_principal,
+                            reason=reason or "bundle import",
+                            apply_context=apply_context,
+                        )
+                        child_counts = apply_stage_area_rows_for_row(
+                            repo,
+                            stage_area_rows=file_stage_rows,
+                            row_index=row_index,
+                            selected_action=selected_action,
+                            row_data=row_data,
+                            fallback_target_vendor_id=fallback_target_vendor_id,
+                            primary_result=apply_result,
+                            actor_user_principal=user.user_principal,
+                            reason=reason or "bundle import",
+                            apply_context=apply_context,
+                        )
+                        if child_counts:
+                            parts = [f"{key}={value}" for key, value in sorted(child_counts.items())]
+                            message = f"{message} | child writes: {', '.join(parts)}"
+                            for key, value in child_counts.items():
+                                child_apply_counts[key] = int(child_apply_counts.get(key, 0)) + int(value or 0)
+                        if status == "created":
+                            file_created += 1
+                        elif status == "merged":
+                            file_merged += 1
+                        else:
+                            file_skipped += 1
+                        if len(bundle_results) < IMPORT_RESULTS_RENDER_LIMIT:
+                            bundle_results.append(
+                                {
+                                    "row_index": row_index,
+                                    "status": status,
+                                    "message": f"{file_payload.get('file_name')}: {message}",
+                                }
+                            )
+                    except Exception as exc:
+                        raw_error = str(exc)
+                        lowered = raw_error.lower()
+                        if "dependency" in lowered:
+                            file_blocked += 1
+                            file_skipped += 1
+                            status_key = "blocked"
+                        else:
+                            file_failed += 1
+                            status_key = "failed"
+                        if len(bundle_results) < IMPORT_RESULTS_RENDER_LIMIT:
+                            bundle_results.append(
+                                {
+                                    "row_index": row_index,
+                                    "status": status_key,
+                                    "message": f"{file_payload.get('file_name')}: {raw_error}",
+                                }
+                            )
+
+                global_created += file_created
+                global_merged += file_merged
+                global_skipped += file_skipped
+                global_failed += file_failed
+                global_blocked += file_blocked
+                finalize_import_staging_job(
+                    repo,
+                    import_job_id=str(file_payload.get("import_job_id") or "").strip(),
+                    created_count=file_created,
+                    merged_count=file_merged,
+                    skipped_count=file_skipped,
+                    failed_count=file_failed,
+                    actor_user_principal=user.user_principal,
+                    error_message=(
+                        "Blocked rows remain staged for dependency reprocess."
+                        if file_blocked and file_failed == 0
+                        else ("" if file_failed == 0 else "One or more bundle row apply operations failed.")
+                    ),
+                )
+
+            if global_failed == 0:
+                add_flash(
+                    request,
+                    (
+                        "Bundle apply complete. "
+                        f"created={global_created}, merged={global_merged}, skipped={global_skipped}, blocked={global_blocked}, failed={global_failed}"
+                    ),
+                    "success",
+                )
+            else:
+                add_flash(
+                    request,
+                    (
+                        "Bundle apply completed with errors. "
+                        f"created={global_created}, merged={global_merged}, skipped={global_skipped}, blocked={global_blocked}, failed={global_failed}"
+                    ),
+                    "error",
+                )
+            if child_apply_counts:
+                child_summary = ", ".join([f"{key}={value}" for key, value in sorted(child_apply_counts.items())])
+                add_flash(request, f"Applied child entity writes: {child_summary}", "info")
+            if global_blocked > 0:
+                add_flash(
+                    request,
+                    "Blocked rows remain staged. Use 'Reprocess Blocked' after upstream dependencies are loaded.",
+                    "info",
+                )
+            if len(bundle_results) > IMPORT_RESULTS_RENDER_LIMIT:
+                hidden_results = len(bundle_results) - IMPORT_RESULTS_RENDER_LIMIT
+                add_flash(
+                    request,
+                    f"Showing first {IMPORT_RESULTS_RENDER_LIMIT} bundle result rows. {hidden_results} additional rows were processed.",
+                    "info",
+                )
+            payload["bundle_last_results"] = bundle_results
+            preview_token = save_preview_payload(payload)
+
+        selected_bundle_index = int(payload.get("bundle_selected_index") or 0)
+        if selected_bundle_index < 0 or selected_bundle_index >= len(bundle_files_payload):
+            selected_bundle_index = 0
+        selected_bundle_file = dict(bundle_files_payload[selected_bundle_index])
+        bundle_layout = safe_layout(str(selected_bundle_file.get("layout_key") or "vendors"))
+        source_fields = list(selected_bundle_file.get("source_fields") or [])
+        selected_source_target_mapping = dict(selected_bundle_file.get("source_target_mapping") or {})
+        available_profiles = load_mapping_profiles(repo, user_principal=user.user_principal, layout_key=bundle_layout)
+        compatible = compatible_profiles(
+            profiles=available_profiles,
+            file_format=str(selected_bundle_file.get("effective_format") or ""),
+            source_fields=source_fields,
+        )
+        selected_preview_rows_full = list(selected_bundle_file.get("rows") or [])
+        preview_rows = selected_preview_rows_full[:IMPORT_PREVIEW_RENDER_LIMIT]
+        preview_total_rows = len(selected_preview_rows_full)
+        preview_hidden_count = max(0, preview_total_rows - len(preview_rows))
+        bundle_summaries, bundle_totals = _bundle_file_summaries(bundle_files_payload)
+        bundle_results = list(payload.get("bundle_last_results") or [])
+
+        context_payload = render_context(
+            selected_layout=bundle_layout,
+            selected_flow_mode="wizard",
+            selected_source_system=safe_source_system(str(payload.get("source_system") or "spreadsheet_manual")),
+            source_object=str(payload.get("source_object") or "").strip(),
+            source_file_name=str(selected_bundle_file.get("file_name") or ""),
+            detected_file_type=str(selected_bundle_file.get("detected_format") or ""),
+            effective_file_type=str(selected_bundle_file.get("effective_format") or ""),
+            parser_options=dict(selected_bundle_file.get("parser_options") or {}),
+            parser_warnings=list(selected_bundle_file.get("parser_warnings") or []) + list(payload.get("bundle_warnings") or []),
+            staging_job_id=str(selected_bundle_file.get("import_job_id") or ""),
+            staged_row_count=int(selected_bundle_file.get("staged_row_count") or 0),
+            preview_token=preview_token,
+            preview_rows=preview_rows,
+            preview_total_rows=preview_total_rows,
+            preview_hidden_count=preview_hidden_count,
+            source_field_map=source_fields,
+            selected_source_target_mapping=selected_source_target_mapping,
+            mapping_profiles=_decorate_mapping_profiles(
+                profiles=available_profiles,
+                compatible=compatible,
+            ),
+            selected_mapping_profile_id="",
+            import_results=bundle_results[:IMPORT_RESULTS_RENDER_LIMIT],
+            import_reason=reason,
+        )
+        context_payload.update(
+            {
+                "bundle_mode": True,
+                "bundle_files": bundle_summaries,
+                "bundle_totals": bundle_totals,
+                "bundle_selected_index": selected_bundle_index,
+            }
+        )
+        context = imports_module.base_template_context(
+            request,
+            user,
+            title="Data Imports",
+            active_nav="imports",
+            extra=context_payload,
+        )
+        return request.app.state.templates.TemplateResponse(request, "imports.html", context)
 
     layout_key = safe_layout(str(payload.get("layout_key") or "vendors"))
     flow_mode = safe_flow_mode(str(payload.get("flow_mode") or "wizard"))

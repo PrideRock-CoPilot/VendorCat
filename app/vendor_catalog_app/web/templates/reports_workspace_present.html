@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_reports_chart_macros.html" import render_chart %}
 {% block content %}
 <div class="section-header">
   <div>
@@ -26,28 +27,7 @@
 
     {% if widget.show_chart %}
       {% if widget.chart_rows %}
-        {% if widget.chart_kind == "line" %}
-        <svg class="line-chart" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="line chart">
-          <line class="axis-line" x1="5" y1="90" x2="95" y2="90"></line>
-          <line class="axis-line" x1="5" y1="10" x2="5" y2="90"></line>
-          <polyline class="trend-line" points="{{ widget.chart_line_path }}"></polyline>
-          {% for point in widget.chart_line_points %}
-          <circle class="trend-point" cx="{{ point.x }}" cy="{{ point.y }}" r="1.4">
-            <title>{{ point.label }}: {{ point.value_display }}</title>
-          </circle>
-          {% endfor %}
-        </svg>
-        {% else %}
-        <div class="graph-block">
-          {% for row in widget.chart_rows %}
-          <div class="bar-row">
-            <div class="bar-label">{{ row.label }}</div>
-            <div class="bar-track"><div class="bar-fill" style="width: {{ row.width_pct }}%;"></div></div>
-            <div class="bar-value">{{ row.value_display }} <small class="muted">({{ row.share_pct }}%)</small></div>
-          </div>
-          {% endfor %}
-        </div>
-        {% endif %}
+        {{ render_chart(widget.chart_kind, widget.chart_rows, widget.chart_line_path, widget.chart_line_points) }}
       {% else %}
       <p class="muted">No chartable rows for this widget.</p>
       {% endif %}

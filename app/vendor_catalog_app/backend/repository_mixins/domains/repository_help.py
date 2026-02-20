@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pandas as pd
+
 
 class RepositoryHelpMixin:
     def list_help_article_index(self) -> list[dict[str, Any]]:
@@ -167,3 +169,43 @@ class RepositoryHelpMixin:
             vendor_help_issue=self._table("vendor_help_issue"),
         )
         return issue_id
+
+    def list_help_feedback(self, *, limit: int = 200, offset: int = 0) -> pd.DataFrame:
+        normalized_limit = max(1, min(int(limit or 200), 1000))
+        normalized_offset = max(0, int(offset or 0))
+        return self._query_file(
+            "reporting/list_help_feedback.sql",
+            columns=[
+                "feedback_id",
+                "article_id",
+                "article_slug",
+                "was_helpful",
+                "comment",
+                "user_principal",
+                "page_path",
+                "created_at",
+            ],
+            vendor_help_feedback=self._table("vendor_help_feedback"),
+            limit=normalized_limit,
+            offset=normalized_offset,
+        )
+
+    def list_help_issues(self, *, limit: int = 200, offset: int = 0) -> pd.DataFrame:
+        normalized_limit = max(1, min(int(limit or 200), 1000))
+        normalized_offset = max(0, int(offset or 0))
+        return self._query_file(
+            "reporting/list_help_issues.sql",
+            columns=[
+                "issue_id",
+                "article_id",
+                "article_slug",
+                "issue_title",
+                "issue_description",
+                "page_path",
+                "user_principal",
+                "created_at",
+            ],
+            vendor_help_issue=self._table("vendor_help_issue"),
+            limit=normalized_limit,
+            offset=normalized_offset,
+        )

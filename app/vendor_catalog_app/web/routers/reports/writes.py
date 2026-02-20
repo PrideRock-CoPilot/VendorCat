@@ -8,7 +8,19 @@ from fastapi.responses import RedirectResponse
 from vendor_catalog_app.web.core.runtime import get_repo
 from vendor_catalog_app.web.core.user_context_service import get_user_context
 from vendor_catalog_app.web.http.flash import add_flash
-from vendor_catalog_app.web.routers.reports.common import *
+from vendor_catalog_app.web.routers.reports.common import (
+    DATABRICKS_SELECTED_REPORT_PARAM,
+    REPORT_TYPES,
+    _build_report_frame,
+    _can_use_reports,
+    _normalize_report_filters,
+    _report_query_payload,
+    _resolve_selected_columns,
+    _safe_query_params,
+    _safe_report_key,
+    _workspace_delete_board,
+    _workspace_upsert_board,
+)
 from vendor_catalog_app.web.security.rbac import require_permission
 
 router = APIRouter()
@@ -27,7 +39,7 @@ async def reports_email_request(request: Request):
         add_flash(request, "You do not have permission to request emailed extracts.", "error")
         return RedirectResponse(url="/dashboard", status_code=303)
 
-    report_type = _safe_report_type(str(form.get("report_type", "vendor_inventory")))
+    report_type = str(form.get("report_type", "vendor_inventory"))
     search = str(form.get("search", "")).strip()
     vendor = str(form.get("vendor", "all")).strip() or "all"
     lifecycle_state = str(form.get("lifecycle_state", "all")).strip() or "all"
@@ -38,39 +50,42 @@ async def reports_email_request(request: Request):
     legacy_org = str(form.get("org", "")).strip()
     selected_lob = lob or legacy_org or "all"
     cols = str(form.get("cols", "")).strip()
-    view_mode = _safe_view_mode(str(form.get("view_mode", "both")))
-    chart_kind = _safe_chart_kind(str(form.get("chart_kind", "bar")))
+    view_mode = str(form.get("view_mode", "both")).strip()
+    chart_kind = str(form.get("chart_kind", "bar")).strip()
     chart_x = str(form.get("chart_x", "")).strip()
     chart_y = str(form.get("chart_y", "")).strip()
     dbx_report = _safe_report_key(str(form.get("dbx_report", "")).strip(), "")
 
     email_to = str(form.get("email_to", "")).strip()
     email_subject = str(form.get("email_subject", "")).strip()
-    limit_text = str(form.get("limit", "500")).strip()
-    horizon_text = str(form.get("horizon_days", "180")).strip()
-
-    try:
-        limit = int(limit_text)
-    except ValueError:
-        limit = 500
-    try:
-        horizon_days = int(horizon_text)
-    except ValueError:
-        horizon_days = 180
-
-    if lifecycle_state not in VENDOR_LIFECYCLE_STATES:
-        lifecycle_state = "all"
-    if project_status not in PROJECT_STATUSES:
-        project_status = "all"
-    if outcome not in DEMO_OUTCOMES:
-        outcome = "all"
-    if limit not in ROW_LIMITS:
-        limit = 500
-
-    orgs = repo.available_orgs()
-    if selected_lob not in orgs:
-        selected_lob = "all"
-    horizon_days = max(30, min(horizon_days, 730))
+    normalized = _normalize_report_filters(
+        repo,
+        report_type=report_type,
+        search=search,
+        vendor=vendor,
+        lifecycle_state=lifecycle_state,
+        project_status=project_status,
+        outcome=outcome,
+        owner_principal=owner_principal,
+        lob=selected_lob,
+        org=None,
+        horizon_days=str(form.get("horizon_days", "180")).strip(),
+        limit=str(form.get("limit", "500")).strip(),
+        view_mode=view_mode,
+        chart_kind=chart_kind,
+    )
+    report_type = str(normalized["report_type"])
+    search = str(normalized["search"])
+    vendor = str(normalized["vendor"])
+    lifecycle_state = str(normalized["lifecycle_state"])
+    project_status = str(normalized["project_status"])
+    outcome = str(normalized["outcome"])
+    owner_principal = str(normalized["owner_principal"])
+    selected_lob = str(normalized["lob"])
+    horizon_days = int(normalized["horizon_days"])
+    limit = int(normalized["limit"])
+    view_mode = str(normalized["view_mode"])
+    chart_kind = str(normalized["chart_kind"])
 
     if not email_to or "@" not in email_to:
         add_flash(request, "Provide a valid email recipient.", "error")

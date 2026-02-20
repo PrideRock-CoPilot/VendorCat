@@ -121,7 +121,7 @@ def _build_executive_alerts(
 
 def _dashboard_module():
     # Resolve through package namespace so tests can monkeypatch dashboard.get_user_context.
-    from vendor_catalog_app.web.routers import dashboard as dashboard_module
+    import vendor_catalog_app.web.routers.dashboard as dashboard_module
 
     return dashboard_module
 
@@ -136,6 +136,8 @@ def dashboard(
 ):
     dashboard_module = _dashboard_module()
     user = dashboard_module.get_user_context(request)
+    if not set(getattr(user, "roles", set()) or set()):
+        return RedirectResponse(url="/access/request", status_code=303)
     if not has_seen_startup_splash_for_current_run(request):
         passthrough_params = dict(request.query_params)
         passthrough_params["splash"] = "1"
@@ -144,8 +146,6 @@ def dashboard(
         return render_startup_splash(request, redirect_url)
 
     repo = dashboard_module.get_repo()
-    if not set(getattr(user, "roles", set()) or set()):
-        return RedirectResponse(url="/access/request", status_code=303)
     dashboard_module.ensure_session_started(request, user)
     dashboard_module.log_page_view(request, user, "Dashboard")
 

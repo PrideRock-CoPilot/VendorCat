@@ -15,6 +15,14 @@ from vendor_catalog_app.web.security.rbac import require_permission
 router = APIRouter(prefix="/admin")
 
 
+def _access_tab_redirect(tab_value: str | None = None) -> str:
+    tab = str(tab_value or "").strip().lower()
+    base = _admin_redirect_url(section=ADMIN_SECTION_ACCESS)
+    if tab in {"users", "groups", "lob", "roles"}:
+        return f"{base}?tab={tab}"
+    return base
+
+
 @router.post("/grant-scope")
 @require_permission("admin_scope_manage")
 async def grant_scope(request: Request):
@@ -28,12 +36,13 @@ async def grant_scope(request: Request):
         return RedirectResponse(url="/dashboard", status_code=303)
 
     form = await request.form()
+    selected_tab = str(form.get("tab", "lob")).strip().lower()
     target_user = str(form.get("target_user", "")).strip()
     lob_id = str(form.get("lob_id", "")).strip() or str(form.get("org_id", "")).strip()
     scope_level = str(form.get("scope_level", "")).strip()
     if not target_user or not lob_id or not scope_level:
         add_flash(request, "User, line of business, and scope level are required.", "error")
-        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+        return RedirectResponse(url=_access_tab_redirect(selected_tab), status_code=303)
 
     repo.grant_org_scope(
         target_user_principal=target_user,
@@ -48,7 +57,7 @@ async def grant_scope(request: Request):
         payload={"target_user": target_user, "lob_id": lob_id, "scope_level": scope_level},
     )
     add_flash(request, "LOB scope grant recorded.", "success")
-    return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+    return RedirectResponse(url=_access_tab_redirect(selected_tab), status_code=303)
 
 
 @router.post("/revoke-scope")
@@ -64,12 +73,13 @@ async def revoke_scope(request: Request):
         return RedirectResponse(url="/dashboard", status_code=303)
 
     form = await request.form()
+    selected_tab = str(form.get("tab", "lob")).strip().lower()
     target_user = str(form.get("target_user", "")).strip()
     lob_id = str(form.get("lob_id", "")).strip() or str(form.get("org_id", "")).strip()
     scope_level = str(form.get("scope_level", "")).strip().lower()
     if not target_user or not lob_id or not scope_level:
         add_flash(request, "User, line of business, and scope level are required.", "error")
-        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+        return RedirectResponse(url=_access_tab_redirect(selected_tab), status_code=303)
     target_user = repo.resolve_user_login_identifier(target_user) or target_user
 
     try:
@@ -81,7 +91,7 @@ async def revoke_scope(request: Request):
         )
     except Exception as exc:
         add_flash(request, f"Could not revoke LOB scope: {exc}", "error")
-        return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+        return RedirectResponse(url=_access_tab_redirect(selected_tab), status_code=303)
 
     repo.log_usage_event(
         user_principal=user.user_principal,
@@ -90,5 +100,5 @@ async def revoke_scope(request: Request):
         payload={"target_user": target_user, "lob_id": lob_id, "scope_level": scope_level},
     )
     add_flash(request, "LOB scope revoked.", "success")
-    return RedirectResponse(url=_admin_redirect_url(section=ADMIN_SECTION_ACCESS), status_code=303)
+    return RedirectResponse(url=_access_tab_redirect(selected_tab), status_code=303)
 

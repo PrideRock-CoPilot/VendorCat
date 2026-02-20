@@ -187,8 +187,10 @@ def diagnostic_recommendations(
         recs.append("⚠️ Verify Unity Catalog privileges: USE CATALOG, USE SCHEMA, and SELECT on required tables.")
     if object_probe_failures:
         recs.append(
-            "❌ Schema objects missing or inaccessible. Run V1 bootstrap notebook: setup/databricks/notebooks/v1_create_schema.ipynb"
+            "FAIL: Schema objects missing or inaccessible. Run production bootstrap notebook: setup/production_push/production_push_setup.ipynb"
         )
+        recs.append("   -> Use widgets: operation=apply, include_seed=true (include_optimize as needed).")
+        recs.append("   -> Alternate notebook: setup/databricks/notebooks/v1_apply_database_changes.ipynb")
         recs.append(f"   → Missing/Failed: {', '.join(object_probe_failures[:5])}{'...' if len(object_probe_failures) > 5 else ''}")
     return recs
 

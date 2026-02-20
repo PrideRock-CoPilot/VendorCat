@@ -76,13 +76,14 @@ def client(monkeypatch: pytest.MonkeyPatch, isolated_local_db: Path) -> TestClie
 
 def test_access_request_page_shows_existing_request_status_and_locks_submit(client: TestClient) -> None:
     repo = get_repo()
+    principal = "bob.smith@example.com"
     request_id = repo.create_access_request(
-        requestor_user_principal="admin@example.com",
+        requestor_user_principal=principal,
         requested_role="vendor_viewer",
         justification="Need read access for onboarding.",
     )
 
-    response = client.get("/access/request")
+    response = client.get(f"/access/request?as_user={principal}")
     assert response.status_code == 200
     assert "Your Access Requests" in response.text
     assert request_id in response.text
@@ -96,32 +97,38 @@ def test_access_request_page_shows_existing_request_status_and_locks_submit(clie
 
 def test_access_request_submit_is_blocked_when_open_request_exists(client: TestClient) -> None:
     repo = get_repo()
+    principal = "bob.smith@example.com"
     repo.create_access_request(
-        requestor_user_principal="admin@example.com",
+        requestor_user_principal=principal,
         requested_role="vendor_viewer",
         justification="Need read access for onboarding.",
     )
-    before_count = len(_access_request_rows_for_user(repo, "admin@example.com"))
+    before_count = len(_access_request_rows_for_user(repo, principal))
 
     response = client.post(
-        "/access/request",
+        f"/access/request?as_user={principal}",
         data={
             "requested_role": "vendor_auditor",
             "justification": "Need auditor access for controls review.",
         },
-        follow_redirects=True,
+        follow_redirects=False,
     )
-    assert response.status_code == 200
-    assert "An access request is already open for your account." in response.text
+    assert response.status_code == 303
+    assert str(response.headers.get("location", "")) == "/access/request"
 
-    after_count = len(_access_request_rows_for_user(repo, "admin@example.com"))
+    page = client.get(f"/access/request?as_user={principal}")
+    assert page.status_code == 200
+    assert "An access request is already open for your account." in page.text
+
+    after_count = len(_access_request_rows_for_user(repo, principal))
     assert after_count == before_count
 
 
 def test_access_request_submit_allowed_after_terminal_decision(client: TestClient) -> None:
     repo = get_repo()
+    principal = "amy.johnson@example.com"
     request_id = repo.create_access_request(
-        requestor_user_principal="admin@example.com",
+        requestor_user_principal=principal,
         requested_role="vendor_viewer",
         justification="Need read access for onboarding.",
     )
@@ -132,13 +139,13 @@ def test_access_request_submit_allowed_after_terminal_decision(client: TestClien
         notes="Request closed for retargeting role.",
     )
 
-    page = client.get("/access/request")
+    page = client.get(f"/access/request?as_user={principal}")
     assert page.status_code == 200
     assert "Rejected" in page.text
 
-    before_count = len(_access_request_rows_for_user(repo, "admin@example.com"))
+    before_count = len(_access_request_rows_for_user(repo, principal))
     submit = client.post(
-        "/access/request",
+        f"/access/request?as_user={principal}",
         data={
             "requested_role": "vendor_auditor",
             "justification": "Need auditor role for quarterly validation.",
@@ -148,7 +155,7 @@ def test_access_request_submit_allowed_after_terminal_decision(client: TestClien
     assert submit.status_code == 303
     assert str(submit.headers.get("location", "")) == "/access/request"
 
-    after_count = len(_access_request_rows_for_user(repo, "admin@example.com"))
+    after_count = len(_access_request_rows_for_user(repo, principal))
     assert after_count == before_count + 1
 
 
@@ -196,14 +203,18 @@ def test_access_request_shows_thank_you_then_in_progress_on_reload(client: TestC
             notes="Test cleanup: close prior open request.",
         )
 
-    first_view = client.post(
+    first_submit = client.post(
         f"/access/request?as_user={principal}",
         data={
             "requested_role": "vendor_viewer",
             "justification": "Need access for status messaging test.",
         },
-        follow_redirects=True,
+        follow_redirects=False,
     )
+    assert first_submit.status_code == 303
+    assert str(first_submit.headers.get("location", "")) == "/access/request"
+
+    first_view = client.get(f"/access/request?as_user={principal}")
     assert first_view.status_code == 200
     assert "Thank you for submitting your access request." in first_view.text
     assert "Request ID:" in first_view.text
@@ -232,6 +243,26 @@ def test_access_request_shows_initial_admin_bootstrap_when_no_approvers(
     assert "No approvers are configured yet. Activate an initial admin first." in response.text
 
 
+def test_access_request_redirects_after_role_grant_even_with_stale_session_snapshot(
+    client: TestClient,
+) -> None:
+    repo = get_repo()
+    principal = "amy.johnson@example.com"
+
+    first_view = client.get(f"/access/request?as_user={principal}", follow_redirects=False)
+    assert first_view.status_code == 200
+
+    repo.grant_role(
+        target_user_principal=principal,
+        role_code="vendor_viewer",
+        granted_by="admin@example.com",
+    )
+
+    second_view = client.get(f"/access/request?as_user={principal}", follow_redirects=False)
+    assert second_view.status_code == 303
+    assert str(second_view.headers.get("location", "")) == "/dashboard"
+
+
 def test_initial_admin_bootstrap_password_grants_admin_and_disables_prompt(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -253,6 +284,6 @@ def test_initial_admin_bootstrap_password_grants_admin_and_disables_prompt(
     repo._cache_clear()
     assert "vendor_admin" in repo.get_user_roles("admin@example.com")
 
-    request_page = client.get("/access/request")
-    assert request_page.status_code == 200
-    assert "Initial Admin Setup Required" not in request_page.text
+    request_page = client.get("/access/request", follow_redirects=False)
+    assert request_page.status_code == 303
+    assert str(request_page.headers.get("location", "")) == "/dashboard"

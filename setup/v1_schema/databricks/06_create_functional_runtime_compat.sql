@@ -490,6 +490,24 @@ CREATE TABLE IF NOT EXISTS app_offering_invoice (
   updated_by STRING NOT NULL
 ) USING DELTA;
 
+CREATE TABLE IF NOT EXISTS app_offering_payment (
+  payment_id STRING,
+  invoice_id STRING NOT NULL,
+  offering_id STRING NOT NULL,
+  vendor_id STRING NOT NULL,
+  payment_reference STRING,
+  payment_date STRING NOT NULL,
+  amount DOUBLE NOT NULL,
+  currency_code STRING NOT NULL,
+  payment_status STRING NOT NULL,
+  notes STRING,
+  active_flag INT NOT NULL DEFAULT 1,
+  created_at STRING NOT NULL,
+  created_by STRING NOT NULL,
+  updated_at STRING NOT NULL,
+  updated_by STRING NOT NULL
+) USING DELTA;
+
 CREATE TABLE IF NOT EXISTS app_document_link (
   doc_id STRING,
   entity_type STRING NOT NULL,
@@ -603,6 +621,24 @@ CREATE TABLE IF NOT EXISTS app_import_stage_contract (
 ) USING DELTA;
 
 CREATE TABLE IF NOT EXISTS app_import_stage_project (
+  import_stage_area_row_id STRING,
+  import_job_id STRING NOT NULL,
+  row_index INT NOT NULL,
+  line_number STRING,
+  area_payload_json STRING NOT NULL,
+  created_at STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS app_import_stage_invoice (
+  import_stage_area_row_id STRING,
+  import_job_id STRING NOT NULL,
+  row_index INT NOT NULL,
+  line_number STRING,
+  area_payload_json STRING NOT NULL,
+  created_at STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS app_import_stage_payment (
   import_stage_area_row_id STRING,
   import_job_id STRING NOT NULL,
   row_index INT NOT NULL,

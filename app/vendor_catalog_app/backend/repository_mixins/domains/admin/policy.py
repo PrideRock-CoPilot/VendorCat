@@ -161,20 +161,10 @@ class RepositoryAdminPolicyMixin:
             if not role_defs.empty and "role_code" in role_defs.columns:
                 roles.update(role_defs["role_code"].dropna().astype(str).tolist())
 
-            grants = self._query_file(
-                "reporting/list_role_grants.sql",
-                columns=["role_code"],
-                sec_user_role_map=self._table("sec_user_role_map"),
-                app_user_directory=self._table("app_user_directory"),
-            )
+            grants = self.list_role_grants(limit=250, offset=0)
             if not grants.empty and "role_code" in grants.columns:
                 roles.update(grants["role_code"].dropna().astype(str).tolist())
-            group_grants = self._query_file(
-                "reporting/list_group_role_grants.sql",
-                columns=["role_code"],
-                sec_group_role_map=self._table("sec_group_role_map"),
-                app_user_directory=self._table("app_user_directory"),
-            )
+            group_grants = self.list_group_role_grants(limit=250, offset=0)
             if not group_grants.empty and "role_code" in group_grants.columns:
                 roles.update(group_grants["role_code"].dropna().astype(str).tolist())
             return sorted(role for role in roles if role)

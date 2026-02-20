@@ -48,6 +48,45 @@ def _resolve_user_principal(
     return repo.get_current_user()
 
 
+def _canonicalize_user_principal(
+    repo: VendorRepository,
+    user_principal: str,
+    forwarded_identity: dict[str, str] | None = None,
+) -> str:
+    principal = str(user_principal or "").strip()
+    if not principal or principal == UNKNOWN_USER_PRINCIPAL:
+        return principal
+
+    resolve_login_identifier = getattr(repo, "resolve_user_login_identifier", None)
+    if not callable(resolve_login_identifier):
+        return principal
+
+    identity = forwarded_identity or {}
+    candidates = (
+        principal,
+        str(identity.get("email") or "").strip(),
+        str(identity.get("network_id") or "").strip(),
+        str(identity.get("principal") or "").strip(),
+    )
+    seen: set[str] = set()
+    for candidate in candidates:
+        cleaned = str(candidate or "").strip()
+        if not cleaned:
+            continue
+        lowered = cleaned.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        try:
+            resolved = str(resolve_login_identifier(cleaned) or "").strip()
+        except Exception:
+            LOGGER.debug("Failed to resolve canonical login for request principal.", exc_info=True)
+            continue
+        if resolved:
+            return resolved
+    return principal
+
+
 def _resolve_effective_roles(
     request: Request,
     raw_roles: set[str],
@@ -92,6 +131,7 @@ def get_user_context(request: Request) -> UserContext:
     forwarded_identity = resolve_databricks_request_identity(request)
 
     user_principal = _resolve_user_principal(repo, config, request, forwarded_identity)
+    user_principal = _canonicalize_user_principal(repo, user_principal, forwarded_identity)
     if dev_allow_all_access and user_principal == UNKNOWN_USER_PRINCIPAL:
         # Dev convenience mode: avoid anonymous principal while forcing admin access.
         fallback_dev_user = str(os.getenv("TVENDOR_TEST_USER", "dev_admin@example.com") or "").strip()

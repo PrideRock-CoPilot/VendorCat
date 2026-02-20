@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_reports_chart_macros.html" import render_chart %}
 {% block content %}
 <div class="section-header">
   <div>
@@ -17,62 +18,6 @@
       <p>{{ ready_report_cards|length }} prebuilt reports are available now.</p>
     </div>
   </div>
-  <div class="reports-ready-grid">
-    {% for card in ready_report_cards %}
-    <article class="reports-ready-card{% if card.is_selected %} selected{% endif %}" data-ready-report="{{ card.key }}">
-      <h3>{{ card.label }}</h3>
-      <p class="muted">{{ card.description }}</p>
-      <div class="button-group">
-        <a class="button-link subtle{% if card.is_selected and filters.run == 1 %} active-tab{% endif %}" href="{{ card.open_url }}">Open Hosted Report</a>
-      </div>
-    </article>
-    {% endfor %}
-  </div>
-</section>
-
-<form method="get" action="/reports" class="card grid grid-3">
-  <input type="hidden" name="run" value="1">
-  <input type="hidden" name="dbx_report" value="{{ filters.dbx_report }}">
-  <div class="full">
-    <h2>Core Filters</h2>
-    <p class="muted">Start with these defaults, then open Advanced Filters only if needed.</p>
-  </div>
-  <label>
-    Report Type
-    <select name="report_type">
-      {% for key, info in report_types.items() %}
-      <option value="{{ key }}" {% if key == filters.report_type %}selected{% endif %}>{{ info.label }}</option>
-      {% endfor %}
-    </select>
-    <small class="muted">{{ selected_report.description }}</small>
-  </label>
-  <label>
-    Search
-    <input type="text" name="search" value="{{ filters.search }}" placeholder="Name, id, contract, owner, notes...">
-  </label>
-  <label>
-    Vendor
-    <select name="vendor">
-      {% for option in vendor_options %}
-      <option value="{{ option.vendor_id }}" {% if option.vendor_id == filters.vendor %}selected{% endif %}>{{ option.label }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>
-    Max Rows
-    <select name="limit">
-      {% for option in row_limits %}
-      <option value="{{ option }}" {% if option == filters.limit %}selected{% endif %}>{{ option }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <div class="button-group">
-    <button type="submit">Run Report</button>
-    {% if download_url %}
-    <a class="button-link subtle" href="{{ download_url }}">Download CSV</a>
-    {% endif %}
-  </div>
-
   {% set show_advanced = filters.lifecycle_state != "all"
     or filters.project_status != "all"
     or filters.outcome != "all"
@@ -80,84 +25,227 @@
     or filters.lob != "all"
     or filters.horizon_days != 180
     or filters.view_mode != "both" %}
-  <details class="full" {% if show_advanced %}open{% endif %}>
-    <summary><strong>Advanced Filters</strong></summary>
-    <div class="grid grid-3" style="margin-top:10px;">
-      <label>
-        Lifecycle
-        <select name="lifecycle_state">
-          {% for option in vendor_lifecycle_states %}
-          <option value="{{ option }}" {% if option == filters.lifecycle_state %}selected{% endif %}>{{ option }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>
-        Project Status
-        <select name="project_status">
-          {% for option in project_statuses %}
-          <option value="{{ option }}" {% if option == filters.project_status %}selected{% endif %}>{{ option }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>
-        Demo Outcome
-        <select name="outcome">
-          {% for option in demo_outcomes %}
-          <option value="{{ option }}" {% if option == filters.outcome %}selected{% endif %}>{{ option }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>
-        Owner Principal
-        <input type="text" name="owner_principal" value="{{ filters.owner_principal }}" placeholder="bob.smith@example.com">
-      </label>
-      <label>
-        Line of Business
-        <select name="lob">
-          {% for option in orgs %}
-          <option value="{{ option }}" {% if option == filters.lob %}selected{% endif %}>{{ "All Lines of Business" if option == "all" else option }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>
-        Renewal Horizon (days)
-        <input type="number" name="horizon_days" value="{{ filters.horizon_days }}" min="30" max="730">
-      </label>
-      <label>
-        Result View
-        <select name="view_mode">
-          {% for option in view_modes %}
-          <option value="{{ option }}" {% if option == filters.view_mode %}selected{% endif %}>{{ option }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>
-        Graph Type
-        <select name="chart_kind">
-          {% for option in chart_kinds %}
-          <option value="{{ option }}" {% if option == filters.chart_kind %}selected{% endif %}>{{ option }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>
-        Graph Dimension
-        <select name="chart_x">
-          {% for option in chart_dimension_options %}
-          <option value="{{ option.key }}" {% if option.key == filters.chart_x %}selected{% endif %}>{{ option.label }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>
-        Graph Metric
-        <select name="chart_y">
-          {% for option in chart_metric_options %}
-          <option value="{{ option.key }}" {% if option.key == filters.chart_y %}selected{% endif %}>{{ option.label }}</option>
-          {% endfor %}
-        </select>
-      </label>
-    </div>
-  </details>
-</form>
+  <div class="reports-ready-shell">
+    <nav class="reports-ready-nav" aria-label="Hosted report shortcuts">
+      {% for card in ready_report_cards %}
+      <a
+        class="reports-ready-nav-item{% if card.is_selected %} selected{% endif %}"
+        href="{{ card.open_url }}"
+        data-ready-report="{{ card.key }}">
+        <span class="reports-ready-icon tone-{{ card.icon_tone }}" aria-hidden="true">{{ card.icon_badge }}</span>
+        <span class="reports-ready-nav-text">
+          <strong>{{ card.label }}</strong>
+          <small>{{ card.description }}</small>
+        </span>
+      </a>
+      {% endfor %}
+    </nav>
+    <article class="reports-ready-main">
+      {% if selected_ready_report %}
+      <div class="reports-ready-main-header">
+        <span class="reports-ready-icon reports-ready-icon-lg tone-{{ selected_ready_report.icon_tone }}" aria-hidden="true">
+          {{ selected_ready_report.icon_badge }}
+        </span>
+        <div>
+          <h3>{{ selected_ready_report.label }}</h3>
+          <p class="muted">{{ selected_ready_report.description }}</p>
+        </div>
+      </div>
+      <p class="reports-ready-main-copy">
+        Main window is showing this report. Adjust slicers on the right to refine output.
+      </p>
+      {% endif %}
+      {% if filters.run == 1 and show_chart %}
+      <section class="reports-ready-main-block">
+        <div class="section-header">
+          <div>
+            <h3>Graph View</h3>
+            <p>{{ chart_dimension_label }} vs {{ chart_metric_label }}{% if chart_rows %} ({{ chart_rows|length }} points){% endif %}.</p>
+          </div>
+        </div>
+        {% if chart_rows %}
+        {{ render_chart(filters.chart_kind, chart_rows, chart_line_path, chart_line_points) }}
+        <table class="compact-table">
+          <thead>
+            <tr>
+              <th>{{ chart_dimension_label }}</th>
+              <th>{{ chart_metric_label }}</th>
+              <th>% Share</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in chart_rows %}
+            <tr>
+              <td>{{ row.label }}</td>
+              <td>{{ row.value_display }}</td>
+              <td>{{ row.share_pct }}%</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p class="muted">{{ chart_empty_message }}</p>
+        {% endif %}
+      </section>
+      {% endif %}
+      {% if filters.run == 1 and show_table %}
+      <section class="reports-ready-main-block">
+        <div class="section-header">
+          <div>
+            <h3>Table View</h3>
+            <p>{{ row_count }} total rows. Showing {{ preview_count }} row preview.</p>
+          </div>
+        </div>
+        <div class="reports-ready-main-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                {% for column in selected_columns %}
+                <th>{{ column }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+              <tr>
+                {% for column in selected_columns %}
+                <td>{{ row[column] }}</td>
+                {% endfor %}
+              </tr>
+              {% else %}
+              <tr><td colspan="{{ selected_columns|length if selected_columns else 1 }}">No rows found for selected filters.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      {% endif %}
+      {% if filters.run != 1 %}
+      <div class="reports-ready-main-block">
+        <p class="muted">Select a report to render data.</p>
+      </div>
+      {% endif %}
+    </article>
+    <aside class="reports-slicer-panel">
+      <form method="get" action="/reports" class="reports-slicer-form">
+        <input type="hidden" name="run" value="1">
+        <input type="hidden" name="report_type" value="{{ filters.report_type }}">
+        <input type="hidden" name="dbx_report" value="{{ filters.dbx_report }}">
+        <input type="hidden" name="cols" value="{{ selected_columns|join(',') }}">
+        <h3>Slicers</h3>
+        <p class="muted">Use these filters to update the report view.</p>
+        <label class="reports-slicer-static">
+          Report
+          <span class="reports-slicer-static-value">{{ selected_report.label }}</span>
+          <small class="muted">{{ selected_report.description }}</small>
+        </label>
+        <label>
+          Search
+          <input type="text" name="search" value="{{ filters.search }}" placeholder="Name, id, contract, owner, notes...">
+        </label>
+        <label>
+          Vendor
+          <select name="vendor">
+            {% for option in vendor_options %}
+            <option value="{{ option.vendor_id }}" {% if option.vendor_id == filters.vendor %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Max Rows
+          <select name="limit">
+            {% for option in row_limits %}
+            <option value="{{ option }}" {% if option == filters.limit %}selected{% endif %}>{{ option }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Result View
+          <select name="view_mode">
+            {% for option in view_modes %}
+            <option value="{{ option }}" {% if option == filters.view_mode %}selected{% endif %}>{{ option }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Graph Type
+          <select name="chart_kind">
+            {% for option in chart_kinds %}
+            <option value="{{ option }}" {% if option == filters.chart_kind %}selected{% endif %}>{{ option }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Graph Dimension
+          <select name="chart_x">
+            {% for option in chart_dimension_options %}
+            <option value="{{ option.key }}" {% if option.key == filters.chart_x %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Graph Metric
+          <select name="chart_y">
+            {% for option in chart_metric_options %}
+            <option value="{{ option.key }}" {% if option.key == filters.chart_y %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <details class="reports-slicer-advanced" {% if show_advanced %}open{% endif %}>
+          <summary><strong>Advanced</strong></summary>
+          <div class="reports-slicer-advanced-grid">
+            <label>
+              Lifecycle
+              <select name="lifecycle_state">
+                {% for option in vendor_lifecycle_states %}
+                <option value="{{ option }}" {% if option == filters.lifecycle_state %}selected{% endif %}>{{ option }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              Project Status
+              <select name="project_status">
+                {% for option in project_statuses %}
+                <option value="{{ option }}" {% if option == filters.project_status %}selected{% endif %}>{{ option }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              Demo Outcome
+              <select name="outcome">
+                {% for option in demo_outcomes %}
+                <option value="{{ option }}" {% if option == filters.outcome %}selected{% endif %}>{{ option }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              Owner Principal
+              <input type="text" name="owner_principal" value="{{ filters.owner_principal }}" placeholder="bob.smith@example.com">
+            </label>
+            <label>
+              Line of Business
+              <select name="lob">
+                {% for option in orgs %}
+                <option value="{{ option }}" {% if option == filters.lob %}selected{% endif %}>{{ "All Lines of Business" if option == "all" else option }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              Renewal Horizon (days)
+              <input type="number" name="horizon_days" value="{{ filters.horizon_days }}" min="30" max="730">
+            </label>
+          </div>
+        </details>
+        <div class="button-group">
+          <button type="submit">Apply Slicers</button>
+          {% if download_url %}
+          <a class="button-link subtle" href="{{ download_url }}">Download CSV</a>
+          {% endif %}
+        </div>
+      </form>
+    </aside>
+  </div>
+</section>
 
 {% if databricks_reports %}
 <section class="card section-divider">
@@ -249,93 +337,6 @@
       </div>
     </form>
   </details>
-</section>
-{% endif %}
-
-{% if filters.run == 1 and show_chart %}
-<section class="card section-divider">
-  <div class="section-header">
-    <div>
-      <h2>Graph View</h2>
-      <p>{{ chart_dimension_label }} vs {{ chart_metric_label }}{% if chart_rows %} ({{ chart_rows|length }} points){% endif %}.</p>
-    </div>
-  </div>
-  {% if chart_rows %}
-    {% if filters.chart_kind == "line" %}
-    <svg class="line-chart" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="line chart">
-      <line class="axis-line" x1="5" y1="90" x2="95" y2="90"></line>
-      <line class="axis-line" x1="5" y1="10" x2="5" y2="90"></line>
-      <polyline class="trend-line" points="{{ chart_line_path }}"></polyline>
-      {% for point in chart_line_points %}
-      <circle class="trend-point" cx="{{ point.x }}" cy="{{ point.y }}" r="1.4">
-        <title>{{ point.label }}: {{ point.value_display }}</title>
-      </circle>
-      {% endfor %}
-    </svg>
-    {% else %}
-    <div class="graph-block">
-      {% for row in chart_rows %}
-      <div class="bar-row">
-        <div class="bar-label">{{ row.label }}</div>
-        <div class="bar-track"><div class="bar-fill" style="width: {{ row.width_pct }}%;"></div></div>
-        <div class="bar-value">{{ row.value_display }} <small class="muted">({{ row.share_pct }}%)</small></div>
-      </div>
-      {% endfor %}
-    </div>
-    {% endif %}
-
-    <table class="compact-table">
-      <thead>
-        <tr>
-          <th>{{ chart_dimension_label }}</th>
-          <th>{{ chart_metric_label }}</th>
-          <th>% Share</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in chart_rows %}
-        <tr>
-          <td>{{ row.label }}</td>
-          <td>{{ row.value_display }}</td>
-          <td>{{ row.share_pct }}%</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% else %}
-  <p class="muted">{{ chart_empty_message }}</p>
-  {% endif %}
-</section>
-{% endif %}
-
-{% if filters.run == 1 and show_table %}
-<section class="card section-divider">
-  <div class="section-header">
-    <div>
-      <h2>Table View</h2>
-      <p>{{ row_count }} total rows. Showing {{ preview_count }} row preview.</p>
-    </div>
-  </div>
-  <table>
-    <thead>
-      <tr>
-        {% for column in selected_columns %}
-        <th>{{ column }}</th>
-        {% endfor %}
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in rows %}
-      <tr>
-        {% for column in selected_columns %}
-        <td>{{ row[column] }}</td>
-        {% endfor %}
-      </tr>
-      {% else %}
-      <tr><td colspan="{{ selected_columns|length if selected_columns else 1 }}">No rows found for selected filters.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
 </section>
 {% endif %}
 

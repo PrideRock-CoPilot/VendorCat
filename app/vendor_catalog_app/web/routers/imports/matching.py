@@ -45,12 +45,25 @@ def _label_for_project_row(row: dict[str, Any]) -> str:
     return project_name or project_id
 
 
+def _label_for_invoice_row(row: dict[str, Any]) -> str:
+    invoice_id = str(row.get("invoice_id") or "").strip()
+    invoice_number = str(row.get("invoice_number") or invoice_id).strip()
+    return invoice_number or invoice_id
+
+
+def _label_for_payment_row(row: dict[str, Any]) -> str:
+    payment_id = str(row.get("payment_id") or "").strip()
+    payment_reference = str(row.get("payment_reference") or payment_id).strip()
+    return payment_reference or payment_id
+
+
 class ImportMatchContext:
     def __init__(self, repo) -> None:
         self.repo = repo
         self._vendor_profile_cache: dict[str, dict[str, Any] | None] = {}
         self._offering_cache: dict[str, dict[str, Any] | None] = {}
         self._project_cache: dict[str, dict[str, Any] | None] = {}
+        self._invoice_search_cache: dict[tuple[str, str, str, str, int], list[dict[str, Any]]] = {}
         self._vendor_search_cache: dict[tuple[str, int], list[dict[str, Any]]] = {}
         self._offering_search_cache: dict[tuple[str, str, int], list[dict[str, Any]]] = {}
         self._project_search_cache: dict[tuple[str, int], list[dict[str, Any]]] = {}
@@ -124,6 +137,36 @@ class ImportMatchContext:
             return self._project_search_cache[key]
         rows = self.repo.search_projects_typeahead(q=query, limit=limit).to_dict("records")
         self._project_search_cache[key] = rows
+        return rows
+
+    def search_invoices(
+        self,
+        *,
+        invoice_id: str,
+        invoice_number: str,
+        vendor_id: str,
+        offering_id: str,
+        limit: int = 12,
+    ) -> list[dict[str, Any]]:
+        if not hasattr(self.repo, "find_offering_invoice_candidates"):
+            return []
+        lookup = (
+            str(invoice_id or "").strip().lower(),
+            str(invoice_number or "").strip().lower(),
+            str(vendor_id or "").strip().lower(),
+            str(offering_id or "").strip().lower(),
+            int(limit),
+        )
+        if lookup in self._invoice_search_cache:
+            return self._invoice_search_cache[lookup]
+        rows = self.repo.find_offering_invoice_candidates(
+            invoice_id=invoice_id or None,
+            invoice_number=invoice_number or None,
+            vendor_id=vendor_id or None,
+            offering_id=offering_id or None,
+            limit=limit,
+        ).to_dict("records")
+        self._invoice_search_cache[lookup] = rows
         return rows
 
     def _load_contact_maps(self) -> None:
@@ -536,12 +579,162 @@ def _suggest_project_match(repo, row_data: dict[str, str], ctx: ImportMatchConte
     return "", "", "", notes
 
 
+def _resolve_vendor_by_name(row_data: dict[str, str], ctx: ImportMatchContext) -> tuple[str, list[str]]:
+    notes: list[str] = []
+    explicit_vendor_id = str(row_data.get("vendor_id") or "").strip()
+    if explicit_vendor_id:
+        if ctx.vendor_profile(explicit_vendor_id) is not None:
+            return explicit_vendor_id, notes
+        notes.append(f"vendor_id '{explicit_vendor_id}' was not found.")
+
+    vendor_name = str(row_data.get("vendor_name") or row_data.get("legal_name") or row_data.get("display_name") or "").strip()
+    if not vendor_name:
+        return "", notes
+    candidates = ctx.search_vendors(q=vendor_name, limit=10)
+    lowered = vendor_name.lower()
+    exact = [
+        row
+        for row in candidates
+        if str(row.get("vendor_id") or "").strip().lower() == lowered
+        or str(row.get("display_name") or "").strip().lower() == lowered
+        or str(row.get("legal_name") or "").strip().lower() == lowered
+    ]
+    if len(exact) == 1:
+        notes.append("Inferred vendor from vendor_name.")
+        return str(exact[0].get("vendor_id") or "").strip(), notes
+    if len(candidates) == 1:
+        notes.append("Single near-match found for vendor_name.")
+        return str(candidates[0].get("vendor_id") or "").strip(), notes
+    if len(candidates) > 1:
+        notes.append("vendor_name matched multiple vendors.")
+    return "", notes
+
+
+def _resolve_offering_for_invoice(row_data: dict[str, str], *, vendor_id: str, ctx: ImportMatchContext) -> tuple[str, list[str]]:
+    notes: list[str] = []
+    explicit_offering_id = str(row_data.get("offering_id") or "").strip()
+    if explicit_offering_id:
+        existing = ctx.offering_by_id(explicit_offering_id)
+        if existing is not None:
+            return explicit_offering_id, notes
+        notes.append(f"offering_id '{explicit_offering_id}' was not found.")
+
+    offering_name = str(row_data.get("offering_name") or "").strip()
+    if not offering_name:
+        return "", notes
+    candidates = ctx.search_offerings(vendor_id=vendor_id or None, q=offering_name, limit=10)
+    lowered = offering_name.lower()
+    exact = [
+        row
+        for row in candidates
+        if str(row.get("offering_name") or "").strip().lower() == lowered
+        or str(row.get("offering_id") or "").strip().lower() == lowered
+    ]
+    if len(exact) == 1:
+        notes.append("Inferred offering from offering_name.")
+        return str(exact[0].get("offering_id") or "").strip(), notes
+    if len(candidates) == 1:
+        notes.append("Single near-match found for offering_name.")
+        return str(candidates[0].get("offering_id") or "").strip(), notes
+    if len(candidates) > 1:
+        notes.append("offering_name matched multiple offerings.")
+    return "", notes
+
+
+def _suggest_invoice_match(row_data: dict[str, str], ctx: ImportMatchContext) -> tuple[str, str, str, str, list[str]]:
+    notes: list[str] = []
+    vendor_id, vendor_notes = _resolve_vendor_by_name(row_data, ctx)
+    notes.extend(vendor_notes)
+    offering_id, offering_notes = _resolve_offering_for_invoice(row_data, vendor_id=vendor_id, ctx=ctx)
+    notes.extend(offering_notes)
+
+    invoice_id = str(row_data.get("invoice_id") or "").strip()
+    invoice_number = str(row_data.get("invoice_number") or "").strip()
+    candidates = ctx.search_invoices(
+        invoice_id=invoice_id,
+        invoice_number=invoice_number,
+        vendor_id=vendor_id,
+        offering_id=offering_id,
+        limit=12,
+    )
+    if candidates:
+        chosen = candidates[0]
+        resolved_invoice_id = str(chosen.get("invoice_id") or "").strip()
+        resolved_vendor_id = str(chosen.get("vendor_id") or "").strip() or vendor_id
+        resolved_offering_id = str(chosen.get("offering_id") or "").strip() or offering_id
+        if resolved_invoice_id:
+            notes.append("Existing invoice candidate found.")
+            return (
+                resolved_invoice_id,
+                resolved_vendor_id,
+                resolved_offering_id,
+                _label_for_invoice_row(chosen),
+                notes,
+            )
+    return "", vendor_id, offering_id, "", notes
+
+
+def _suggest_payment_match(row_data: dict[str, str], ctx: ImportMatchContext) -> tuple[str, str, str, str, list[str]]:
+    notes: list[str] = []
+    invoice_id = str(row_data.get("invoice_id") or "").strip()
+    invoice_number = str(row_data.get("invoice_number") or "").strip()
+    vendor_id, vendor_notes = _resolve_vendor_by_name(row_data, ctx)
+    notes.extend(vendor_notes)
+    offering_id, offering_notes = _resolve_offering_for_invoice(row_data, vendor_id=vendor_id, ctx=ctx)
+    notes.extend(offering_notes)
+    candidates = ctx.search_invoices(
+        invoice_id=invoice_id,
+        invoice_number=invoice_number,
+        vendor_id=vendor_id,
+        offering_id=offering_id,
+        limit=12,
+    )
+    if candidates:
+        chosen = candidates[0]
+        resolved_invoice_id = str(chosen.get("invoice_id") or "").strip()
+        resolved_vendor_id = str(chosen.get("vendor_id") or "").strip() or vendor_id
+        resolved_offering_id = str(chosen.get("offering_id") or "").strip() or offering_id
+        return (
+            resolved_invoice_id,
+            resolved_vendor_id,
+            resolved_offering_id,
+            _label_for_invoice_row(chosen),
+            notes,
+        )
+    return "", vendor_id, offering_id, "", notes
+
+
+def _collect_invoice_merge_options(
+    *,
+    row_data: dict[str, str],
+    ctx: ImportMatchContext,
+    suggested_target_id: str,
+    suggested_target_label: str,
+) -> list[dict[str, str]]:
+    options: list[dict[str, str]] = []
+    _append_option(options, target_id=suggested_target_id, label=suggested_target_label)
+    for row in ctx.search_invoices(
+        invoice_id=str(row_data.get("invoice_id") or "").strip(),
+        invoice_number=str(row_data.get("invoice_number") or "").strip(),
+        vendor_id=str(row_data.get("vendor_id") or "").strip(),
+        offering_id=str(row_data.get("offering_id") or "").strip(),
+        limit=12,
+    ):
+        _append_option(
+            options,
+            target_id=str(row.get("invoice_id") or "").strip(),
+            label=_label_for_invoice_row(row),
+        )
+    return options[:15]
+
+
 def build_preview_rows(repo, layout_key: str, rows: list[dict[str, str]]) -> list[dict[str, Any]]:
     preview_rows: list[dict[str, Any]] = []
     ctx = ImportMatchContext(repo)
     for idx, row_data in enumerate(rows, start=1):
         errors: list[str] = []
         notes: list[str] = []
+        blocked_reasons: list[str] = []
         suggested_target_id = ""
         suggested_target_vendor_id = ""
         suggested_target_label = ""
@@ -568,6 +761,38 @@ def build_preview_rows(repo, layout_key: str, rows: list[dict[str, str]]) -> lis
                 suggested_target_id=suggested_target_id,
                 suggested_target_label=suggested_target_label,
             )
+        elif layout_key == "invoices":
+            (
+                suggested_target_id,
+                suggested_target_vendor_id,
+                suggested_target_offering_id,
+                suggested_target_label,
+                notes,
+            ) = _suggest_invoice_match(row_data, ctx)
+            merge_options = _collect_invoice_merge_options(
+                row_data=row_data,
+                ctx=ctx,
+                suggested_target_id=suggested_target_id,
+                suggested_target_label=suggested_target_label,
+            )
+            if not suggested_target_vendor_id:
+                blocked_reasons.append("Missing vendor dependency.")
+            if not suggested_target_offering_id:
+                blocked_reasons.append("Missing offering dependency.")
+        elif layout_key == "payments":
+            (
+                suggested_target_invoice_id,
+                suggested_target_vendor_id,
+                suggested_target_offering_id,
+                suggested_target_label,
+                notes,
+            ) = _suggest_payment_match(row_data, ctx)
+            if suggested_target_invoice_id:
+                suggested_target_id = suggested_target_invoice_id
+            if not suggested_target_invoice_id:
+                blocked_reasons.append("Missing invoice dependency.")
+            if not suggested_target_offering_id:
+                blocked_reasons.append("Missing offering dependency.")
         else:
             suggested_target_id, suggested_target_vendor_id, suggested_target_label, notes = _suggest_project_match(
                 repo,
@@ -590,24 +815,44 @@ def build_preview_rows(repo, layout_key: str, rows: list[dict[str, str]]) -> lis
                 errors.append("vendor_id is required, or provide vendor_name/contact fields for auto-match.")
         if layout_key == "projects" and not str(row_data.get("project_name") or "").strip():
             errors.append("project_name is required for new records.")
+        if layout_key == "invoices":
+            if not str(row_data.get("invoice_date") or "").strip():
+                errors.append("invoice_date is required for new records.")
+            if not str(row_data.get("amount") or "").strip():
+                errors.append("amount is required for new records.")
+        if layout_key == "payments":
+            if not str(row_data.get("payment_date") or "").strip():
+                errors.append("payment_date is required for new records.")
+            if not str(row_data.get("amount") or "").strip():
+                errors.append("amount is required for new records.")
+            if not str(row_data.get("invoice_id") or row_data.get("invoice_number") or "").strip():
+                errors.append("invoice_id or invoice_number is required for new records.")
 
         row_status = "ready"
         if errors:
             row_status = "error"
+        elif blocked_reasons:
+            row_status = "blocked"
         elif notes:
             row_status = "review"
+        combined_notes = list(notes)
+        if blocked_reasons:
+            combined_notes.extend([reason for reason in blocked_reasons if reason not in combined_notes])
+        suggested_action = "merge" if suggested_target_id else "new"
+        if layout_key in {"invoices", "payments"}:
+            suggested_action = "new"
 
         preview_rows.append(
             {
                 "row_index": idx,
                 "line_number": str(row_data.get("_line") or ""),
                 "row_data": {k: v for k, v in row_data.items() if k != "_line"},
-                "suggested_action": "merge" if suggested_target_id else "new",
+                "suggested_action": suggested_action,
                 "suggested_target_id": suggested_target_id,
                 "suggested_target_vendor_id": suggested_target_vendor_id,
                 "suggested_target_label": suggested_target_label,
                 "merge_options": merge_options,
-                "notes": notes,
+                "notes": combined_notes,
                 "errors": errors,
                 "row_status": row_status,
             }

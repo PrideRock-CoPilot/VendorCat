@@ -412,9 +412,10 @@ def _parse_xml_source_rows(*, text: str, record_tag: str) -> tuple[list[dict[str
     return source_rows, warnings, resolved_tag
 
 
-def _build_source_fields(source_rows: list[dict[str, str]]) -> list[dict[str, str]]:
+def _build_source_fields(source_rows: list[dict[str, str]]) -> list[dict[str, Any]]:
     ordered_keys: list[str] = []
     samples: dict[str, str] = {}
+    sample_values: dict[str, list[str]] = {}
     non_empty_counts: dict[str, int] = {}
 
     for row in source_rows:
@@ -424,12 +425,16 @@ def _build_source_fields(source_rows: list[dict[str, str]]) -> list[dict[str, st
             if key not in ordered_keys:
                 ordered_keys.append(key)
                 samples[key] = ""
+                sample_values[key] = []
                 non_empty_counts[key] = 0
             value = str(raw_value or "").strip()
             if value:
                 non_empty_counts[key] = int(non_empty_counts.get(key, 0)) + 1
                 if not samples.get(key):
                     samples[key] = value[:140]
+                samples_for_key = sample_values.setdefault(key, [])
+                if value not in samples_for_key and len(samples_for_key) < 3:
+                    samples_for_key.append(value[:140])
 
     return [
         {
@@ -437,6 +442,7 @@ def _build_source_fields(source_rows: list[dict[str, str]]) -> list[dict[str, st
             "label": key,
             "normalized_key": _source_match_key(key),
             "sample_value": str(samples.get(key) or ""),
+            "sample_values": list(sample_values.get(key) or []),
             "non_empty_count": str(non_empty_counts.get(key, 0)),
         }
         for key in ordered_keys
@@ -444,9 +450,24 @@ def _build_source_fields(source_rows: list[dict[str, str]]) -> list[dict[str, st
 
 
 def _mapping_candidate_score(target_field: str, source_key: str) -> int:
-    target_norm = normalize_column_name(target_field)
-    source_match = _source_match_key(source_key)
-    source_last = _source_match_key(str(source_key).split(".")[-1])
+    alias_map = {
+        "supplier": "vendor",
+        "supplier_name": "vendor_name",
+        "supplier_id": "vendor_id",
+        "invoice_no": "invoice_number",
+        "inv_no": "invoice_number",
+        "remit_to": "payment_address",
+        "pay_date": "payment_date",
+        "pay_ref": "payment_reference",
+    }
+
+    def apply_alias(value: str) -> str:
+        normalized = normalize_column_name(value)
+        return str(alias_map.get(normalized, normalized))
+
+    target_norm = apply_alias(target_field)
+    source_match = apply_alias(_source_match_key(source_key))
+    source_last = apply_alias(_source_match_key(str(source_key).split(".")[-1]))
     if not target_norm or not source_match:
         return 0
     if source_match == target_norm:
@@ -883,6 +904,28 @@ def render_context(
         for source_key in list(source_target_values):
             source_target_values[source_key] = str(selected_source_target_mapping.get(source_key) or "").strip()
 
+    mapped_source_count = sum(1 for value in source_target_values.values() if str(value or "").strip())
+    total_source_count = len(source_target_values)
+    unmapped_source_count = max(0, total_source_count - mapped_source_count)
+    layout_target_map = dict(IMPORT_LAYOUT_FIELD_TARGET_KEYS.get(selected_layout) or {})
+    required_target_keys: list[str] = []
+    seen_required: set[str] = set()
+    for _field_name, target_key in layout_target_map.items():
+        key = str(target_key or "").strip()
+        if not key or key in seen_required:
+            continue
+        seen_required.add(key)
+        required_target_keys.append(key)
+    mapped_target_keys = {str(value or "").strip() for value in source_target_values.values() if str(value or "").strip()}
+    required_mapped_count = sum(1 for key in required_target_keys if key in mapped_target_keys)
+    required_remaining_count = max(0, len(required_target_keys) - required_mapped_count)
+
+    initial_wizard_step = 1
+    if preview_rows:
+        initial_wizard_step = 3
+    if import_results:
+        initial_wizard_step = 5
+
     return {
         "layout_options": layout_options(),
         "source_system_options": source_system_options(),
@@ -914,5 +957,15 @@ def render_context(
         "import_results": import_results or [],
         "import_reason": import_reason,
         "import_merge_reason_options": IMPORT_MERGE_REASON_OPTIONS,
+        "has_preview_rows": bool(preview_rows),
+        "has_import_results": bool(import_results),
+        "wizard_initial_step": initial_wizard_step,
+        "mapping_total_source_fields": total_source_count,
+        "mapping_mapped_source_fields": mapped_source_count,
+        "mapping_unmapped_source_fields": unmapped_source_count,
+        "mapping_required_target_keys": required_target_keys,
+        "mapping_required_count": len(required_target_keys),
+        "mapping_required_mapped_count": required_mapped_count,
+        "mapping_required_remaining_count": required_remaining_count,
     }
 

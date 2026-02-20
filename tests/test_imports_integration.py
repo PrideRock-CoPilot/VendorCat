@@ -211,3 +211,57 @@ def test_imports_wizard_applies_child_stage_rows_for_contacts_and_contracts(
     assert vendors_after - vendors_before == 2
     assert contacts_after - contacts_before == 3
     assert contracts_after - contracts_before == 2
+
+
+def test_imports_bundle_applies_suppliers_invoices_and_payments(
+    client: TestClient,
+    isolated_local_db: Path,
+) -> None:
+    bundle_dir = Path(__file__).resolve().parent / "fixtures" / "imports_dummy" / "bundle"
+    supplier_xml = (bundle_dir / "zycus_AH_SUPPLIER.xml").read_text(encoding="utf-8")
+    invoice_xml = (bundle_dir / "zycus_AH_INVOICE.xml").read_text(encoding="utf-8")
+    payment_xml = (bundle_dir / "zycus_AH_PAYMENT.xml").read_text(encoding="utf-8")
+
+    with sqlite3.connect(str(isolated_local_db)) as conn:
+        vendors_before = int(conn.execute("SELECT COUNT(*) FROM core_vendor").fetchone()[0])
+        invoices_before = int(conn.execute("SELECT COUNT(*) FROM app_offering_invoice").fetchone()[0])
+        payments_before = int(conn.execute("SELECT COUNT(*) FROM app_offering_payment").fetchone()[0])
+
+    preview_response = client.post(
+        "/imports/preview",
+        data={"layout": "vendors", "flow_mode": "wizard", "format_hint": "auto"},
+        files=[
+            ("files", ("zycus_AH_SUPPLIER.xml", supplier_xml.encode("utf-8"), "application/xml")),
+            ("files", ("zycus_AH_INVOICE.xml", invoice_xml.encode("utf-8"), "application/xml")),
+            ("files", ("zycus_AH_PAYMENT.xml", payment_xml.encode("utf-8"), "application/xml")),
+        ],
+        follow_redirects=True,
+    )
+    assert preview_response.status_code == 200
+    assert "Bundle Files" in preview_response.text
+    assert "blocked" in preview_response.text.lower()
+
+    token_match = re.search(r'name="preview_token" value="([^"]+)"', preview_response.text)
+    assert token_match is not None
+    preview_token = token_match.group(1)
+
+    apply_response = client.post(
+        "/imports/apply",
+        data={
+            "preview_token": preview_token,
+            "apply_mode": "apply_eligible",
+            "reason": "bundle dependency apply",
+        },
+        follow_redirects=True,
+    )
+    assert apply_response.status_code == 200
+    assert "Import Results" in apply_response.text or "Bundle Files" in apply_response.text
+
+    with sqlite3.connect(str(isolated_local_db)) as conn:
+        vendors_after = int(conn.execute("SELECT COUNT(*) FROM core_vendor").fetchone()[0])
+        invoices_after = int(conn.execute("SELECT COUNT(*) FROM app_offering_invoice").fetchone()[0])
+        payments_after = int(conn.execute("SELECT COUNT(*) FROM app_offering_payment").fetchone()[0])
+
+    assert vendors_after - vendors_before >= 2
+    assert invoices_after - invoices_before >= 2
+    assert payments_after - payments_before >= 2

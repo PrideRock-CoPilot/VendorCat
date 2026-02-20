@@ -16,6 +16,8 @@ LEGACY_WORKFLOW_SECTIONS = (
     "navigate",
     "steps",
 )
+SCREENSHOT_PLACEHOLDER_PATTERN = re.compile(r"\[screenshot:[^\]]+\]", flags=re.IGNORECASE)
+SCREENSHOT_LINK_PATTERN = re.compile(r"!\[[^\]]*\]\((/static/help/screenshots/[^)\s]+)\)")
 
 
 def _normalize(text: str) -> str:
@@ -32,7 +34,11 @@ def _word_count(text: str) -> int:
     return len([token for token in re.split(r"\s+", text) if token])
 
 
-def validate_help_articles(articles: Iterable[dict]) -> list[str]:
+def validate_help_articles(
+    articles: Iterable[dict],
+    *,
+    allowed_screenshot_paths: set[str] | None = None,
+) -> list[str]:
     errors: list[str] = []
     seen_slugs: set[str] = set()
     for article in articles:
@@ -63,11 +69,17 @@ def validate_help_articles(articles: Iterable[dict]) -> list[str]:
             if avg_words > 18:
                 errors.append(f"{slug} sentences too long")
 
+        if SCREENSHOT_PLACEHOLDER_PATTERN.search(content):
+            errors.append(f"{slug} contains screenshot placeholder")
+
+        if allowed_screenshot_paths is not None:
+            for match in SCREENSHOT_LINK_PATTERN.finditer(content):
+                image_path = str(match.group(1) or "").strip()
+                if image_path and image_path not in allowed_screenshot_paths:
+                    errors.append(f"{slug} references missing screenshot: {image_path}")
+
         if article_type == "workflow":
-            headings = [
-                _normalize(match.group(1))
-                for match in re.finditer(r"^##\s+(.+)$", content, flags=re.M)
-            ]
+            headings = [_normalize(match.group(1)) for match in re.finditer(r"^##\s+(.+)$", content, flags=re.M)]
             has_modern_structure = all(required in headings for required in REQUIRED_WORKFLOW_SECTIONS)
             has_legacy_structure = all(required in headings for required in LEGACY_WORKFLOW_SECTIONS)
             if not has_modern_structure and not has_legacy_structure:

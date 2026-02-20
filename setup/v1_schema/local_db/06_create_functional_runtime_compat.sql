@@ -545,6 +545,28 @@ CREATE TABLE IF NOT EXISTS app_offering_invoice (
   UNIQUE (offering_id, invoice_number, invoice_date)
 );
 
+CREATE TABLE IF NOT EXISTS app_offering_payment (
+  payment_id TEXT PRIMARY KEY,
+  invoice_id TEXT NOT NULL,
+  offering_id TEXT NOT NULL,
+  vendor_id TEXT NOT NULL,
+  payment_reference TEXT,
+  payment_date TEXT NOT NULL,
+  amount REAL NOT NULL,
+  currency_code TEXT NOT NULL,
+  payment_status TEXT NOT NULL,
+  notes TEXT,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  created_at TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  FOREIGN KEY (invoice_id) REFERENCES app_offering_invoice(invoice_id),
+  FOREIGN KEY (offering_id) REFERENCES core_vendor_offering(offering_id),
+  FOREIGN KEY (vendor_id) REFERENCES core_vendor(vendor_id),
+  UNIQUE (invoice_id, payment_reference, payment_date)
+);
+
 CREATE TABLE IF NOT EXISTS app_document_link (
   doc_id TEXT PRIMARY KEY,
   entity_type TEXT NOT NULL,
@@ -668,6 +690,26 @@ CREATE TABLE IF NOT EXISTS app_import_stage_contract (
 );
 
 CREATE TABLE IF NOT EXISTS app_import_stage_project (
+  import_stage_area_row_id TEXT PRIMARY KEY,
+  import_job_id TEXT NOT NULL,
+  row_index INTEGER NOT NULL,
+  line_number TEXT,
+  area_payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (import_job_id) REFERENCES app_import_job(import_job_id)
+);
+
+CREATE TABLE IF NOT EXISTS app_import_stage_invoice (
+  import_stage_area_row_id TEXT PRIMARY KEY,
+  import_job_id TEXT NOT NULL,
+  row_index INTEGER NOT NULL,
+  line_number TEXT,
+  area_payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (import_job_id) REFERENCES app_import_job(import_job_id)
+);
+
+CREATE TABLE IF NOT EXISTS app_import_stage_payment (
   import_stage_area_row_id TEXT PRIMARY KEY,
   import_job_id TEXT NOT NULL,
   row_index INTEGER NOT NULL,

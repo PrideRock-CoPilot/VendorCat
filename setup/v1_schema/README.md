@@ -74,6 +74,11 @@ Verify schema quality gates (required tables, foreign keys, uniqueness):
 python setup/v1_schema/verify_v1_schema_quality.py --db-path setup/local_db/twvendor_local_v1.db
 ```
 
+Validate SQL object coverage across app runtime references and all schema bundles:
+```bash
+python setup/v1_schema/validate_sql_object_coverage.py
+```
+
 Optional local DB path:
 ```bash
 python setup/v1_schema/run_v1_schema.py --target local --execute --recreate --db-path setup/local_db/twvendor_local_v1.db
@@ -117,6 +122,19 @@ python setup/v1_schema/run_v1_seed.py --target local --db-path setup/local_db/tw
 ```bash
 python setup/v1_schema/run_v1_seed.py --target databricks --catalog vendorcat_dev --schema vendorcat_v1
 ```
+
+### Databricks critical POC seed (recommended for demos)
+
+Use notebook:
+
+1. `setup/databricks/notebooks/v1_seed_critical_data.ipynb`
+
+This seeds only:
+
+1. `94_seed_critical_reference_data.sql` (dropdown/default lookups)
+2. `96_seed_help_center.sql` (help articles)
+
+It intentionally skips the large synthetic test dataset in `95_seed_reference_data.sql`.
 
 ### Databricks seed (execute)
 ```bash

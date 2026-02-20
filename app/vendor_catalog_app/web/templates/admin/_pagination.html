@@ -1,0 +1,14 @@
+{% if pager and pager.total_count > 0 %}
+<div class="admin-pagination">
+  <span class="muted">Showing {{ pager.start_row }}-{{ pager.end_row }} of {{ pager.total_count }}</span>
+  <div class="button-group">
+    {% if pager.prev_url %}
+    <a class="button-link subtle" href="{{ pager.prev_url }}">Previous</a>
+    {% endif %}
+    <span class="status-badge status-same">Page {{ pager.page }} / {{ pager.total_pages }}</span>
+    {% if pager.next_url %}
+    <a class="button-link subtle" href="{{ pager.next_url }}">Next</a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}

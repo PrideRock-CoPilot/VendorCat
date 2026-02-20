@@ -113,3 +113,18 @@ Full click budget and current flow counts:
 1. Imports file format and data mapping rules.
 1. Financial alert thresholds and governance rules.
 1. Production deployment and secret handling.
+
+## 11. Task: Run A Bundle Import (Supplier + Invoice + Payment)
+
+1. Open `Imports`.
+1. Use `Upload Files (Multi)` or `Upload Bundle (.zip)`.
+1. Keep parser mode on `Auto Detect` unless you need overrides.
+1. Click `Launch Wizard Preview`.
+1. Review `Bundle Files` summary and row statuses.
+1. Click:
+   `Stage Only` if you only want staging, or
+   `Apply Eligible Now` to write ready rows.
+1. If blocked rows remain, load missing upstream records and click `Reprocess Blocked`.
+
+Reference:
+- `docs/operations/imports-bundles.md`

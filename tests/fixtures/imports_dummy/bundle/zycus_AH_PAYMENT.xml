@@ -1,0 +1,24 @@
+<AH_PAYMENT_EXPORT>
+  <payment_record>
+    <payment_reference>PMT-NW-2026-001</payment_reference>
+    <payment_date>2026-02-16</payment_date>
+    <amount>15200.45</amount>
+    <currency_code>USD</currency_code>
+    <payment_status>settled</payment_status>
+    <notes>Northwind ACH settlement</notes>
+    <invoice_number>INV-NW-2026-001</invoice_number>
+    <vendor_name>Northwind Analytics</vendor_name>
+    <offering_name>Data Platform Services</offering_name>
+  </payment_record>
+  <payment_record>
+    <payment_reference>PMT-TS-2026-001</payment_reference>
+    <payment_date>2026-02-17</payment_date>
+    <amount>9800.00</amount>
+    <currency_code>USD</currency_code>
+    <payment_status>settled</payment_status>
+    <notes>Tailspin ACH settlement</notes>
+    <invoice_number>INV-TS-2026-001</invoice_number>
+    <vendor_name>Tailspin Billing Platform</vendor_name>
+    <offering_name>Billing Platform Suite</offering_name>
+  </payment_record>
+</AH_PAYMENT_EXPORT>

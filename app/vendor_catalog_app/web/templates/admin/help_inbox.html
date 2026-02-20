@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block head %}
+  <link rel="stylesheet" href="/static/css/admin_portal.css">
+{% endblock %}
+
+{% block content %}
+<div class="section-header">
+  <div>
+    <h1>Help Inbox</h1>
+    <p>Review Help Center user feedback and reported issues.</p>
+  </div>
+</div>
+
+{% include "admin/_nav.html" %}
+
+<section class="card">
+  <h2>Recent Feedback</h2>
+  <p class="muted">Latest {{ help_feedback_rows|length }} feedback events.</p>
+  <table>
+    <thead>
+      <tr>
+        <th>When</th>
+        <th>Article</th>
+        <th>Helpful</th>
+        <th>Comment</th>
+        <th>User</th>
+        <th>Path</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in help_feedback_rows %}
+      <tr>
+        <td>{{ row.created_at }}</td>
+        <td>{{ row.article_slug or row.article_id }}</td>
+        <td>{{ "Yes" if row.was_helpful in [True, 1, "1", "true", "True"] else "No" }}</td>
+        <td>{{ row.comment or "-" }}</td>
+        <td>{{ row.user_principal or "-" }}</td>
+        <td><code>{{ row.page_path or "-" }}</code></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">No feedback yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card" style="margin-top: 12px;">
+  <h2>Recent Issues</h2>
+  <p class="muted">Latest {{ help_issue_rows|length }} issue reports.</p>
+  <table>
+    <thead>
+      <tr>
+        <th>When</th>
+        <th>Article</th>
+        <th>Issue</th>
+        <th>Description</th>
+        <th>User</th>
+        <th>Path</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in help_issue_rows %}
+      <tr>
+        <td>{{ row.created_at }}</td>
+        <td>{{ row.article_slug or row.article_id }}</td>
+        <td>{{ row.issue_title }}</td>
+        <td>{{ row.issue_description }}</td>
+        <td>{{ row.user_principal or "-" }}</td>
+        <td><code>{{ row.page_path or "-" }}</code></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">No issues yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

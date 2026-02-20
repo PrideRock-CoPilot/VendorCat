@@ -179,10 +179,45 @@ def _clear_user_context_session_state(session: dict, user_principal: str) -> Non
     session.pop(ADMIN_ROLE_OVERRIDE_SESSION_KEY, None)
 
 
+def _refresh_user_context_for_access_gate(request: Request, repo):
+    existing_user = getattr(request.state, "user_context", None)
+    principal = str(getattr(existing_user, "user_principal", "") or "").strip()
+    session = request.scope.get("session")
+    if isinstance(session, dict) and principal:
+        session.pop(f"{POLICY_SNAPSHOT_SESSION_KEY_PREFIX}:{principal}", None)
+        session.pop(ADMIN_ROLE_OVERRIDE_SESSION_KEY, None)
+    if existing_user is not None:
+        try:
+            delattr(request.state, "user_context")
+        except AttributeError:
+            request.state.user_context = None
+    try:
+        repo._cache_clear()
+    except Exception:
+        LOGGER.debug("Could not clear repository cache before access gate refresh.", exc_info=True)
+    return get_user_context(request)
+
+
+def _active_user_redirect_target(request: Request, repo, user) -> str:
+    next_path = "/dashboard"
+    if terms_enforcement_enabled() and not has_current_terms_acceptance(
+        request=request,
+        repo=repo,
+        user_principal=user.user_principal,
+    ):
+        return f"/access/terms?next={quote(next_path, safe='/%?=&')}"
+    return next_path
+
+
 @router.get("/request")
 def access_request_page(request: Request):
     repo = get_repo()
-    user = get_user_context(request)
+    user = _refresh_user_context_for_access_gate(request, repo)
+    if set(getattr(user, "roles", set()) or set()):
+        return RedirectResponse(
+            url=_active_user_redirect_target(request, repo, user),
+            status_code=303,
+        )
     session = request.scope.get("session")
     just_submitted_request_id = ""
     if isinstance(session, dict):
@@ -255,7 +290,13 @@ def access_request_page(request: Request):
 @router.post("/request")
 async def submit_access_request(request: Request):
     repo = get_repo()
-    user = get_user_context(request)
+    user = _refresh_user_context_for_access_gate(request, repo)
+    if set(getattr(user, "roles", set()) or set()):
+        add_flash(request, "Access is already active for your account.", "info")
+        return RedirectResponse(
+            url=_active_user_redirect_target(request, repo, user),
+            status_code=303,
+        )
     form = await request.form()
     requested_role = str(form.get("requested_role", "")).strip().lower()
     justification = str(form.get("justification", "")).strip()

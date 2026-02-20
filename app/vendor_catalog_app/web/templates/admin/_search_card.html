@@ -1,0 +1,18 @@
+<section class="card admin-search-card">
+  <h3>{{ card_title }}</h3>
+  <p class="muted">{{ card_description }}</p>
+  <form method="get" action="{{ card_action }}" class="inline-form">
+    <div class="typeahead-block">
+      <input
+        type="text"
+        name="{{ card_input_name }}"
+        placeholder="{{ card_placeholder }}"
+        required
+        {% if card_search_type == 'user' %}data-admin-user-search{% endif %}
+        {% if card_search_type == 'group' %}data-admin-group-search{% endif %}
+      >
+      <div class="typeahead-results hidden"></div>
+    </div>
+    <button type="submit">{{ card_button_label }}</button>
+  </form>
+</section>

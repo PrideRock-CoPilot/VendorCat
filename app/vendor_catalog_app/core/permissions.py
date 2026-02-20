@@ -147,9 +147,12 @@ ROLE_PERMISSIONS = {
         # Vendor-level associations
         'vendor_doc_create',
         'vendor_demo_map',
+        'vendor_demo_map_bulk',
         'vendor_contract_map',
         'vendor_contract_create',
+        'vendor_contract_cancel',
         'vendor_contract_update',
+        'vendor_contract_map_bulk',
         
         # Project permissions
         'project_create',
@@ -168,12 +171,16 @@ ROLE_PERMISSIONS = {
         'offering_edit',
         'offering_invoice_create',
         'offering_invoice_edit',
+        'offering_invoice_delete',
         'offering_owner_create',
         'offering_owner_edit',
+        'offering_owner_delete',
         'offering_contact_create',
         'offering_contact_edit',
+        'offering_contact_delete',
         'offering_profile_edit',
         'offering_dataflow_create',
+        'offering_dataflow_delete',
         'offering_dataflow_edit',
         'offering_note_create',
         'offering_ticket_create',
@@ -187,6 +194,7 @@ ROLE_PERMISSIONS = {
         'demo_form_copy',
         'demo_review_form_template',
         'demo_review_form_attach',
+        'doc_delete',
         'demo_review_form_submit',
         'demo_doc_create',
         

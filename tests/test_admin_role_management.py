@@ -75,7 +75,7 @@ def test_admin_can_grant_custom_role_to_user(client: TestClient) -> None:
 
     admin_page = client.get("/admin")
     assert admin_page.status_code == 200
-    assert "Owner User" in admin_page.text
+    assert "owner@example.com" in admin_page.text
     assert "vendor_custom_reporter" in admin_page.text
 
 
@@ -150,6 +150,85 @@ def test_admin_can_revoke_user_role_from_table_flow(client: TestClient) -> None:
     assert active_rows.empty
 
 
+def test_admin_revoke_role_requires_reason_when_flagged(client: TestClient) -> None:
+    client.post(
+        "/admin/grant-role",
+        data={"target_user": "owner@example.com", "role_code": "vendor_editor"},
+        follow_redirects=False,
+    )
+
+    missing_reason = client.post(
+        "/admin/revoke-role",
+        data={
+            "target_user": "owner@example.com",
+            "role_code": "vendor_editor",
+            "require_reason": "1",
+            "reason": "",
+            "tab": "users",
+        },
+        follow_redirects=False,
+    )
+    assert missing_reason.status_code == 303
+
+    repo = get_repo()
+    before_rows = repo.list_role_grants()
+    before_active = before_rows[
+        (before_rows["user_principal"].astype(str) == "owner@example.com")
+        & (before_rows["role_code"].astype(str) == "vendor_editor")
+        & (before_rows["active_flag"].astype(str).str.lower().isin({"1", "true"}))
+    ]
+    assert not before_active.empty
+
+    revoke = client.post(
+        "/admin/revoke-role",
+        data={
+            "target_user": "owner@example.com",
+            "role_code": "vendor_editor",
+            "require_reason": "1",
+            "reason": "Role no longer required for this POC phase.",
+            "tab": "users",
+        },
+        follow_redirects=False,
+    )
+    assert revoke.status_code == 303
+
+    after_rows = repo.list_role_grants()
+    after_active = after_rows[
+        (after_rows["user_principal"].astype(str) == "owner@example.com")
+        & (after_rows["role_code"].astype(str) == "vendor_editor")
+        & (after_rows["active_flag"].astype(str).str.lower().isin({"1", "true"}))
+    ]
+    assert after_active.empty
+
+
+def test_admin_can_save_user_access_with_one_save_flow(client: TestClient) -> None:
+    save = client.post(
+        "/admin/users/save-access",
+        data={
+            "target_user": "pm@example.com",
+            "role_code": "vendor_editor",
+            "scope_level": "edit",
+            "lob_ids": ["FIN-OPS", "IT-ENT"],
+            "tab": "users",
+        },
+        follow_redirects=False,
+    )
+    assert save.status_code == 303
+
+    repo = get_repo()
+    role_rows = repo.list_role_grants(user_principal="pm@example.com")
+    active_role_rows = role_rows[
+        (role_rows["role_code"].astype(str) == "vendor_editor")
+        & (role_rows["active_flag"].astype(str).str.lower().isin({"1", "true"}))
+    ]
+    assert not active_role_rows.empty
+
+    scope_rows = repo.list_scope_grants(user_principal="pm@example.com")
+    active_scope_rows = scope_rows[scope_rows["active_flag"].astype(str).str.lower().isin({"1", "true"})]
+    assert set(active_scope_rows["org_id"].astype(str).tolist()) == {"FIN-OPS", "IT-ENT"}
+    assert set(active_scope_rows["scope_level"].astype(str).tolist()) == {"edit"}
+
+
 def test_admin_can_grant_role_to_group_and_group_member_inherits_it(client: TestClient) -> None:
     grant = client.post(
         "/admin/grant-group-role",
@@ -217,6 +296,24 @@ def test_admin_can_revoke_group_role_from_table_flow(client: TestClient) -> None
     ].copy()
     active_rows = group_rows[group_rows["active_flag"].astype(str).str.lower().isin({"1", "true"})]
     assert active_rows.empty
+
+
+def test_admin_can_save_group_access_with_one_save_flow(client: TestClient) -> None:
+    response = client.post(
+        "/admin/groups/save-access",
+        data={
+            "target_group": "AD-Group-Save",
+            "role_code": "vendor_editor",
+            "tab": "groups",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+    repo = get_repo()
+    grants = repo.list_group_role_grants(group_principal="group:ad-group-save")
+    active_rows = grants[grants["active_flag"].astype(str).str.lower().isin({"1", "true"})]
+    assert set(active_rows["role_code"].astype(str).tolist()) == {"vendor_editor"}
 
 
 def test_admin_can_revoke_org_scope_from_table_flow(client: TestClient) -> None:
@@ -303,7 +400,7 @@ def test_admin_defaults_section_resequences_sort_order(client: TestClient) -> No
         follow_redirects=False,
     )
     assert create.status_code == 303
-    assert "section=defaults" in create.headers["location"]
+    assert create.headers["location"].startswith("/admin/defaults")
 
     repo = get_repo()
     rows = repo.list_lookup_options("doc_tag", active_only=True)
@@ -462,5 +559,48 @@ def test_admin_ownership_reassignment_selected_per_row_supports_different_target
         for row in admin_rows
     }
     assert key_offering in admin_keys
+
+
+def test_admin_search_endpoints_return_user_and_group_matches(client: TestClient) -> None:
+    grant = client.post(
+        "/admin/grant-group-role",
+        data={"target_group": "AD-Search-Admins", "role_code": "vendor_admin"},
+        follow_redirects=False,
+    )
+    assert grant.status_code == 303
+
+    user_search = client.get("/admin/users/search?q=owner&limit=20")
+    assert user_search.status_code == 200
+    user_payload = user_search.json()
+    user_items = list(user_payload.get("items") or [])
+    assert any(str(item.get("login_identifier") or "") == "owner@example.com" for item in user_items)
+
+    group_search = client.get("/admin/groups/search?q=search-admins&limit=20")
+    assert group_search.status_code == 200
+    group_payload = group_search.json()
+    group_items = list(group_payload.get("items") or [])
+    assert any(str(item.get("group_principal") or "") == "group:ad-search-admins" for item in group_items)
+
+
+def test_admin_access_role_grants_list_supports_pagination(client: TestClient) -> None:
+    for idx in range(1, 5):
+        response = client.post(
+            "/admin/grant-role",
+            data={"target_user": f"paging.user{idx}@example.com", "role_code": "vendor_editor"},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+
+    repo = get_repo()
+    total = int(repo.count_role_grants())
+    assert total >= 2
+
+    page_one = repo.list_role_grants(limit=1, offset=0)
+    page_two = repo.list_role_grants(limit=1, offset=1)
+    assert len(page_one) == 1
+    assert len(page_two) == 1
+    assert str(page_one.iloc[0]["user_principal"]) != str(page_two.iloc[0]["user_principal"]) or str(
+        page_one.iloc[0]["granted_at"]
+    ) != str(page_two.iloc[0]["granted_at"])
 
 
