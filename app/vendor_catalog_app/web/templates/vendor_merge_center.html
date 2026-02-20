@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="section-header">
+  <div>
+    <h1>Vendor Merge Center</h1>
+    <p>Preview conflicts, select survivorship decisions, then execute a full vendor graph merge.</p>
+  </div>
+  <div class="button-group">
+    <a class="button-link subtle" href="/vendors">Back To Vendor 360</a>
+  </div>
+</div>
+
+<section class="card section-divider">
+  <h2>Merge Candidates</h2>
+  <form method="post" action="/vendors/merge-center/preview" class="grid grid-3">
+    <label>
+      Survivor Vendor ID
+      <input type="text" name="survivor_vendor_id" value="{{ survivor_vendor_id }}" placeholder="vnd-xxxx" required>
+    </label>
+    <label>
+      Source Vendor ID
+      <input type="text" name="source_vendor_id" value="{{ source_vendor_id }}" placeholder="vnd-xxxx" required>
+    </label>
+    <div>
+      <button type="submit">Preview Merge</button>
+    </div>
+  </form>
+</section>
+
+{% if merge_preview %}
+<section class="card section-divider">
+  <h2>Merge Preview</h2>
+  <p class="muted">
+    survivor={{ merge_preview.survivor_vendor_id }} |
+    source={{ merge_preview.source_vendor_id }} |
+    source-linked-rows={{ merge_preview.total_source_linked_rows }}
+  </p>
+
+  <h3>Field Conflicts</h3>
+  <form method="post" action="/vendors/merge-center/execute">
+    <input type="hidden" name="survivor_vendor_id" value="{{ merge_preview.survivor_vendor_id }}">
+    <input type="hidden" name="source_vendor_id" value="{{ merge_preview.source_vendor_id }}">
+    <label>
+      Merge Reason
+      <input type="text" name="merge_reason" value="vendor_merge_center" required>
+    </label>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Field</th>
+          <th>Survivor Value</th>
+          <th>Source Value</th>
+          <th>Decision</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in merge_preview.conflicts %}
+        <tr>
+          <td>{{ row.field_name }}</td>
+          <td>{{ row.survivor_value }}</td>
+          <td>{{ row.source_value }}</td>
+          <td>
+            <select name="conflict_decision_{{ row.field_name }}">
+              <option value="survivor">Keep survivor</option>
+              <option value="source">Use source</option>
+              <option value="keep_both">Keep both</option>
+            </select>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4">No scalar conflicts detected.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h3 style="margin-top:12px;">Offering Collisions</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Source Offering</th>
+          <th>Collision Targets</th>
+          <th>Decision</th>
+          <th>Target (merge)</th>
+          <th>Rename (keep both)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in merge_preview.offering_collisions %}
+        <tr>
+          <td>{{ row.source_offering_name }} ({{ row.source_offering_id }})</td>
+          <td>
+            {% for target in row.target_options %}
+            <div>{{ target.offering_name }} ({{ target.offering_id }})</div>
+            {% endfor %}
+          </td>
+          <td>
+            <select name="offering_decision_{{ row.source_offering_id }}">
+              <option value="keep_both">Keep both</option>
+              <option value="merge">Merge into target</option>
+            </select>
+          </td>
+          <td>
+            <select name="offering_target_{{ row.source_offering_id }}">
+              <option value="">(auto-first target)</option>
+              {% for target in row.target_options %}
+              <option value="{{ target.offering_id }}">{{ target.offering_name }} ({{ target.offering_id }})</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td>
+            <input type="text" name="offering_rename_{{ row.source_offering_id }}" placeholder="optional keep-both name">
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5">No offering collisions detected.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="button-group" style="margin-top:12px;">
+      <button type="submit">Execute Merge</button>
+      <a class="button-link subtle" href="/vendors/merge-center">Reset</a>
+    </div>
+  </form>
+</section>
+{% endif %}
+
+{% if merge_execute_result %}
+<section class="card section-divider">
+  <h2>Merge Result</h2>
+  <pre>{{ merge_execute_result | tojson(indent=2) }}</pre>
+</section>
+{% endif %}
+{% endblock %}

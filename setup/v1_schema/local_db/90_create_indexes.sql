@@ -50,6 +50,7 @@ CREATE INDEX IF NOT EXISTS idx_src_spreadsheet_batch_record ON src_spreadsheet_v
 
 CREATE INDEX IF NOT EXISTS idx_core_vendor_lifecycle ON core_vendor(lifecycle_state, updated_at);
 CREATE INDEX IF NOT EXISTS idx_core_vendor_owner_org ON core_vendor(owner_org_id, lifecycle_state);
+CREATE INDEX IF NOT EXISTS idx_core_vendor_merged_into ON core_vendor(merged_into_vendor_id);
 CREATE INDEX IF NOT EXISTS idx_core_vendor_offering_vendor ON core_vendor_offering(vendor_id, lifecycle_state);
 CREATE INDEX IF NOT EXISTS idx_core_contract_vendor_status ON core_contract(vendor_id, contract_status);
 CREATE INDEX IF NOT EXISTS idx_core_contract_offering ON core_contract(offering_id, contract_status);
@@ -74,3 +75,4 @@ CREATE INDEX IF NOT EXISTS idx_app_offering_ticket_offering ON app_offering_tick
 CREATE INDEX IF NOT EXISTS idx_app_offering_invoice_offering ON app_offering_invoice(offering_id, invoice_date, active_flag);
 CREATE INDEX IF NOT EXISTS idx_app_offering_payment_invoice ON app_offering_payment(invoice_id, payment_date, active_flag);
 CREATE INDEX IF NOT EXISTS idx_app_offering_data_flow_offering ON app_offering_data_flow(offering_id, direction, active_flag);
+CREATE INDEX IF NOT EXISTS idx_app_import_mapping_profile_layout_active ON app_import_mapping_profile(layout_key, active_flag, updated_at);

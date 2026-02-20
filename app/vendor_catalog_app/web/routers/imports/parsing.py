@@ -334,6 +334,20 @@ def _xml_local_name(tag: str) -> str:
     return str(tag or "").split("}", 1)[-1]
 
 
+def _split_xml_record_path(record_path: str) -> list[str]:
+    cleaned = str(record_path or "").strip().replace("\\", "/")
+    if not cleaned:
+        return []
+    normalized = cleaned.strip().strip("/")
+    if not normalized:
+        return []
+    if "/" in normalized:
+        tokens = [part.strip() for part in normalized.split("/") if part.strip()]
+    else:
+        tokens = [part.strip() for part in normalized.split(".") if part.strip()]
+    return tokens
+
+
 def _flatten_xml_element(element: ET.Element) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for key, value in dict(element.attrib).items():
@@ -363,7 +377,31 @@ def _flatten_xml_element(element: ET.Element) -> dict[str, Any]:
     return out
 
 
-def _resolve_xml_record_elements(root: ET.Element, record_tag: str) -> tuple[list[ET.Element], str]:
+def _resolve_xml_record_elements(
+    root: ET.Element,
+    *,
+    record_tag: str,
+    record_path: str,
+) -> tuple[list[ET.Element], str]:
+    path_tokens = _split_xml_record_path(record_path)
+    if path_tokens:
+        current: list[ET.Element] = [root]
+        if path_tokens and path_tokens[0] == _xml_local_name(root.tag):
+            path_tokens = path_tokens[1:]
+        for token in path_tokens:
+            next_nodes: list[ET.Element] = []
+            for parent in current:
+                for child in list(parent):
+                    child_name = _xml_local_name(child.tag)
+                    if token == "*" or child_name == token:
+                        next_nodes.append(child)
+            current = next_nodes
+            if not current:
+                break
+        if not current:
+            raise ValueError(f"XML record path '{record_path}' was not found.")
+        return current, ".".join(_split_xml_record_path(record_path))
+
     cleaned = str(record_tag or "").strip()
     if cleaned:
         matched = [element for element in root.iter() if _xml_local_name(element.tag) == cleaned]
@@ -371,36 +409,65 @@ def _resolve_xml_record_elements(root: ET.Element, record_tag: str) -> tuple[lis
             raise ValueError(f"XML record tag '{cleaned}' was not found.")
         return matched, cleaned
 
+    best_nodes: list[ET.Element] = []
+    best_selector = ""
+    best_depth = 10**6
+    best_count = 0
+    queue: list[tuple[ET.Element, list[str], int]] = [(root, [_xml_local_name(root.tag)], 0)]
+    while queue:
+        parent, path_tokens_active, depth = queue.pop(0)
+        children = list(parent)
+        if not children:
+            continue
+        child_counts = Counter(_xml_local_name(child.tag) for child in children)
+        for child_name, count in child_counts.items():
+            if count <= 1:
+                continue
+            matched = [child for child in children if _xml_local_name(child.tag) == child_name]
+            selector = ".".join(path_tokens_active + [child_name])
+            if len(matched) > best_count or (len(matched) == best_count and depth < best_depth):
+                best_nodes = matched
+                best_selector = selector
+                best_depth = depth
+                best_count = len(matched)
+        for child in children:
+            queue.append((child, path_tokens_active + [_xml_local_name(child.tag)], depth + 1))
+
+    if best_nodes:
+        return best_nodes, best_selector
+
     direct_children = list(root)
-    if not direct_children:
-        return [root], ""
-
-    direct_counts = Counter(_xml_local_name(child.tag) for child in direct_children)
-    repeated = [name for name, count in direct_counts.items() if count > 1]
-    if repeated:
-        selected = repeated[0]
-        return [child for child in direct_children if _xml_local_name(child.tag) == selected], selected
-
-    if len(direct_children) == 1:
-        nested_children = list(direct_children[0])
-        nested_counts = Counter(_xml_local_name(child.tag) for child in nested_children)
-        repeated_nested = [name for name, count in nested_counts.items() if count > 1]
-        if repeated_nested:
-            selected = repeated_nested[0]
-            return [child for child in nested_children if _xml_local_name(child.tag) == selected], selected
-    return direct_children, ""
+    if direct_children:
+        fallback_selector = ".".join([_xml_local_name(root.tag), _xml_local_name(direct_children[0].tag)])
+        return direct_children, fallback_selector
+    return [root], _xml_local_name(root.tag)
 
 
-def _parse_xml_source_rows(*, text: str, record_tag: str) -> tuple[list[dict[str, str]], list[str], str]:
+def _parse_xml_source_rows(
+    *,
+    text: str,
+    record_tag: str,
+    record_path: str,
+) -> tuple[list[dict[str, str]], list[str], str, str]:
     warnings: list[str] = []
     try:
         root = ET.fromstring(text)
     except Exception as exc:
         raise ValueError(f"XML parse failed: {exc}") from exc
 
-    records, resolved_tag = _resolve_xml_record_elements(root, record_tag)
-    if resolved_tag and not record_tag:
-        warnings.append(f"Detected XML record tag '{resolved_tag}'.")
+    records, resolved_selector = _resolve_xml_record_elements(
+        root,
+        record_tag=record_tag,
+        record_path=record_path,
+    )
+    resolved_tag = ""
+    if str(record_path or "").strip():
+        warnings.append(f"Using XML record path '{resolved_selector}'.")
+    elif str(record_tag or "").strip():
+        resolved_tag = str(record_tag or "").strip()
+    elif resolved_selector:
+        warnings.append(f"Detected XML record selector '{resolved_selector}'.")
+        resolved_tag = str(resolved_selector.split(".")[-1] or "").strip()
 
     source_rows: list[dict[str, str]] = []
     for line_number, element in enumerate(records, start=1):
@@ -409,7 +476,7 @@ def _parse_xml_source_rows(*, text: str, record_tag: str) -> tuple[list[dict[str
         if _row_has_data(source_row):
             source_row["_line"] = str(line_number)
             source_rows.append(source_row)
-    return source_rows, warnings, resolved_tag
+    return source_rows, warnings, resolved_tag, resolved_selector
 
 
 def _build_source_fields(source_rows: list[dict[str, str]]) -> list[dict[str, Any]]:
@@ -499,8 +566,13 @@ def _resolve_source_target_mapping(
     *,
     source_fields: list[dict[str, str]],
     requested_mapping: dict[str, str] | None = None,
+    dynamic_field_catalog: dict[str, list[str]] | None = None,
 ) -> dict[str, str]:
-    ordered_target_keys = [str(item.get("key") or "").strip() for item in import_target_field_options() if str(item.get("key") or "").strip()]
+    ordered_target_keys = [
+        str(item.get("key") or "").strip()
+        for item in import_target_field_options(dynamic_field_catalog=dynamic_field_catalog)
+        if str(item.get("key") or "").strip()
+    ]
     valid_target_keys = set(ordered_target_keys)
     source_keys = [str(item.get("key") or "").strip() for item in source_fields if str(item.get("key") or "").strip()]
     selected: dict[str, str] = {}
@@ -696,10 +768,12 @@ def resolve_source_target_mapping(
     *,
     source_fields: list[dict[str, str]],
     requested_mapping: dict[str, str] | None = None,
+    dynamic_field_catalog: dict[str, list[str]] | None = None,
 ) -> dict[str, str]:
     return _resolve_source_target_mapping(
         source_fields=source_fields,
         requested_mapping=requested_mapping,
+        dynamic_field_catalog=dynamic_field_catalog,
     )
 
 
@@ -733,10 +807,12 @@ def parse_layout_rows(
     format_hint: str = "auto",
     delimiter: str = ",",
     json_record_path: str = "",
+    xml_record_path: str = "",
     xml_record_tag: str = "",
     strict_layout: bool = False,
     field_mapping: dict[str, str] | None = None,
     source_target_mapping: dict[str, str] | None = None,
+    dynamic_field_catalog: dict[str, list[str]] | None = None,
 ) -> dict[str, Any]:
     spec = IMPORT_LAYOUTS[layout_key]
     allowed_fields = [str(field) for field in spec.get("fields", [])]
@@ -748,7 +824,9 @@ def parse_layout_rows(
     used_delimiter = selected_delimiter
     warnings: list[str] = []
     resolved_json_path = str(json_record_path or "").strip()
+    resolved_xml_path = str(xml_record_path or "").strip()
     resolved_xml_tag = str(xml_record_tag or "").strip()
+    resolved_record_selector = ""
     source_rows: list[dict[str, str]] = []
 
     if effective_format == "tsv":
@@ -776,10 +854,20 @@ def parse_layout_rows(
         if strict_layout:
             raise ValueError("Quick upload supports approved CSV/TSV layouts only. Use Advanced Wizard for JSON.")
         source_rows, warnings, resolved_json_path = _parse_json_source_rows(text=text, record_path=json_record_path)
+        if resolved_json_path:
+            resolved_record_selector = f"json:{resolved_json_path}"
     elif effective_format == "xml":
         if strict_layout:
             raise ValueError("Quick upload supports approved CSV/TSV layouts only. Use Advanced Wizard for XML.")
-        source_rows, warnings, resolved_xml_tag = _parse_xml_source_rows(text=text, record_tag=xml_record_tag)
+        source_rows, warnings, resolved_xml_tag, resolved_xml_path = _parse_xml_source_rows(
+            text=text,
+            record_tag=xml_record_tag,
+            record_path=xml_record_path,
+        )
+        if resolved_xml_path:
+            resolved_record_selector = f"xml:{resolved_xml_path}"
+        elif resolved_xml_tag:
+            resolved_record_selector = f"xml_tag:{resolved_xml_tag}"
     else:
         raise ValueError(f"Unsupported file format '{effective_format}'.")
 
@@ -791,6 +879,7 @@ def parse_layout_rows(
     resolved_source_target_mapping = _resolve_source_target_mapping(
         source_fields=source_fields,
         requested_mapping=source_target_mapping,
+        dynamic_field_catalog=dynamic_field_catalog,
     )
     preferred_layout_mapping = _layout_field_mapping_from_source_targets(
         layout_key=layout_key,
@@ -819,14 +908,16 @@ def parse_layout_rows(
         "field_mapping": resolved_layout_mapping,
         "source_target_mapping": resolved_source_target_mapping,
         "stage_area_rows": stage_area_rows,
-        "target_field_options": import_target_field_options(),
+        "target_field_options": import_target_field_options(dynamic_field_catalog=dynamic_field_catalog),
         "detected_format": detected_format,
         "effective_format": effective_format,
         "warnings": warnings,
+        "resolved_record_selector": resolved_record_selector,
         "parser_options": {
             "format_hint": requested_format,
             "delimiter": used_delimiter,
             "json_record_path": resolved_json_path,
+            "xml_record_path": resolved_xml_path,
             "xml_record_tag": resolved_xml_tag,
         },
     }
@@ -866,6 +957,7 @@ def render_context(
     preview_hidden_count: int = 0,
     source_field_map: list[dict[str, str]] | None = None,
     selected_source_target_mapping: dict[str, str] | None = None,
+    dynamic_field_catalog: dict[str, list[str]] | None = None,
     mapping_profiles: list[dict[str, Any]] | None = None,
     selected_mapping_profile_id: str = "",
     mapping_profile_saved: str = "",
@@ -876,6 +968,7 @@ def render_context(
         "format_hint": "auto",
         "delimiter": ",",
         "json_record_path": "",
+        "xml_record_path": "",
         "xml_record_tag": "",
     }
     if parser_options:
@@ -884,6 +977,7 @@ def render_context(
                 "format_hint": safe_format_hint(str(parser_options.get("format_hint") or "auto")),
                 "delimiter": safe_delimiter(str(parser_options.get("delimiter") or ",")),
                 "json_record_path": str(parser_options.get("json_record_path") or "").strip(),
+                "xml_record_path": str(parser_options.get("xml_record_path") or "").strip(),
                 "xml_record_tag": str(parser_options.get("xml_record_tag") or "").strip(),
             }
         )
@@ -950,7 +1044,7 @@ def render_context(
         "preview_hidden_count": int(preview_hidden_count or 0),
         "source_field_map": source_field_map or [],
         "selected_source_target_mapping": source_target_values,
-        "target_field_groups": import_target_field_groups(),
+        "target_field_groups": import_target_field_groups(dynamic_field_catalog=dynamic_field_catalog),
         "mapping_profiles": mapping_profiles or [],
         "selected_mapping_profile_id": str(selected_mapping_profile_id or "").strip(),
         "mapping_profile_saved": str(mapping_profile_saved or "").strip(),

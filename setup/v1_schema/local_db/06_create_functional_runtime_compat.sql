@@ -55,6 +55,10 @@ CREATE TABLE IF NOT EXISTS core_vendor (
   source_record_id TEXT,
   source_batch_id TEXT,
   source_extract_ts TEXT,
+  merged_into_vendor_id TEXT,
+  merged_at TEXT,
+  merged_by TEXT,
+  merge_reason TEXT,
   updated_at TEXT NOT NULL,
   updated_by TEXT NOT NULL
 );
@@ -717,4 +721,21 @@ CREATE TABLE IF NOT EXISTS app_import_stage_payment (
   area_payload_json TEXT NOT NULL,
   created_at TEXT NOT NULL,
   FOREIGN KEY (import_job_id) REFERENCES app_import_job(import_job_id)
+);
+
+CREATE TABLE IF NOT EXISTS app_import_mapping_profile (
+  profile_id TEXT PRIMARY KEY,
+  layout_key TEXT NOT NULL,
+  profile_name TEXT NOT NULL,
+  file_format TEXT,
+  source_signature TEXT,
+  source_fields_json TEXT,
+  source_target_mapping_json TEXT,
+  field_mapping_json TEXT,
+  parser_options_json TEXT,
+  active_flag INTEGER NOT NULL DEFAULT 1 CHECK (active_flag IN (0, 1)),
+  created_at TEXT NOT NULL,
+  created_by TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL
 );

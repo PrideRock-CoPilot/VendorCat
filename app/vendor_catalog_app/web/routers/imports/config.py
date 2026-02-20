@@ -157,6 +157,15 @@ IMPORT_STAGING_AREAS: dict[str, dict[str, Any]] = {
     },
 }
 
+IMPORT_STAGE_TABLE_COLUMN_EXCLUDE = {
+    "import_stage_area_row_id",
+    "import_job_id",
+    "row_index",
+    "line_number",
+    "area_payload_json",
+    "created_at",
+}
+
 IMPORT_LAYOUT_FIELD_TARGET_KEYS: dict[str, dict[str, str]] = {
     "vendors": {
         "vendor_id": "vendor.vendor_id",
@@ -225,12 +234,52 @@ IMPORT_LAYOUT_FIELD_TARGET_KEYS: dict[str, dict[str, str]] = {
 }
 
 
-def import_target_field_options() -> list[dict[str, str]]:
+def _dynamic_import_field_label(*, area_label: str, field_key: str) -> str:
+    cleaned = str(field_key or "").strip().replace("_", " ")
+    cleaned = " ".join([part for part in cleaned.split(" ") if part])
+    if not cleaned:
+        cleaned = str(field_key or "").strip()
+    return f"{area_label} - {cleaned.title()}"
+
+
+def import_dynamic_field_catalog(repo) -> dict[str, list[str]]:
+    if repo is None or not hasattr(repo, "list_import_stage_table_columns"):
+        return {}
+    try:
+        table_columns = repo.list_import_stage_table_columns()
+    except Exception:
+        return {}
+    out: dict[str, list[str]] = {}
+    for area_key, spec in IMPORT_STAGING_AREAS.items():
+        table_name = str(spec.get("stage_table") or "").strip()
+        if not table_name:
+            continue
+        columns = [str(item).strip().lower() for item in list(table_columns.get(table_name) or []) if str(item).strip()]
+        dynamic_keys = [
+            col
+            for col in columns
+            if col not in IMPORT_STAGE_TABLE_COLUMN_EXCLUDE
+        ]
+        if dynamic_keys:
+            out[str(area_key)] = dynamic_keys
+    return out
+
+
+def import_target_field_options(*, dynamic_field_catalog: dict[str, list[str]] | None = None) -> list[dict[str, str]]:
     options: list[dict[str, str]] = []
     for area_key, spec in IMPORT_STAGING_AREAS.items():
         area_label = str(spec.get("label") or area_key.title())
         stage_table = str(spec.get("stage_table") or "")
-        for field_key, field_label in list(spec.get("fields") or []):
+        static_fields = [(str(field_key), str(field_label)) for field_key, field_label in list(spec.get("fields") or [])]
+        field_rows: list[tuple[str, str]] = list(static_fields)
+        seen_field_keys = {field_key for field_key, _ in static_fields}
+        for dynamic_key in list((dynamic_field_catalog or {}).get(str(area_key), []) or []):
+            key = str(dynamic_key or "").strip().lower()
+            if not key or key in seen_field_keys:
+                continue
+            field_rows.append((key, _dynamic_import_field_label(area_label=area_label, field_key=key)))
+            seen_field_keys.add(key)
+        for field_key, field_label in field_rows:
             options.append(
                 {
                     "key": f"{area_key}.{field_key}",
@@ -244,9 +293,9 @@ def import_target_field_options() -> list[dict[str, str]]:
     return options
 
 
-def import_target_field_groups() -> list[dict[str, Any]]:
+def import_target_field_groups(*, dynamic_field_catalog: dict[str, list[str]] | None = None) -> list[dict[str, Any]]:
     groups: list[dict[str, Any]] = []
-    options = import_target_field_options()
+    options = import_target_field_options(dynamic_field_catalog=dynamic_field_catalog)
     for area_key, spec in IMPORT_STAGING_AREAS.items():
         group_options = [item for item in options if str(item.get("area_key") or "") == area_key]
         groups.append(

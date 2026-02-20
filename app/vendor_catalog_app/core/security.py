@@ -63,6 +63,8 @@ CHANGE_APPROVAL_LEVELS = {
     "record_contract_cancellation": 9,
     "grant_role": 9,
     "grant_scope": 9,
+    "manage_import_mapping_profile": 9,
+    "merge_vendor_records": 9,
 }
 CHANGE_ACTION_CHOICES = tuple(sorted(CHANGE_APPROVAL_LEVELS.keys()))
 ACCESS_REQUEST_ALLOWED_ROLES = (

@@ -110,5 +110,6 @@ WHERE (
   )
 )
 {state_clause}
+{merged_clause}
 ORDER BY v.display_name
 LIMIT 250

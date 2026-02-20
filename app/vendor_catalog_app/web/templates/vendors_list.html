@@ -56,6 +56,13 @@
       {% endfor %}
     </select>
   </label>
+  <label>
+    Merged Records
+    <select name="include_merged">
+      <option value="0" {% if not filters.include_merged %}selected{% endif %}>Hide merged sources</option>
+      <option value="1" {% if filters.include_merged %}selected{% endif %}>Include merged sources</option>
+    </select>
+  </label>
   <input type="hidden" name="sort_by" value="{{ filters.sort_by }}">
   <input type="hidden" name="sort_dir" value="{{ filters.sort_dir }}">
   <input type="hidden" name="page" value="1">
@@ -84,6 +91,7 @@
     <h2 title="Click a vendor row to open the high-level overview. Use Offerings for deep-dive offering management.">Vendor List</h2>
   </div>
   <div class="button-group">
+    <a class="button-link subtle" href="/vendors/merge-center">Merge Center</a>
     {% if can_edit and not locked_mode %}
     <a class="button-link" href="/vendors/new?return_to={{ return_to|urlencode }}">+ New Vendor</a>
     {% endif %}

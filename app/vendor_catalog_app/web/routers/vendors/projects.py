@@ -57,6 +57,8 @@ def _normalize_project_type(repo, value: str) -> str:
 def vendor_projects_page(request: Request, vendor_id: str, return_to: str = VENDOR_DEFAULT_RETURN_TO):
     repo = get_repo()
     base = _vendor_base_context(repo, request, vendor_id, "projects", return_to)
+    if isinstance(base, RedirectResponse):
+        return base
     if base is None:
         return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
 
@@ -92,6 +94,8 @@ def vendor_projects_page(request: Request, vendor_id: str, return_to: str = VEND
 def project_new_form(request: Request, vendor_id: str, return_to: str = VENDOR_DEFAULT_RETURN_TO):
     repo = get_repo()
     base = _vendor_base_context(repo, request, vendor_id, "projects", return_to)
+    if isinstance(base, RedirectResponse):
+        return base
     if base is None:
         return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
     blocked_response = _redirect_if_write_blocked(
@@ -225,6 +229,8 @@ def project_detail_page(request: Request, vendor_id: str, project_id: str, retur
 def project_edit_form(request: Request, vendor_id: str, project_id: str, return_to: str = VENDOR_DEFAULT_RETURN_TO):
     repo = get_repo()
     base = _vendor_base_context(repo, request, vendor_id, "projects", return_to)
+    if isinstance(base, RedirectResponse):
+        return base
     if base is None:
         return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
     project = repo.get_project(vendor_id, project_id)
@@ -374,6 +380,8 @@ async def project_edit_submit(request: Request, vendor_id: str, project_id: str)
 def project_demo_new_form(request: Request, vendor_id: str, project_id: str, return_to: str = VENDOR_DEFAULT_RETURN_TO):
     repo = get_repo()
     base = _vendor_base_context(repo, request, vendor_id, "projects", return_to)
+    if isinstance(base, RedirectResponse):
+        return base
     if base is None:
         return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
     project = repo.get_project(vendor_id, project_id)

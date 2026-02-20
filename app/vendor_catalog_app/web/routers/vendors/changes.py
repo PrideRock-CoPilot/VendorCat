@@ -34,6 +34,8 @@ router = APIRouter(prefix="/vendors")
 def vendor_lineage_page(request: Request, vendor_id: str, return_to: str = VENDOR_DEFAULT_RETURN_TO):
     repo = get_repo()
     base = _vendor_base_context(repo, request, vendor_id, "lineage", return_to)
+    if isinstance(base, RedirectResponse):
+        return base
     if base is None:
         return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
 
@@ -44,14 +46,19 @@ def vendor_lineage_page(request: Request, vendor_id: str, return_to: str = VENDO
         active_nav="vendors",
         extra={
             "section": "lineage",
-            "vendor_id": vendor_id,
+            "vendor_id": base["vendor_id"],
             "vendor_display_name": base["display_name"],
             "return_to": base["return_to"],
             "vendor_nav": base["vendor_nav"],
             "summary": base["summary"],
-            "source_lineage": repo.get_vendor_source_lineage(vendor_id).to_dict("records"),
-            "change_requests": repo.get_vendor_change_requests(vendor_id).to_dict("records"),
-            "audit_events": repo.get_vendor_audit_events(vendor_id).to_dict("records"),
+            "source_lineage": repo.get_vendor_source_lineage(base["vendor_id"]).to_dict("records"),
+            "change_requests": repo.get_vendor_change_requests(base["vendor_id"]).to_dict("records"),
+            "audit_events": repo.get_vendor_audit_events(base["vendor_id"]).to_dict("records"),
+            "merge_history": (
+                repo.list_vendor_merge_history(vendor_id=base["vendor_id"], limit=50)
+                if hasattr(repo, "list_vendor_merge_history")
+                else []
+            ),
         },
     )
     return request.app.state.templates.TemplateResponse(request, "vendor_section.html", context)
@@ -61,6 +68,8 @@ def vendor_lineage_page(request: Request, vendor_id: str, return_to: str = VENDO
 def vendor_changes_page(request: Request, vendor_id: str, return_to: str = VENDOR_DEFAULT_RETURN_TO):
     repo = get_repo()
     base = _vendor_base_context(repo, request, vendor_id, "changes", return_to)
+    if isinstance(base, RedirectResponse):
+        return base
     if base is None:
         return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
 
@@ -71,13 +80,13 @@ def vendor_changes_page(request: Request, vendor_id: str, return_to: str = VENDO
         active_nav="vendors",
         extra={
             "section": "changes",
-            "vendor_id": vendor_id,
+            "vendor_id": base["vendor_id"],
             "vendor_display_name": base["display_name"],
             "return_to": base["return_to"],
             "vendor_nav": base["vendor_nav"],
             "summary": base["summary"],
             "profile": base["profile"].to_dict("records"),
-            "recent_audit": repo.get_vendor_audit_events(vendor_id).head(5).to_dict("records"),
+            "recent_audit": repo.get_vendor_audit_events(base["vendor_id"]).head(5).to_dict("records"),
             "lifecycle_states": LIFECYCLE_STATES,
             "risk_tiers": RISK_TIERS,
             "vendor_profile_change_reason_options": VENDOR_PROFILE_CHANGE_REASON_OPTIONS,

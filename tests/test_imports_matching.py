@@ -111,3 +111,48 @@ def test_vendor_matching_uses_phone_suffix() -> None:
     assert row["suggested_action"] == "merge"
     assert row["suggested_target_id"] == "vnd-phone-1"
     assert any("phone suffix" in str(note).lower() for note in row.get("notes", []))
+
+
+def test_build_preview_rows_preserves_source_payload_and_unmapped_fields() -> None:
+    repo = _FakeRepo()
+    mapped_rows = [
+        {
+            "vendor_id": "",
+            "legal_name": "Mapped Vendor",
+            "display_name": "Mapped Vendor",
+            "owner_org_id": "IT",
+            "lifecycle_state": "draft",
+            "risk_tier": "medium",
+            "support_contact_name": "",
+            "support_contact_type": "",
+            "support_email": "",
+            "support_phone": "",
+            "_line": "2",
+        }
+    ]
+    source_rows = [
+        {
+            "vendor.company_name": "Mapped Vendor",
+            "vendor.owner_org": "IT",
+            "vendor.unmapped_note": "keep-this",
+            "_line": "2",
+        }
+    ]
+    preview = build_preview_rows(
+        repo,
+        "vendors",
+        mapped_rows,
+        source_rows=source_rows,
+        source_target_mapping={
+            "vendor.company_name": "vendor.legal_name",
+            "vendor.owner_org": "vendor.owner_org_id",
+        },
+        mapping_profile_id="imap-123",
+        resolved_record_selector="xml:root.vendor_set.vendor",
+    )
+    assert len(preview) == 1
+    row = preview[0]
+    assert row.get("source_row_raw", {}).get("vendor.unmapped_note") == "keep-this"
+    assert row.get("unmapped_source_fields", {}).get("vendor.unmapped_note") == "keep-this"
+    assert row.get("mapping_profile_id") == "imap-123"
+    assert row.get("resolved_record_selector") == "xml:root.vendor_set.vendor"

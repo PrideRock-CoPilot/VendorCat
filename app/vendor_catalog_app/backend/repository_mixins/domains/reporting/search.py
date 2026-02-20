@@ -11,14 +11,16 @@ LOGGER = logging.getLogger(__name__)
 
 
 class RepositoryReportingSearchMixin:
-    def search_vendors_typeahead(self, *, q: str = "", limit: int = 20) -> pd.DataFrame:
+    def search_vendors_typeahead(self, *, q: str = "", limit: int = 20, include_merged: bool = False) -> pd.DataFrame:
         limit = max(1, min(int(limit or 20), 100))
         columns = ["vendor_id", "label", "display_name", "legal_name", "lifecycle_state"]
         params: list[Any] = []
-        where = "1 = 1"
+        where_parts = ["1 = 1"]
+        if not bool(include_merged) and hasattr(self, "_table_has_column") and self._table_has_column("core_vendor", "merged_into_vendor_id"):
+            where_parts.append("coalesce(trim(v.merged_into_vendor_id), '') = ''")
         if q.strip():
             like = f"%{q.strip()}%"
-            where = (
+            where_parts.append(
                 "("
                 "lower(v.vendor_id) LIKE lower(%s)"
                 " OR lower(coalesce(v.display_name, '')) LIKE lower(%s)"
@@ -26,6 +28,7 @@ class RepositoryReportingSearchMixin:
                 ")"
             )
             params.extend([like, like, like])
+        where = " AND ".join(where_parts)
         return self._query_file(
             "reporting/search_vendors_typeahead.sql",
             params=tuple(params) if params else None,

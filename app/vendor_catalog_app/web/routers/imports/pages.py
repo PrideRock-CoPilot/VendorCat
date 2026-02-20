@@ -11,6 +11,7 @@ from vendor_catalog_app.web.routers.imports.parsing import (
     render_context,
     safe_layout,
 )
+from vendor_catalog_app.web.routers.imports.config import import_dynamic_field_catalog
 
 router = APIRouter()
 
@@ -43,6 +44,7 @@ def imports_home(request: Request):
         extra=render_context(
             selected_layout="vendors",
             selected_flow_mode="quick",
+            dynamic_field_catalog=import_dynamic_field_catalog(repo),
             mapping_profiles=mapping_profiles,
         ),
     )

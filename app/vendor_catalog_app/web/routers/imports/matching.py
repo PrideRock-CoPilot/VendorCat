@@ -728,10 +728,36 @@ def _collect_invoice_merge_options(
     return options[:15]
 
 
-def build_preview_rows(repo, layout_key: str, rows: list[dict[str, str]]) -> list[dict[str, Any]]:
+def build_preview_rows(
+    repo,
+    layout_key: str,
+    rows: list[dict[str, str]],
+    *,
+    source_rows: list[dict[str, str]] | None = None,
+    source_target_mapping: dict[str, str] | None = None,
+    mapping_profile_id: str = "",
+    resolved_record_selector: str = "",
+) -> list[dict[str, Any]]:
     preview_rows: list[dict[str, Any]] = []
     ctx = ImportMatchContext(repo)
+    source_row_list = [dict(item) for item in list(source_rows or [])]
+    mapped_source_keys = {
+        str(source_key or "").strip()
+        for source_key, target_key in dict(source_target_mapping or {}).items()
+        if str(source_key or "").strip() and str(target_key or "").strip()
+    }
+    normalized_mapping_profile_id = str(mapping_profile_id or "").strip()
+    normalized_selector = str(resolved_record_selector or "").strip()
     for idx, row_data in enumerate(rows, start=1):
+        source_row_raw = dict(source_row_list[idx - 1]) if idx - 1 < len(source_row_list) else {}
+        source_row_raw.pop("_line", None)
+        unmapped_source_fields = {
+            str(key): str(value or "").strip()
+            for key, value in source_row_raw.items()
+            if str(key or "").strip()
+            and str(key or "").strip() not in mapped_source_keys
+            and str(value or "").strip()
+        }
         errors: list[str] = []
         notes: list[str] = []
         blocked_reasons: list[str] = []
@@ -855,6 +881,10 @@ def build_preview_rows(repo, layout_key: str, rows: list[dict[str, str]]) -> lis
                 "notes": combined_notes,
                 "errors": errors,
                 "row_status": row_status,
+                "source_row_raw": source_row_raw,
+                "unmapped_source_fields": unmapped_source_fields,
+                "mapping_profile_id": normalized_mapping_profile_id,
+                "resolved_record_selector": normalized_selector,
             }
         )
     return preview_rows

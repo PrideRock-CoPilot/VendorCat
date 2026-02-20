@@ -89,6 +89,8 @@ ROLE_PERMISSIONS = {
         'doc_delete',
         'import_preview',
         'import_apply',
+        'manage_import_mapping_profile',
+        'merge_vendor_records',
         'approval_decision',
         'access_request',
         'feedback_submit',

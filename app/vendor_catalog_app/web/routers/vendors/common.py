@@ -100,24 +100,46 @@ def _vendor_base_context(repo, request: Request, vendor_id: str, section: str, r
     ensure_session_started(request, user)
     log_page_view(request, user, f"Vendor 360 - {section.title()}")
 
-    profile = repo.get_vendor_profile(vendor_id)
+    requested_vendor_id = str(vendor_id or "").strip()
+    normalized_return_to = _safe_return_to(return_to)
+    canonical_vendor_id = requested_vendor_id
+    if hasattr(repo, "resolve_canonical_vendor_id"):
+        try:
+            resolved = str(repo.resolve_canonical_vendor_id(requested_vendor_id) or "").strip()
+            if resolved:
+                canonical_vendor_id = resolved
+        except Exception:
+            canonical_vendor_id = requested_vendor_id
+    if canonical_vendor_id and canonical_vendor_id != requested_vendor_id:
+        add_flash(
+            request,
+            f"Vendor '{requested_vendor_id}' was merged into '{canonical_vendor_id}'. Redirected to canonical record.",
+            "info",
+        )
+        encoded_return = quote(normalized_return_to, safe="")
+        return RedirectResponse(
+            url=f"/vendors/{canonical_vendor_id}/{section}?return_to={encoded_return}",
+            status_code=303,
+        )
+
+    profile = repo.get_vendor_profile(canonical_vendor_id)
     if profile.empty:
-        add_flash(request, f"Vendor {vendor_id} not found.", "error")
+        add_flash(request, f"Vendor {requested_vendor_id} not found.", "error")
         return None
 
     row = profile.iloc[0].to_dict()
-    display_name = str(row.get("display_name") or row.get("legal_name") or vendor_id)
-    return_to = _safe_return_to(return_to)
+    display_name = str(row.get("display_name") or row.get("legal_name") or canonical_vendor_id)
 
     return {
         "user": user,
         "profile": profile,
         "profile_row": row,
         "display_name": display_name,
-        "vendor_id": vendor_id,
-        "return_to": return_to,
-        "vendor_nav": _vendor_nav(vendor_id, return_to, section),
-        "summary": repo.vendor_summary(vendor_id, months=DEFAULT_VENDOR_SUMMARY_MONTHS),
+        "vendor_id": canonical_vendor_id,
+        "requested_vendor_id": requested_vendor_id,
+        "return_to": normalized_return_to,
+        "vendor_nav": _vendor_nav(canonical_vendor_id, normalized_return_to, section),
+        "summary": repo.vendor_summary(canonical_vendor_id, months=DEFAULT_VENDOR_SUMMARY_MONTHS),
     }
 
 

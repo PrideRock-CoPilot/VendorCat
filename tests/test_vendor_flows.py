@@ -277,6 +277,140 @@ def test_search_matches_related_contract_and_owner_data(client: TestClient) -> N
     assert "Microsoft" in by_owner.text
 
 
+def test_vendor_merge_center_executes_merge_and_hides_merged_source_by_default(client: TestClient) -> None:
+    create_survivor = client.post(
+        "/vendors/new",
+        data={
+            "return_to": "/vendors",
+            "legal_name": "Merge Survivor LLC",
+            "display_name": "Merge Survivor",
+            "lifecycle_state": "active",
+            "owner_org_id": "IT-ENT",
+            "risk_tier": "low",
+            "source_system": "manual",
+        },
+        follow_redirects=False,
+    )
+    assert create_survivor.status_code == 303
+    survivor_match = re.search(r"/vendors/(vnd-[^/]+)/summary", create_survivor.headers["location"])
+    assert survivor_match is not None
+    survivor_vendor_id = survivor_match.group(1)
+
+    create_source = client.post(
+        "/vendors/new",
+        data={
+            "return_to": "/vendors",
+            "legal_name": "Merge Source LLC",
+            "display_name": "Merge Source",
+            "lifecycle_state": "active",
+            "owner_org_id": "IT-ENT",
+            "risk_tier": "medium",
+            "source_system": "manual",
+        },
+        follow_redirects=False,
+    )
+    assert create_source.status_code == 303
+    source_match = re.search(r"/vendors/(vnd-[^/]+)/summary", create_source.headers["location"])
+    assert source_match is not None
+    source_vendor_id = source_match.group(1)
+
+    source_offering = client.post(
+        f"/vendors/{source_vendor_id}/offerings/new",
+        data={
+            "return_to": "/vendors",
+            "offering_name": "Merge Source Offering",
+            "offering_type": "SaaS",
+            "lifecycle_state": "draft",
+            "criticality_tier": "tier_2",
+        },
+        follow_redirects=False,
+    )
+    assert source_offering.status_code == 303
+
+    preview = client.get(
+        f"/vendors/merge-center?survivor_vendor_id={survivor_vendor_id}&source_vendor_id={source_vendor_id}"
+    )
+    assert preview.status_code == 200
+    assert "Merge Preview" in preview.text
+
+    execute = client.post(
+        "/vendors/merge-center/execute",
+        data={
+            "survivor_vendor_id": survivor_vendor_id,
+            "source_vendor_id": source_vendor_id,
+            "merge_reason": "test merge center",
+        },
+        follow_redirects=False,
+    )
+    assert execute.status_code == 303
+    assert execute.headers["location"].startswith(f"/vendors/{survivor_vendor_id}/summary")
+
+    repo = get_repo()
+    source_after = repo.get_vendor_profile(source_vendor_id)
+    assert not source_after.empty
+    source_row = source_after.iloc[0].to_dict()
+    assert str(source_row.get("merged_into_vendor_id") or "").strip() == survivor_vendor_id
+    assert str(source_row.get("lifecycle_state") or "").strip().lower() == "inactive"
+
+    default_rows, _default_total = repo.list_vendors_page(search_text=source_vendor_id, include_merged=False)
+    assert source_vendor_id not in set(default_rows.get("vendor_id", []).astype(str).tolist())
+
+    merged_rows, _merged_total = repo.list_vendors_page(search_text=source_vendor_id, include_merged=True)
+    assert source_vendor_id in set(merged_rows.get("vendor_id", []).astype(str).tolist())
+
+
+def test_vendor_detail_redirects_to_canonical_vendor_after_merge(client: TestClient) -> None:
+    create_survivor = client.post(
+        "/vendors/new",
+        data={
+            "return_to": "/vendors",
+            "legal_name": "Canonical Survivor LLC",
+            "display_name": "Canonical Survivor",
+            "lifecycle_state": "active",
+            "owner_org_id": "IT-ENT",
+            "risk_tier": "low",
+            "source_system": "manual",
+        },
+        follow_redirects=False,
+    )
+    assert create_survivor.status_code == 303
+    survivor_match = re.search(r"/vendors/(vnd-[^/]+)/summary", create_survivor.headers["location"])
+    assert survivor_match is not None
+    survivor_vendor_id = survivor_match.group(1)
+
+    create_source = client.post(
+        "/vendors/new",
+        data={
+            "return_to": "/vendors",
+            "legal_name": "Canonical Source LLC",
+            "display_name": "Canonical Source",
+            "lifecycle_state": "active",
+            "owner_org_id": "IT-ENT",
+            "risk_tier": "medium",
+            "source_system": "manual",
+        },
+        follow_redirects=False,
+    )
+    assert create_source.status_code == 303
+    source_match = re.search(r"/vendors/(vnd-[^/]+)/summary", create_source.headers["location"])
+    assert source_match is not None
+    source_vendor_id = source_match.group(1)
+
+    merge_execute = client.post(
+        "/vendors/merge-center/execute",
+        data={
+            "survivor_vendor_id": survivor_vendor_id,
+            "source_vendor_id": source_vendor_id,
+            "merge_reason": "canonical redirect test",
+        },
+        follow_redirects=False,
+    )
+    assert merge_execute.status_code == 303
+
+    source_summary = client.get(f"/vendors/{source_vendor_id}/summary", follow_redirects=False)
+    assert source_summary.status_code == 303
+    assert source_summary.headers["location"].startswith(f"/vendors/{survivor_vendor_id}/summary")
+
 def test_vendor_list_server_side_pagination_and_sort(client: TestClient) -> None:
     page_one = client.get("/vendors?page=1&page_size=1&sort_by=vendor_name&sort_dir=asc")
     assert page_one.status_code == 200

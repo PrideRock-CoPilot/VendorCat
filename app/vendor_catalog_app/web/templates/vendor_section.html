@@ -812,6 +812,29 @@
       </tbody>
     </table>
   </section>
+  <section class="card section-divider">
+    <h2>Merge History</h2>
+    <table>
+      <thead><tr><th>Merged At</th><th>Merge ID</th><th>Survivor</th><th>Members</th><th>Reason</th></tr></thead>
+      <tbody>
+      {% for row in merge_history %}
+      <tr>
+        <td>{{ row.merged_at }}</td>
+        <td>{{ row.merge_id }}</td>
+        <td>{{ row.survivor_vendor_id }}</td>
+        <td>
+          {% for member in row.members %}
+          <div>{{ member.member_role }}: {{ member.pre_merge_display_name or member.vendor_id }} ({{ member.vendor_id }})</div>
+          {% endfor %}
+        </td>
+        <td>{{ row.merge_reason or "-" }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No merge history</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
 </div>
 {% endif %}
 

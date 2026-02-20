@@ -64,6 +64,8 @@ router = APIRouter(prefix="/vendors")
 def vendor_offerings_page(request: Request, vendor_id: str, return_to: str = VENDOR_DEFAULT_RETURN_TO):
     repo = get_repo()
     base = _vendor_base_context(repo, request, vendor_id, "offerings", return_to)
+    if isinstance(base, RedirectResponse):
+        return base
     if base is None:
         return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
 
@@ -137,6 +139,8 @@ def vendor_offerings_page(request: Request, vendor_id: str, return_to: str = VEN
 def offering_new_form(request: Request, vendor_id: str, return_to: str = VENDOR_DEFAULT_RETURN_TO):
     repo = get_repo()
     base = _vendor_base_context(repo, request, vendor_id, "offerings", return_to)
+    if isinstance(base, RedirectResponse):
+        return base
     if base is None:
         return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
 
@@ -258,6 +262,8 @@ def offering_detail_page(
 ):
     repo = get_repo()
     base = _vendor_base_context(repo, request, vendor_id, "offerings", return_to)
+    if isinstance(base, RedirectResponse):
+        return base
     if base is None:
         return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
 

@@ -26,6 +26,7 @@ class RepositoryReportingVendorsMixin:
         lifecycle_state: str = "all",
         owner_org_id: str = "all",
         risk_tier: str = "all",
+        include_merged: bool = False,
         page: int = 1,
         page_size: int = 25,
         sort_by: str = "vendor_name",
@@ -60,6 +61,8 @@ class RepositoryReportingVendorsMixin:
         if risk_tier != "all":
             where_parts.append("v.risk_tier = %s")
             params.append(risk_tier)
+        if not bool(include_merged) and hasattr(self, "_table_has_column") and self._table_has_column("core_vendor", "merged_into_vendor_id"):
+            where_parts.append("coalesce(trim(v.merged_into_vendor_id), '') = ''")
         if search_text.strip():
             like = f"%{search_text.strip()}%"
             where_parts.append(
@@ -104,7 +107,11 @@ class RepositoryReportingVendorsMixin:
             return rows[columns], total
         except (DataQueryError, DataConnectionError):
             LOGGER.warning("Primary vendor paging query failed; using fallback search.", exc_info=True)
-            fallback = self.search_vendors(search_text=search_text, lifecycle_state=lifecycle_state).copy()
+            fallback = self.search_vendors(
+                search_text=search_text,
+                lifecycle_state=lifecycle_state,
+                include_merged=include_merged,
+            ).copy()
             if owner_org_id != "all" and "owner_org_id" in fallback.columns:
                 fallback = fallback[fallback["owner_org_id"].astype(str) == str(owner_org_id)].copy()
             if risk_tier != "all" and "risk_tier" in fallback.columns:
@@ -118,19 +125,28 @@ class RepositoryReportingVendorsMixin:
                     out[col] = None
             return out[columns], total
 
-    def search_vendors(self, search_text: str = "", lifecycle_state: str = "all") -> pd.DataFrame:
+    def search_vendors(
+        self,
+        search_text: str = "",
+        lifecycle_state: str = "all",
+        include_merged: bool = False,
+    ) -> pd.DataFrame:
         self._ensure_local_offering_columns()
         state_clause = ""
+        merged_clause = ""
         params: list[str] = []
         if lifecycle_state != "all":
             state_clause = "AND v.lifecycle_state = %s"
             params.append(lifecycle_state)
+        if not bool(include_merged) and hasattr(self, "_table_has_column") and self._table_has_column("core_vendor", "merged_into_vendor_id"):
+            merged_clause = "AND coalesce(trim(v.merged_into_vendor_id), '') = ''"
 
         if not search_text.strip():
             return self._query_file(
                 "reporting/search_vendors_base.sql",
                 params=tuple(params),
                 state_clause=state_clause,
+                merged_clause=merged_clause,
                 core_vendor=self._table("core_vendor"),
             )
 
@@ -142,6 +158,7 @@ class RepositoryReportingVendorsMixin:
                 "reporting/search_vendors_broad.sql",
                 params=tuple(broad_params),
                 state_clause=state_clause,
+                merged_clause=merged_clause,
                 core_vendor=self._table("core_vendor"),
                 core_vendor_offering=self._table("core_vendor_offering"),
                 core_contract=self._table("core_contract"),
@@ -158,6 +175,7 @@ class RepositoryReportingVendorsMixin:
                 "reporting/search_vendors_fallback.sql",
                 params=tuple([like, like, like] + params),
                 state_clause=state_clause,
+                merged_clause=merged_clause,
                 core_vendor=self._table("core_vendor"),
             )
 

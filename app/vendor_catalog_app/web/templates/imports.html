@@ -147,7 +147,7 @@
         </div>
 
         <div class="imports-advanced" id="advanced-options-panel" hidden>
-          <div class="grid grid-3">
+          <div class="grid grid-4">
             <label data-format-option="delimiter">
               Delimiter
               <input type="text" name="delimiter" value="{{ parser_options.delimiter }}" placeholder=", | ; or \t">
@@ -159,7 +159,12 @@
             </label>
 
             <label data-format-option="xml">
-              XML Record Tag
+              XML Record Path
+              <input type="text" name="xml_record_path" value="{{ parser_options.xml_record_path }}" placeholder="vendors.vendor">
+            </label>
+
+            <label data-format-option="xml">
+              XML Record Tag (Legacy)
               <input type="text" name="xml_record_tag" value="{{ parser_options.xml_record_tag }}" placeholder="vendor">
             </label>
           </div>
@@ -227,17 +232,36 @@
     </div>
     {% endif %}
 
-    {% if bundle_active %}
-    <div class="flash info">Bundle remap is disabled in this view. Upload a single file if you need interactive remapping.</div>
+    {% if bundle_active and bundle_files %}
+    <section class="bulk-defaults-card">
+      <h3>Bundle Remap</h3>
+      <p class="muted">Select a file from the bundle, then remap/save profile for that file. Remap state is saved per file.</p>
+      <form method="post" action="/imports/remap" class="grid grid-3">
+        <input type="hidden" name="preview_token" value="{{ preview_token }}">
+        <label>
+          Bundle File
+          <select name="bundle_file_index" onchange="this.form.submit()">
+            {% for file in bundle_files %}
+            <option value="{{ file.index }}" {% if file.index == bundle_selected_index %}selected{% endif %}>
+              {{ file.file_name }} ({{ file.layout_key }}, rows={{ file.row_count }})
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+      </form>
+    </section>
     {% endif %}
 
     {% if mapping_profile_saved %}
     <div class="flash success">Saved mapping profile: <strong>{{ mapping_profile_saved }}</strong></div>
     {% endif %}
 
-    {% if has_preview and not bundle_active %}
+    {% if has_preview %}
     <form method="post" action="/imports/remap" id="mapping-form">
       <input type="hidden" name="preview_token" value="{{ preview_token }}">
+      {% if bundle_active %}
+      <input type="hidden" name="bundle_file_index" value="{{ bundle_selected_index }}">
+      {% endif %}
       <div class="grid grid-3 mapping-toolbar">
         <label>
           Mapping Profile
@@ -251,8 +275,8 @@
           </select>
         </label>
         <label>
-          Save Mapping As
-          <input type="text" name="mapping_profile_name" placeholder="optional profile name">
+          Save Mapping As (Admin)
+          <input type="text" name="mapping_profile_name" placeholder="optional shared profile name">
         </label>
         <label>
           Search Target Fields

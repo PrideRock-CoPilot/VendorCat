@@ -50,6 +50,8 @@ def vendor_default(request: Request, vendor_id: str, return_to: str = VENDOR_DEF
 def vendor_summary_page(request: Request, vendor_id: str, return_to: str = VENDOR_DEFAULT_RETURN_TO):
     repo = get_repo()
     base = _vendor_base_context(repo, request, vendor_id, "summary", return_to)
+    if isinstance(base, RedirectResponse):
+        return base
     if base is None:
         return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
 
@@ -125,6 +127,8 @@ def vendor_summary_page(request: Request, vendor_id: str, return_to: str = VENDO
 def vendor_warnings_page(request: Request, vendor_id: str, return_to: str = VENDOR_DEFAULT_RETURN_TO):
     repo = get_repo()
     base = _vendor_base_context(repo, request, vendor_id, "warnings", return_to)
+    if isinstance(base, RedirectResponse):
+        return base
     if base is None:
         return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
 
@@ -159,6 +163,8 @@ def vendor_warnings_page(request: Request, vendor_id: str, return_to: str = VEND
 def vendor_ownership_page(request: Request, vendor_id: str, return_to: str = VENDOR_DEFAULT_RETURN_TO):
     repo = get_repo()
     base = _vendor_base_context(repo, request, vendor_id, "ownership", return_to)
+    if isinstance(base, RedirectResponse):
+        return base
     if base is None:
         return RedirectResponse(url=_safe_return_to(return_to), status_code=303)
 

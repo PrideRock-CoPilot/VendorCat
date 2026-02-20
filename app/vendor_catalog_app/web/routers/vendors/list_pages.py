@@ -53,6 +53,7 @@ def vendor_list(
     owner: str = VENDOR_FILTER_ALL,
     risk: str = VENDOR_FILTER_ALL,
     group: str = VENDOR_GROUP_NONE,
+    include_merged: int = 0,
     page: int = 1,
     page_size: int = DEFAULT_VENDOR_PAGE_SIZE,
     sort_by: str = DEFAULT_VENDOR_SORT_BY,
@@ -92,6 +93,12 @@ def vendor_list(
 
     if "group" not in qp and str(saved_prefs.get("group", "")).strip():
         group = str(saved_prefs.get("group", VENDOR_GROUP_NONE))
+    if "include_merged" not in qp and str(saved_prefs.get("include_merged", "")).strip():
+        try:
+            include_merged = int(saved_prefs.get("include_merged") or 0)
+        except Exception:
+            include_merged = 0
+    include_merged = 1 if int(include_merged or 0) else 0
 
     if "sort_by" not in qp and str(saved_prefs.get("sort_by", "")).strip():
         sort_by = str(saved_prefs.get("sort_by", DEFAULT_VENDOR_SORT_BY))
@@ -111,6 +118,7 @@ def vendor_list(
         lifecycle_state=status,
         owner_org_id=owner,
         risk_tier=risk,
+        include_merged=bool(include_merged),
         page=page,
         page_size=page_size,
         sort_by=sort_by,
@@ -141,6 +149,7 @@ def vendor_list(
         owner=owner,
         risk=risk,
         group=group,
+        include_merged=include_merged,
         page=page,
         page_size=page_size,
         sort_by=sort_by,
@@ -193,6 +202,7 @@ def vendor_list(
             owner=owner,
             risk=risk,
             group=group,
+            include_merged=include_merged,
             page=1,
             page_size=page_size,
             sort_by=mapped_sort,
@@ -210,6 +220,7 @@ def vendor_list(
                 "owner": owner,
                 "risk": risk,
                 "group": group,
+                "include_merged": include_merged,
                 "page_size": page_size,
                 "sort_by": sort_by,
                 "sort_dir": sort_dir,
@@ -230,6 +241,7 @@ def vendor_list(
                 "owner": owner,
                 "risk": risk,
                 "group": group,
+                "include_merged": include_merged,
                 "page": page,
                 "page_size": page_size,
                 "sort_by": sort_by,
@@ -256,6 +268,7 @@ def vendor_list(
                 owner=owner,
                 risk=risk,
                 group=group,
+                include_merged=include_merged,
                 page=prev_page,
                 page_size=page_size,
                 sort_by=sort_by,
@@ -268,6 +281,7 @@ def vendor_list(
                 owner=owner,
                 risk=risk,
                 group=group,
+                include_merged=include_merged,
                 page=next_page,
                 page_size=page_size,
                 sort_by=sort_by,
@@ -280,6 +294,7 @@ def vendor_list(
                 owner=owner,
                 risk=risk,
                 group=group,
+                include_merged=include_merged,
                 page=page,
                 page_size=page_size,
                 sort_by=sort_by,

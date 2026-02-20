@@ -50,6 +50,38 @@ def test_parse_layout_rows_xml_with_auto_record_detection() -> None:
     assert rows[1]["legal_name"] == "XML Vendor Two"
 
 
+def test_parse_layout_rows_xml_nested_record_path_detection_and_override() -> None:
+    raw_bytes = (
+        b"<root>"
+        b"<vendor_set>"
+        b"<vendor><legal_name>Nested Vendor One</legal_name><owner_org_id>IT</owner_org_id></vendor>"
+        b"<vendor><legal_name>Nested Vendor Two</legal_name><owner_org_id>FIN</owner_org_id></vendor>"
+        b"</vendor_set>"
+        b"</root>"
+    )
+    parsed_auto = parse_layout_rows(
+        "vendors",
+        raw_bytes,
+        file_name="nested_vendors.xml",
+        format_hint="xml",
+    )
+    assert len(list(parsed_auto.get("rows") or [])) == 2
+    assert str(parsed_auto.get("parser_options", {}).get("xml_record_path") or "").strip() != ""
+    assert str(parsed_auto.get("resolved_record_selector") or "").strip().startswith("xml:")
+
+    parsed_explicit = parse_layout_rows(
+        "vendors",
+        raw_bytes,
+        file_name="nested_vendors.xml",
+        format_hint="xml",
+        xml_record_path="root.vendor_set.vendor",
+    )
+    rows = list(parsed_explicit.get("rows") or [])
+    assert len(rows) == 2
+    assert rows[0]["legal_name"] == "Nested Vendor One"
+    assert rows[1]["legal_name"] == "Nested Vendor Two"
+
+
 def test_parse_layout_rows_xml_supports_detected_tag_mapping_override() -> None:
     raw_bytes = (
         b"<vendors>"

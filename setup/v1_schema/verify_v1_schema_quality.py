@@ -82,6 +82,7 @@ REQUIRED_TABLES = {
     "app_offering_data_flow",
     "app_offering_ticket",
     "app_offering_invoice",
+    "app_import_mapping_profile",
     "app_document_link",
 }
 

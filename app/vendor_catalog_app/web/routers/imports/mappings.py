@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 import time
 import uuid
 from typing import Any
@@ -34,33 +35,80 @@ def _source_signature(source_fields: list[dict[str, str]]) -> str:
     return hashlib.sha1(canonical.encode("utf-8")).hexdigest() if canonical else ""
 
 
+def _profile_updated_sort_value(value: Any) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value or "").strip()
+    if not text:
+        return 0.0
+    try:
+        return float(text)
+    except Exception:
+        pass
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return 0.0
+
+
+def _normalize_profile_row(row: dict[str, Any], *, layout_key: str) -> dict[str, Any]:
+    return {
+        "profile_id": str(row.get("profile_id") or "").strip(),
+        "profile_name": str(row.get("profile_name") or "").strip(),
+        "layout_key": layout_key,
+        "file_format": str(row.get("file_format") or "").strip().lower(),
+        "source_signature": str(row.get("source_signature") or "").strip(),
+        "source_fields": list(row.get("source_fields") or []),
+        "source_target_mapping": dict(row.get("source_target_mapping") or {}),
+        "field_mapping": dict(row.get("field_mapping") or {}),
+        "parser_options": dict(row.get("parser_options") or {}),
+        "updated_at": row.get("updated_at"),
+    }
+
+
 def load_mapping_profiles(repo, *, user_principal: str, layout_key: str) -> list[dict[str, Any]]:
+    try:
+        if hasattr(repo, "migrate_legacy_import_mapping_profiles"):
+            repo.migrate_legacy_import_mapping_profiles(
+                user_principal=str(user_principal or "").strip(),
+                actor_user_principal=str(user_principal or "").strip(),
+            )
+    except Exception:
+        pass
+
+    safe_layout = _safe_layout_key(layout_key)
+    if hasattr(repo, "list_import_mapping_profiles"):
+        try:
+            shared = list(repo.list_import_mapping_profiles(layout_key=safe_layout, include_inactive=False) or [])
+            profiles = [
+                _normalize_profile_row(dict(item), layout_key=safe_layout)
+                for item in shared
+                if isinstance(item, dict) and _safe_layout_key(str(item.get("layout_key") or "")) == safe_layout
+            ]
+            if profiles:
+                profiles.sort(
+                    key=lambda item: _profile_updated_sort_value(item.get("updated_at")),
+                    reverse=True,
+                )
+                return profiles
+        except Exception:
+            pass
+
     if not hasattr(repo, "get_user_setting"):
         return []
     try:
         payload = repo.get_user_setting(user_principal, IMPORT_MAPPING_SETTING_KEY)
     except Exception:
         return []
-    safe_layout = _safe_layout_key(layout_key)
+
     profiles = []
     for row in _safe_mapping_profile_records(payload):
         if _safe_layout_key(str(row.get("layout_key") or "")) != safe_layout:
             continue
-        profiles.append(
-            {
-                "profile_id": str(row.get("profile_id") or "").strip(),
-                "profile_name": str(row.get("profile_name") or "").strip(),
-                "layout_key": safe_layout,
-                "file_format": str(row.get("file_format") or "").strip().lower(),
-                "source_signature": str(row.get("source_signature") or "").strip(),
-                "source_fields": list(row.get("source_fields") or []),
-                "source_target_mapping": dict(row.get("source_target_mapping") or {}),
-                "field_mapping": dict(row.get("field_mapping") or {}),
-                "parser_options": dict(row.get("parser_options") or {}),
-                "updated_at": float(row.get("updated_at") or 0.0),
-            }
-        )
-    profiles.sort(key=lambda item: float(item.get("updated_at") or 0.0), reverse=True)
+        profiles.append(_normalize_profile_row(row, layout_key=safe_layout))
+    profiles.sort(key=lambda item: _profile_updated_sort_value(item.get("updated_at")), reverse=True)
     return profiles
 
 
@@ -91,7 +139,7 @@ def compatible_profiles(
         if signature and item_signature and item_signature != signature:
             continue
         matches.append(dict(item))
-    matches.sort(key=lambda row: float(row.get("updated_at") or 0.0), reverse=True)
+    matches.sort(key=lambda row: _profile_updated_sort_value(row.get("updated_at")), reverse=True)
     return matches
 
 
@@ -108,8 +156,6 @@ def save_mapping_profile(
     parser_options: dict[str, Any] | None = None,
     profile_id: str = "",
 ) -> str:
-    if not hasattr(repo, "get_user_setting") or not hasattr(repo, "save_user_setting"):
-        return ""
     cleaned_name = str(profile_name or "").strip()
     if not cleaned_name:
         return ""
@@ -127,11 +173,38 @@ def save_mapping_profile(
             "label": str(item.get("label") or "").strip(),
             "normalized_key": str(item.get("normalized_key") or "").strip(),
             "sample_value": str(item.get("sample_value") or "").strip(),
+            "sample_values": list(item.get("sample_values") or []),
+            "non_empty_count": str(item.get("non_empty_count") or "").strip(),
         }
         for item in list(source_fields or [])
         if str(item.get("key") or "").strip()
     ]
     signature = _source_signature(normalized_source_fields)
+
+    if hasattr(repo, "save_import_mapping_profile"):
+        try:
+            return str(
+                repo.save_import_mapping_profile(
+                    profile_id=str(profile_id or "").strip(),
+                    layout_key=safe_layout,
+                    profile_name=cleaned_name,
+                    file_format=safe_format,
+                    source_signature=signature,
+                    source_fields=normalized_source_fields,
+                    source_target_mapping=cleaned_source_target_mapping,
+                    field_mapping=cleaned_mapping,
+                    parser_options=dict(parser_options or {}),
+                    active_flag=True,
+                    actor_user_principal=str(user_principal or "").strip() or "system",
+                )
+                or ""
+            ).strip()
+        except Exception:
+            # Fall back to legacy settings persistence when shared profile storage is unavailable.
+            pass
+
+    if not hasattr(repo, "get_user_setting") or not hasattr(repo, "save_user_setting"):
+        return ""
     now_ts = time.time()
     setting_payload = {}
     try:

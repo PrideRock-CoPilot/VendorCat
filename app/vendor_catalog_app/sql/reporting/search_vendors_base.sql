@@ -2,5 +2,6 @@ SELECT vendor_id, legal_name, display_name, lifecycle_state, owner_org_id, risk_
 FROM {core_vendor} v
 WHERE 1 = 1
 {state_clause}
+{merged_clause}
 ORDER BY display_name
 LIMIT 250

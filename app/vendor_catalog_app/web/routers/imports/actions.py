@@ -18,6 +18,7 @@ from vendor_catalog_app.web.routers.imports.config import (
     IMPORT_LAYOUTS,
     IMPORT_PREVIEW_RENDER_LIMIT,
     IMPORT_RESULTS_RENDER_LIMIT,
+    import_dynamic_field_catalog,
 )
 from vendor_catalog_app.web.routers.imports.mappings import (
     compatible_profiles,
@@ -105,6 +106,57 @@ def _profile_source_target_mapping(profile: dict[str, Any] | None) -> dict[str, 
         if source not in converted:
             converted[source] = target
     return converted
+
+
+def _can_manage_mapping_profiles(user) -> bool:
+    checker = getattr(user, "can_apply_change", None)
+    if callable(checker):
+        try:
+            return bool(checker("manage_import_mapping_profile"))
+        except Exception:
+            return False
+    return bool(getattr(user, "can_edit", False))
+
+
+def _resolve_parser_inputs(
+    *,
+    format_hint: str,
+    delimiter: str,
+    json_record_path: str,
+    xml_record_path: str,
+    xml_record_tag: str,
+    selected_profile: dict[str, Any] | None,
+) -> tuple[str, str, str, str, str]:
+    resolved_format = safe_format_hint(format_hint)
+    resolved_delimiter = safe_delimiter(delimiter)
+    resolved_json_path = str(json_record_path or "").strip()
+    resolved_xml_path = str(xml_record_path or "").strip()
+    resolved_xml_tag = str(xml_record_tag or "").strip()
+    profile_parser_options = dict((selected_profile or {}).get("parser_options") or {})
+
+    if profile_parser_options:
+        profile_format = safe_format_hint(str(profile_parser_options.get("format_hint") or ""))
+        if resolved_format == "auto" and profile_format and profile_format != "auto":
+            resolved_format = profile_format
+
+        profile_delimiter = safe_delimiter(str(profile_parser_options.get("delimiter") or ","))
+        if resolved_delimiter == "," and profile_delimiter != ",":
+            resolved_delimiter = profile_delimiter
+
+        if not resolved_json_path:
+            resolved_json_path = str(profile_parser_options.get("json_record_path") or "").strip()
+        if not resolved_xml_path:
+            resolved_xml_path = str(profile_parser_options.get("xml_record_path") or "").strip()
+        if not resolved_xml_tag:
+            resolved_xml_tag = str(profile_parser_options.get("xml_record_tag") or "").strip()
+
+    return (
+        resolved_format,
+        resolved_delimiter,
+        resolved_json_path,
+        resolved_xml_path,
+        resolved_xml_tag,
+    )
 
 
 def _guess_bundle_layout(*, file_name: str, fallback_layout: str) -> str:
@@ -252,14 +304,24 @@ async def imports_preview(request: Request):
     flow_mode = safe_flow_mode(str(form.get("flow_mode", "quick")))
     source_system = safe_source_system(str(form.get("source_system", "spreadsheet_manual")))
     source_object = str(form.get("source_object", "") or "").strip()
-    format_hint = safe_format_hint(str(form.get("format_hint", "auto")))
-    delimiter = safe_delimiter(str(form.get("delimiter", ",")))
-    json_record_path = str(form.get("json_record_path", "") or "").strip()
+    format_hint_raw = str(form.get("format_hint", "auto"))
+    delimiter_raw = str(form.get("delimiter", ","))
+    json_record_path_raw = str(form.get("json_record_path", "") or "").strip()
+    xml_record_path_raw = str(form.get("xml_record_path", "") or "").strip()
     xml_record_tag = str(form.get("xml_record_tag", "") or "").strip()
     selected_mapping_profile_id = str(form.get("mapping_profile_id", "") or "").strip()
     selected_mapping_profile_name = ""
+    dynamic_field_catalog = import_dynamic_field_catalog(repo)
     available_profiles = load_mapping_profiles(repo, user_principal=user.user_principal, layout_key=selected_layout)
     selected_profile = find_profile_by_id(available_profiles, selected_mapping_profile_id)
+    format_hint, delimiter, json_record_path, xml_record_path, xml_record_tag = _resolve_parser_inputs(
+        format_hint=format_hint_raw,
+        delimiter=delimiter_raw,
+        json_record_path=json_record_path_raw,
+        xml_record_path=xml_record_path_raw,
+        xml_record_tag=xml_record_tag,
+        selected_profile=selected_profile,
+    )
     requested_source_target_mapping: dict[str, str] = {}
     if selected_profile is not None:
         requested_source_target_mapping.update(_profile_source_target_mapping(selected_profile))
@@ -286,9 +348,11 @@ async def imports_preview(request: Request):
                 format_hint=format_hint,
                 delimiter=delimiter,
                 json_record_path=json_record_path,
+                xml_record_path=xml_record_path,
                 xml_record_tag=xml_record_tag,
                 strict_layout=(flow_mode == "quick"),
                 source_target_mapping=requested_source_target_mapping,
+                dynamic_field_catalog=dynamic_field_catalog,
             )
             parsed_rows = list(parse_result.get("rows") or [])
             source_rows = list(parse_result.get("source_rows") or [])
@@ -302,6 +366,7 @@ async def imports_preview(request: Request):
             detected_format = str(parse_result.get("detected_format") or "")
             effective_format = str(parse_result.get("effective_format") or "")
             parser_options = dict(parse_result.get("parser_options") or {})
+            resolved_record_selector = str(parse_result.get("resolved_record_selector") or "").strip()
             parser_warnings = list(parse_result.get("warnings") or [])
             compatible = compatible_profiles(
                 profiles=available_profiles,
@@ -313,7 +378,15 @@ async def imports_preview(request: Request):
                     "Selected mapping profile signature does not match detected source tags/columns. "
                     "Review mapping before apply."
                 )
-            preview_rows_full = build_preview_rows(repo, selected_layout, parsed_rows)
+            preview_rows_full = build_preview_rows(
+                repo,
+                selected_layout,
+                parsed_rows,
+                source_rows=source_rows,
+                source_target_mapping=resolved_source_target_mapping,
+                mapping_profile_id=selected_mapping_profile_id,
+                resolved_record_selector=resolved_record_selector,
+            )
         except Exception as exc:
             add_flash(request, f"Failed to parse import file: {exc}", "error")
             return RedirectResponse(url="/imports", status_code=303)
@@ -350,6 +423,7 @@ async def imports_preview(request: Request):
             "stage_area_rows": stage_area_rows,
             "selected_mapping_profile_id": selected_mapping_profile_id,
             "selected_mapping_profile_name": selected_mapping_profile_name,
+            "resolved_record_selector": resolved_record_selector,
             "rows": preview_rows_full,
         }
         preview_token = save_preview_payload(preview_payload)
@@ -381,6 +455,7 @@ async def imports_preview(request: Request):
                 preview_hidden_count=preview_hidden_count,
                 source_field_map=source_fields,
                 selected_source_target_mapping=resolved_source_target_mapping,
+                dynamic_field_catalog=dynamic_field_catalog,
                 mapping_profiles=_decorate_mapping_profiles(
                     profiles=available_profiles,
                     compatible=compatible,
@@ -407,9 +482,11 @@ async def imports_preview(request: Request):
                 format_hint=format_hint,
                 delimiter=delimiter,
                 json_record_path=json_record_path,
+                xml_record_path=xml_record_path,
                 xml_record_tag=xml_record_tag,
                 strict_layout=False,
                 source_target_mapping={},
+                dynamic_field_catalog=dynamic_field_catalog,
             )
             parsed_rows = list(parse_result.get("rows") or [])
             source_rows = list(parse_result.get("source_rows") or [])
@@ -423,8 +500,17 @@ async def imports_preview(request: Request):
             detected_format = str(parse_result.get("detected_format") or "")
             effective_format = str(parse_result.get("effective_format") or "")
             parser_options = dict(parse_result.get("parser_options") or {})
+            resolved_record_selector = str(parse_result.get("resolved_record_selector") or "").strip()
             parser_warnings = list(parse_result.get("warnings") or [])
-            preview_rows_full = build_preview_rows(repo, bundle_layout, parsed_rows)
+            preview_rows_full = build_preview_rows(
+                repo,
+                bundle_layout,
+                parsed_rows,
+                source_rows=source_rows,
+                source_target_mapping=resolved_source_target_mapping,
+                mapping_profile_id="",
+                resolved_record_selector=resolved_record_selector,
+            )
         except Exception as exc:
             bundle_warnings.append(f"{file_name}: parse failed ({exc})")
             continue
@@ -460,6 +546,9 @@ async def imports_preview(request: Request):
                 "source_target_mapping": resolved_source_target_mapping,
                 "field_mapping": resolved_field_mapping,
                 "stage_area_rows": stage_area_rows,
+                "resolved_record_selector": resolved_record_selector,
+                "selected_mapping_profile_id": "",
+                "selected_mapping_profile_name": "",
                 "rows": preview_rows_full,
             }
         )
@@ -501,8 +590,8 @@ async def imports_preview(request: Request):
         "field_mapping": dict(selected_bundle_file.get("field_mapping") or {}),
         "stage_area_rows": dict(selected_bundle_file.get("stage_area_rows") or {}),
         "rows": list(selected_bundle_file.get("rows") or []),
-        "selected_mapping_profile_id": "",
-        "selected_mapping_profile_name": "",
+        "selected_mapping_profile_id": str(selected_bundle_file.get("selected_mapping_profile_id") or ""),
+        "selected_mapping_profile_name": str(selected_bundle_file.get("selected_mapping_profile_name") or ""),
     }
     preview_token = save_preview_payload(preview_payload)
     selected_preview_rows_full = list(selected_bundle_file.get("rows") or [])
@@ -530,11 +619,12 @@ async def imports_preview(request: Request):
         preview_hidden_count=preview_hidden_count,
         source_field_map=source_fields,
         selected_source_target_mapping=dict(selected_bundle_file.get("source_target_mapping") or {}),
+        dynamic_field_catalog=dynamic_field_catalog,
         mapping_profiles=_decorate_mapping_profiles(
             profiles=available_profiles,
             compatible=compatible,
         ),
-        selected_mapping_profile_id="",
+        selected_mapping_profile_id=str(selected_bundle_file.get("selected_mapping_profile_id") or ""),
         import_reason="",
     )
     context_payload.update(
@@ -577,9 +667,216 @@ async def imports_remap(request: Request):
     if payload is None:
         add_flash(request, "Import preview expired. Upload the file again.", "error")
         return RedirectResponse(url="/imports", status_code=303)
+    dynamic_field_catalog = import_dynamic_field_catalog(repo)
     if bool(payload.get("is_bundle")):
-        add_flash(request, "Bundle remap is not available in this view. Apply eligible rows or upload a single file to remap.", "info")
-        return RedirectResponse(url="/imports", status_code=303)
+        bundle_files_payload = [dict(item) for item in list(payload.get("bundle_files") or [])]
+        if not bundle_files_payload:
+            add_flash(request, "Bundle preview expired. Upload files again.", "error")
+            return RedirectResponse(url="/imports", status_code=303)
+
+        selected_bundle_index = int(form.get("bundle_file_index", payload.get("bundle_selected_index", 0)) or 0)
+        if selected_bundle_index < 0 or selected_bundle_index >= len(bundle_files_payload):
+            selected_bundle_index = 0
+        selected_bundle_file = dict(bundle_files_payload[selected_bundle_index])
+
+        layout_key = safe_layout(str(selected_bundle_file.get("layout_key") or "vendors"))
+        flow_mode = "wizard"
+        source_system = safe_source_system(str(payload.get("source_system") or "spreadsheet_manual"))
+        source_object = str(payload.get("source_object") or "").strip()
+        source_file_name = str(selected_bundle_file.get("file_name") or "").strip()
+        detected_file_type = str(selected_bundle_file.get("detected_format") or "").strip()
+        effective_file_type = str(selected_bundle_file.get("effective_format") or "").strip()
+        parser_options = dict(selected_bundle_file.get("parser_options") or {})
+        parser_warnings = list(selected_bundle_file.get("parser_warnings") or [])
+        source_rows = list(selected_bundle_file.get("source_rows") or [])
+        source_fields = list(selected_bundle_file.get("source_fields") or [])
+        if not source_rows or not source_fields:
+            add_flash(request, "Source preview metadata is unavailable for selected bundle file. Upload the file again.", "error")
+            return RedirectResponse(url="/imports", status_code=303)
+
+        available_profiles = load_mapping_profiles(repo, user_principal=user.user_principal, layout_key=layout_key)
+        selected_mapping_profile_id = str(
+            form.get("mapping_profile_id", selected_bundle_file.get("selected_mapping_profile_id", ""))
+            or ""
+        ).strip()
+        selected_profile = find_profile_by_id(available_profiles, selected_mapping_profile_id)
+        requested_source_target_mapping = dict(selected_bundle_file.get("source_target_mapping") or {})
+        if selected_profile is not None:
+            requested_source_target_mapping.update(_profile_source_target_mapping(selected_profile))
+        requested_source_target_mapping.update(_source_target_mapping_from_form(form))
+
+        resolved_source_target_mapping = resolve_source_target_mapping(
+            source_fields=source_fields,
+            requested_mapping=requested_source_target_mapping,
+            dynamic_field_catalog=dynamic_field_catalog,
+        )
+        resolved_field_mapping = layout_field_mapping_from_source_targets(
+            layout_key=layout_key,
+            source_target_mapping=resolved_source_target_mapping,
+        )
+        allowed_fields = [str(field) for field in IMPORT_LAYOUTS.get(layout_key, {}).get("fields", [])]
+        resolved_field_mapping = resolve_field_mapping(
+            allowed_fields=allowed_fields,
+            source_fields=source_fields,
+            requested_mapping=resolved_field_mapping,
+        )
+        stage_area_rows = build_stage_area_rows(
+            source_rows=source_rows,
+            source_target_mapping=resolved_source_target_mapping,
+        )
+        mapped_rows_for_preview: list[dict[str, str]] = []
+        for row in source_rows:
+            out_row: dict[str, str] = {}
+            for field, source_key in resolved_field_mapping.items():
+                out_row[str(field)] = str(row.get(str(source_key), "") or "").strip() if source_key else ""
+            out_row["_line"] = str(row.get("_line") or "")
+            mapped_rows_for_preview.append(out_row)
+        preview_rows_full = build_preview_rows(
+            repo,
+            layout_key,
+            mapped_rows_for_preview,
+            source_rows=source_rows,
+            source_target_mapping=resolved_source_target_mapping,
+            mapping_profile_id=selected_mapping_profile_id,
+            resolved_record_selector=str(selected_bundle_file.get("resolved_record_selector") or ""),
+        )
+        compatible = compatible_profiles(
+            profiles=available_profiles,
+            file_format=effective_file_type,
+            source_fields=source_fields,
+        )
+
+        profile_name_to_save = str(form.get("mapping_profile_name", "") or "").strip()
+        mapping_profile_saved = ""
+        if profile_name_to_save:
+            if not _can_manage_mapping_profiles(user):
+                add_flash(request, "Only admins can create or edit shared mapping profiles.", "error")
+            else:
+                saved_id = save_mapping_profile(
+                    repo,
+                    user_principal=user.user_principal,
+                    layout_key=layout_key,
+                    profile_name=profile_name_to_save,
+                    file_format=effective_file_type,
+                    source_fields=source_fields,
+                    source_target_mapping=resolved_source_target_mapping,
+                    field_mapping=resolved_field_mapping,
+                    parser_options=parser_options,
+                    profile_id=selected_mapping_profile_id,
+                )
+                if saved_id:
+                    selected_mapping_profile_id = saved_id
+                    mapping_profile_saved = profile_name_to_save
+                    add_flash(request, f"Saved mapping profile '{profile_name_to_save}'.", "success")
+                    available_profiles = load_mapping_profiles(repo, user_principal=user.user_principal, layout_key=layout_key)
+                    compatible = compatible_profiles(
+                        profiles=available_profiles,
+                        file_format=effective_file_type,
+                        source_fields=source_fields,
+                    )
+                else:
+                    add_flash(request, "Could not save mapping profile.", "error")
+
+        import_job_id, staged_row_count, staging_warning = stage_import_preview(
+            repo,
+            layout_key=layout_key,
+            source_system=source_system,
+            source_object=source_object or "bundle_upload",
+            file_name=source_file_name,
+            file_type=str(source_file_name.rsplit(".", 1)[-1].lower() if "." in source_file_name else ""),
+            detected_format=effective_file_type,
+            parser_options=parser_options,
+            preview_rows=preview_rows_full,
+            stage_area_rows=stage_area_rows,
+            actor_user_principal=user.user_principal,
+        )
+        if staging_warning:
+            parser_warnings.append(staging_warning)
+
+        selected_bundle_file["import_job_id"] = import_job_id
+        selected_bundle_file["staged_row_count"] = staged_row_count
+        selected_bundle_file["field_mapping"] = resolved_field_mapping
+        selected_bundle_file["source_target_mapping"] = resolved_source_target_mapping
+        selected_bundle_file["stage_area_rows"] = stage_area_rows
+        selected_bundle_file["selected_mapping_profile_id"] = selected_mapping_profile_id
+        selected_bundle_file["selected_mapping_profile_name"] = str(
+            profile_name_to_save
+            or (find_profile_by_id(available_profiles, selected_mapping_profile_id) or {}).get("profile_name")
+            or ""
+        )
+        selected_bundle_file["rows"] = preview_rows_full
+        selected_bundle_file["parser_warnings"] = parser_warnings
+        bundle_files_payload[selected_bundle_index] = selected_bundle_file
+
+        bundle_summaries, bundle_totals = _bundle_file_summaries(bundle_files_payload)
+        next_payload = dict(payload)
+        next_payload["bundle_files"] = bundle_files_payload
+        next_payload["bundle_selected_index"] = selected_bundle_index
+        next_payload["layout_key"] = layout_key
+        next_payload["source_file_name"] = source_file_name
+        next_payload["detected_format"] = detected_file_type
+        next_payload["effective_format"] = effective_file_type
+        next_payload["parser_options"] = parser_options
+        next_payload["parser_warnings"] = parser_warnings
+        next_payload["import_job_id"] = import_job_id
+        next_payload["source_rows"] = source_rows
+        next_payload["source_fields"] = source_fields
+        next_payload["source_target_mapping"] = resolved_source_target_mapping
+        next_payload["field_mapping"] = resolved_field_mapping
+        next_payload["stage_area_rows"] = stage_area_rows
+        next_payload["selected_mapping_profile_id"] = selected_mapping_profile_id
+        next_payload["selected_mapping_profile_name"] = str(selected_bundle_file.get("selected_mapping_profile_name") or "")
+        next_payload["rows"] = preview_rows_full
+        next_token = save_preview_payload(next_payload)
+        discard_preview_payload(preview_token)
+
+        preview_rows = preview_rows_full[:IMPORT_PREVIEW_RENDER_LIMIT]
+        preview_total_rows = len(preview_rows_full)
+        preview_hidden_count = max(0, preview_total_rows - len(preview_rows))
+        context_payload = render_context(
+            selected_layout=layout_key,
+            selected_flow_mode=flow_mode,
+            selected_source_system=source_system,
+            source_object=source_object,
+            source_file_name=source_file_name,
+            detected_file_type=detected_file_type,
+            effective_file_type=effective_file_type,
+            parser_options=parser_options,
+            parser_warnings=parser_warnings + list(payload.get("bundle_warnings") or []),
+            staging_job_id=import_job_id,
+            staged_row_count=int(staged_row_count or 0),
+            staging_warning=staging_warning,
+            preview_token=next_token,
+            preview_rows=preview_rows,
+            preview_total_rows=preview_total_rows,
+            preview_hidden_count=preview_hidden_count,
+            source_field_map=source_fields,
+            selected_source_target_mapping=resolved_source_target_mapping,
+            dynamic_field_catalog=dynamic_field_catalog,
+            mapping_profiles=_decorate_mapping_profiles(
+                profiles=available_profiles,
+                compatible=compatible,
+            ),
+            selected_mapping_profile_id=selected_mapping_profile_id,
+            mapping_profile_saved=mapping_profile_saved,
+            import_reason="",
+        )
+        context_payload.update(
+            {
+                "bundle_mode": True,
+                "bundle_files": bundle_summaries,
+                "bundle_totals": bundle_totals,
+                "bundle_selected_index": selected_bundle_index,
+            }
+        )
+        context = imports_module.base_template_context(
+            request,
+            user,
+            title="Data Imports",
+            active_nav="imports",
+            extra=context_payload,
+        )
+        return request.app.state.templates.TemplateResponse(request, "imports.html", context)
 
     layout_key = safe_layout(str(payload.get("layout_key") or "vendors"))
     flow_mode = safe_flow_mode(str(payload.get("flow_mode") or "wizard"))
@@ -597,9 +894,9 @@ async def imports_remap(request: Request):
         return RedirectResponse(url="/imports", status_code=303)
 
     available_profiles = load_mapping_profiles(repo, user_principal=user.user_principal, layout_key=layout_key)
-    selected_mapping_profile_id = str(form.get("mapping_profile_id", "") or "").strip()
+    selected_mapping_profile_id = str(form.get("mapping_profile_id", payload.get("selected_mapping_profile_id", "")) or "").strip()
     selected_profile = find_profile_by_id(available_profiles, selected_mapping_profile_id)
-    requested_source_target_mapping: dict[str, str] = {}
+    requested_source_target_mapping = dict(payload.get("source_target_mapping") or {})
     if selected_profile is not None:
         requested_source_target_mapping.update(_profile_source_target_mapping(selected_profile))
     requested_source_target_mapping.update(_source_target_mapping_from_form(form))
@@ -607,6 +904,7 @@ async def imports_remap(request: Request):
     resolved_source_target_mapping = resolve_source_target_mapping(
         source_fields=source_fields,
         requested_mapping=requested_source_target_mapping,
+        dynamic_field_catalog=dynamic_field_catalog,
     )
     resolved_field_mapping = layout_field_mapping_from_source_targets(
         layout_key=layout_key,
@@ -630,7 +928,15 @@ async def imports_remap(request: Request):
             out_row[str(field)] = str(row.get(str(source_key), "") or "").strip() if source_key else ""
         out_row["_line"] = str(row.get("_line") or "")
         mapped_rows_for_preview.append(out_row)
-    preview_rows_full = build_preview_rows(repo, layout_key, mapped_rows_for_preview)
+    preview_rows_full = build_preview_rows(
+        repo,
+        layout_key,
+        mapped_rows_for_preview,
+        source_rows=source_rows,
+        source_target_mapping=resolved_source_target_mapping,
+        mapping_profile_id=selected_mapping_profile_id,
+        resolved_record_selector=str(payload.get("resolved_record_selector") or ""),
+    )
     compatible = compatible_profiles(
         profiles=available_profiles,
         file_format=effective_file_type,
@@ -640,30 +946,33 @@ async def imports_remap(request: Request):
     profile_name_to_save = str(form.get("mapping_profile_name", "") or "").strip()
     mapping_profile_saved = ""
     if profile_name_to_save:
-        saved_id = save_mapping_profile(
-            repo,
-            user_principal=user.user_principal,
-            layout_key=layout_key,
-            profile_name=profile_name_to_save,
-            file_format=effective_file_type,
-            source_fields=source_fields,
-            source_target_mapping=resolved_source_target_mapping,
-            field_mapping=resolved_field_mapping,
-            parser_options=parser_options,
-            profile_id=selected_mapping_profile_id,
-        )
-        if saved_id:
-            selected_mapping_profile_id = saved_id
-            mapping_profile_saved = profile_name_to_save
-            add_flash(request, f"Saved mapping profile '{profile_name_to_save}'.", "success")
-            available_profiles = load_mapping_profiles(repo, user_principal=user.user_principal, layout_key=layout_key)
-            compatible = compatible_profiles(
-                profiles=available_profiles,
+        if not _can_manage_mapping_profiles(user):
+            add_flash(request, "Only admins can create or edit shared mapping profiles.", "error")
+        else:
+            saved_id = save_mapping_profile(
+                repo,
+                user_principal=user.user_principal,
+                layout_key=layout_key,
+                profile_name=profile_name_to_save,
                 file_format=effective_file_type,
                 source_fields=source_fields,
+                source_target_mapping=resolved_source_target_mapping,
+                field_mapping=resolved_field_mapping,
+                parser_options=parser_options,
+                profile_id=selected_mapping_profile_id,
             )
-        else:
-            add_flash(request, "Could not save mapping profile.", "error")
+            if saved_id:
+                selected_mapping_profile_id = saved_id
+                mapping_profile_saved = profile_name_to_save
+                add_flash(request, f"Saved mapping profile '{profile_name_to_save}'.", "success")
+                available_profiles = load_mapping_profiles(repo, user_principal=user.user_principal, layout_key=layout_key)
+                compatible = compatible_profiles(
+                    profiles=available_profiles,
+                    file_format=effective_file_type,
+                    source_fields=source_fields,
+                )
+            else:
+                add_flash(request, "Could not save mapping profile.", "error")
 
     import_job_id, staged_row_count, staging_warning = stage_import_preview(
         repo,
@@ -685,6 +994,11 @@ async def imports_remap(request: Request):
     next_payload["source_target_mapping"] = resolved_source_target_mapping
     next_payload["stage_area_rows"] = stage_area_rows
     next_payload["selected_mapping_profile_id"] = selected_mapping_profile_id
+    next_payload["selected_mapping_profile_name"] = str(
+        (find_profile_by_id(available_profiles, selected_mapping_profile_id) or {}).get("profile_name")
+        or payload.get("selected_mapping_profile_name")
+        or ""
+    )
     next_payload["rows"] = preview_rows_full
     next_token = save_preview_payload(next_payload)
     discard_preview_payload(preview_token)
@@ -717,6 +1031,7 @@ async def imports_remap(request: Request):
             preview_hidden_count=preview_hidden_count,
             source_field_map=source_fields,
             selected_source_target_mapping=resolved_source_target_mapping,
+            dynamic_field_catalog=dynamic_field_catalog,
             mapping_profiles=_decorate_mapping_profiles(
                 profiles=available_profiles,
                 compatible=compatible,
@@ -737,6 +1052,7 @@ async def imports_apply(request: Request):
     user = imports_module.get_user_context(request)
     imports_module.ensure_session_started(request, user)
     imports_module.log_page_view(request, user, "Imports")
+    dynamic_field_catalog = import_dynamic_field_catalog(repo)
 
     if not can_manage_imports(user):
         add_flash(request, "You do not have permission to run imports.", "error")
@@ -808,7 +1124,9 @@ async def imports_apply(request: Request):
                             )
                         continue
 
-                    selected_action = "new"
+                    selected_action = str(preview_row.get("suggested_action") or "new").strip().lower()
+                    if selected_action not in ALLOWED_IMPORT_ACTIONS:
+                        selected_action = "new"
                     target_id = str(preview_row.get("suggested_target_id") or "").strip()
                     fallback_target_vendor_id = str(preview_row.get("suggested_target_vendor_id") or "").strip()
                     try:
@@ -968,11 +1286,12 @@ async def imports_apply(request: Request):
             preview_hidden_count=preview_hidden_count,
             source_field_map=source_fields,
             selected_source_target_mapping=selected_source_target_mapping,
+            dynamic_field_catalog=dynamic_field_catalog,
             mapping_profiles=_decorate_mapping_profiles(
                 profiles=available_profiles,
                 compatible=compatible,
             ),
-            selected_mapping_profile_id="",
+            selected_mapping_profile_id=str(selected_bundle_file.get("selected_mapping_profile_id") or ""),
             import_results=bundle_results[:IMPORT_RESULTS_RENDER_LIMIT],
             import_reason=reason,
         )
@@ -1172,6 +1491,7 @@ async def imports_apply(request: Request):
             preview_hidden_count=0,
             source_field_map=source_fields,
             selected_source_target_mapping=selected_source_target_mapping,
+            dynamic_field_catalog=import_dynamic_field_catalog(repo),
             mapping_profiles=_decorate_mapping_profiles(
                 profiles=available_profiles,
                 compatible=compatible,

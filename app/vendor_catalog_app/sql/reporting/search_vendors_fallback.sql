@@ -6,5 +6,6 @@ WHERE (
   OR lower(v.vendor_id) LIKE lower(%s)
 )
 {state_clause}
+{merged_clause}
 ORDER BY v.display_name
 LIMIT 250

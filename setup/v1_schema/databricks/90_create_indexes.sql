@@ -87,3 +87,4 @@ OPTIMIZE app_import_stage_contract;
 OPTIMIZE app_import_stage_project;
 OPTIMIZE app_import_stage_invoice;
 OPTIMIZE app_import_stage_payment;
+OPTIMIZE app_import_mapping_profile;
