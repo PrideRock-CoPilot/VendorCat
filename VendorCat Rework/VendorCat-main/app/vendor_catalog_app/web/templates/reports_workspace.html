@@ -1,0 +1,885 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<div class="section-header">
+  <div>
+    <h1>Reports Workspace</h1>
+    <p>Centralize all report assets and design report boards with in-app controls using the same FastAPI, Jinja, CSS, and vanilla JavaScript stack.</p>
+  </div>
+  <div class="button-group">
+    <a class="button-link subtle" href="/reports">Open Report Runner</a>
+  </div>
+</div>
+
+<section class="card section-divider">
+  <div class="section-header">
+    <div>
+      <h2>Unified Report Catalog</h2>
+      <p>Every in-app report model with one-click hosted run actions.</p>
+    </div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Report</th>
+        <th>Description</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for card in report_cards %}
+      <tr>
+        <td>{{ card.label }}</td>
+        <td>{{ card.description }}</td>
+        <td>
+          <div class="button-group reports-catalog-actions">
+            <a class="button-link subtle" href="{{ card.open_url }}" target="_blank" rel="noopener noreferrer">Run</a>
+            <button type="button" class="button-link subtle" data-add-report="{{ card.key }}">Add To Designer</button>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section id="report-designer-root" class="card section-divider designer-workspace-shell">
+  <div class="designer-workspace-header">
+    <div>
+      <h2>Report Board Designer</h2>
+      <p>Compose widgets, save workspace JSON, and open each widget in the report runner.</p>
+    </div>
+    <div class="button-group">
+      <button type="button" class="button-link subtle" id="report-designer-load-starter">Load Starter Board</button>
+      <button type="button" class="button-link subtle" id="report-designer-export">Export JSON</button>
+      <button type="button" class="button-link subtle" id="report-designer-import-toggle">Import JSON</button>
+      <button type="button" class="button-link subtle" id="report-designer-clear">Clear Board</button>
+    </div>
+  </div>
+
+  <form method="post" action="/reports/workspace/boards/save" class="grid grid-3" id="report-board-save-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="board_id" id="report-board-id" value="{{ selected_board_id }}">
+    <input type="hidden" name="board_json" id="report-board-json" value="">
+    <label>
+      Board Name
+      <input
+        type="text"
+        name="board_name"
+        id="report-board-name"
+        value="{{ selected_board.board_name if selected_board else '' }}"
+        placeholder="Executive Weekly Board"
+        required
+      >
+    </label>
+    <div class="button-group">
+      <button type="submit" id="report-board-save-submit">Save Board</button>
+      <button type="button" class="button-link subtle" id="report-board-save-as-new">Save As New Board</button>
+      <a class="button-link subtle {% if not selected_board_id %}hidden{% endif %}" id="report-board-present-link" href="/reports/workspace/present?board={{ selected_board_id }}">Present Board</a>
+      <a class="button-link subtle {% if not selected_board_id %}hidden{% endif %}" id="report-board-export-link" href="/reports/workspace/boards/export?board={{ selected_board_id }}">Export Board Bundle</a>
+    </div>
+    <p class="muted">Saved boards are persisted in this app workspace per user profile.</p>
+  </form>
+
+  {% if saved_boards %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Saved Board</th>
+          <th>Widgets</th>
+          <th>Updated</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for board_item in saved_boards %}
+        <tr {% if selected_board_id and selected_board_id == board_item.board_id %}class="clickable-row"{% endif %}>
+          <td>{{ board_item.board_name }}</td>
+          <td>{{ board_item.widget_count }}</td>
+          <td>{{ board_item.updated_at }}</td>
+          <td>
+            <div class="button-group reports-catalog-actions">
+              <a class="button-link subtle" href="/reports/workspace?board={{ board_item.board_id }}">Load</a>
+              <a class="button-link subtle" href="/reports/workspace/present?board={{ board_item.board_id }}">Present</a>
+              <a class="button-link subtle" href="/reports/workspace/boards/export?board={{ board_item.board_id }}">Export</a>
+              <form method="post" action="/reports/workspace/boards/delete" onsubmit="return confirm('Delete this saved board?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="board_id" value="{{ board_item.board_id }}">
+                <button type="submit" class="button-link subtle">Delete</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="designer-shell">
+    <aside class="designer-palette">
+      <h3>Widget Types</h3>
+      <button class="button-link subtle designer-block-btn" type="button" data-add-widget="chart">Chart Widget</button>
+      <button class="button-link subtle designer-block-btn" type="button" data-add-widget="table">Table Widget</button>
+      <button class="button-link subtle designer-block-btn" type="button" data-add-widget="kpi">KPI Snapshot</button>
+      <h3 class="report-designer-subtitle">Quick Add Reports</h3>
+      {% for item in report_type_options %}
+      <button class="button-link subtle designer-block-btn designer-workspace-report" type="button" data-add-report="{{ item.key }}">
+        <strong>{{ item.label }}</strong>
+        <small>{{ item.description }}</small>
+      </button>
+      {% endfor %}
+    </aside>
+
+    <div class="designer-canvas-wrap">
+      <div class="designer-toolbar">
+        <div>
+          <span class="muted" id="report-designer-count-label">0 widgets</span>
+          <span class="muted" id="report-designer-status-label">No selection</span>
+        </div>
+        <div class="button-group">
+          <button class="button-link subtle" type="button" id="report-designer-open-selected">Open Selected Widget</button>
+          <button class="button-link subtle" type="button" id="report-designer-open-runner">Open Runner</button>
+        </div>
+      </div>
+      <div id="report-designer-canvas" class="designer-canvas"></div>
+      <div id="report-designer-import-pane" class="designer-import-pane hidden">
+        <label for="report-designer-import-text">Paste designer JSON</label>
+        <textarea id="report-designer-import-text" rows="8" placeholder='{"widgets":[...]}'></textarea>
+        <div class="button-group" style="margin-top:8px;">
+          <button type="button" id="report-designer-import-apply">Load JSON</button>
+          <button type="button" id="report-designer-import-cancel" class="button-link subtle">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <aside class="designer-properties">
+      <h3>Widget Properties</h3>
+      <div id="report-designer-empty-state" class="muted">Select a widget from the canvas.</div>
+      <div id="report-designer-props" class="hidden">
+        <label>
+          Title
+          <input type="text" id="report-prop-title">
+        </label>
+        <label>
+          Source Report
+          <select id="report-prop-report-type">
+            {% for item in report_type_options %}
+            <option value="{{ item.key }}">{{ item.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          View Mode
+          <select id="report-prop-view-mode">
+            {% for mode in view_modes %}
+            <option value="{{ mode }}">{{ mode }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Chart Kind
+          <select id="report-prop-chart-kind">
+            {% for kind in chart_kinds %}
+            <option value="{{ kind }}">{{ kind }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Chart Dimension (X)
+          <input type="text" id="report-prop-chart-x" placeholder="display_name">
+        </label>
+        <label>
+          Chart Metric (Y)
+          <input type="text" id="report-prop-chart-y" placeholder="total_contract_value">
+        </label>
+        <label>
+          Search
+          <input type="text" id="report-prop-search" placeholder="Name, owner, contract...">
+        </label>
+        <label>
+          Vendor
+          <select id="report-prop-vendor">
+            {% for option in vendor_options %}
+            <option value="{{ option.vendor_id }}">{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Max Rows
+          <select id="report-prop-limit">
+            {% for row_limit in row_limits %}
+            <option value="{{ row_limit }}">{{ row_limit }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <div class="button-group report-designer-prop-actions">
+          <button type="button" class="button-link subtle" id="report-prop-duplicate">Duplicate</button>
+          <button type="button" class="button-link subtle" id="report-prop-move-up">Move Up</button>
+          <button type="button" class="button-link subtle" id="report-prop-move-down">Move Down</button>
+          <button type="button" class="button-link subtle" id="report-prop-remove">Remove</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<section class="card section-divider">
+  <div class="section-header">
+    <div>
+      <h2>Databricks Native Reports</h2>
+      <p>Keep external BI dashboards isolated to this app's workspace.</p>
+    </div>
+  </div>
+  {% if databricks_reports %}
+  <table>
+    <thead>
+      <tr>
+        <th>Report</th>
+        <th>Description</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for report in databricks_reports %}
+      <tr>
+        <td>{{ report.label }}</td>
+        <td>{{ report.description or "-" }}</td>
+        <td>
+          <div class="button-group reports-catalog-actions">
+            <a class="button-link subtle" href="{{ report.url }}" target="_blank" rel="noopener noreferrer">Open in Databricks</a>
+            {% if report.can_embed %}
+            <span class="designer-chip">Embed Ready</span>
+            {% else %}
+            <span class="muted">Embed disabled</span>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No Databricks report configuration detected. Set <code>TVENDOR_DATABRICKS_REPORTS_JSON</code> to populate this list.</p>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+(() => {
+  const root = document.getElementById("report-designer-root");
+  if (!(root instanceof HTMLElement)) return;
+
+  const reportTypes = {{ report_type_options | tojson }};
+  const defaults = {{ designer_defaults | tojson }};
+  const selectedBoard = {{ (selected_board or {}) | tojson }};
+  const selectedBoardId = {{ selected_board_id | tojson }};
+  const rowLimits = {{ row_limits | tojson }};
+  const reportLookup = new Map(reportTypes.map((item) => [String(item.key), item]));
+
+  const canvas = document.getElementById("report-designer-canvas");
+  const countLabel = document.getElementById("report-designer-count-label");
+  const statusLabel = document.getElementById("report-designer-status-label");
+  const importPane = document.getElementById("report-designer-import-pane");
+  const importText = document.getElementById("report-designer-import-text");
+  const emptyState = document.getElementById("report-designer-empty-state");
+  const propsPanel = document.getElementById("report-designer-props");
+
+  const propTitle = document.getElementById("report-prop-title");
+  const propReportType = document.getElementById("report-prop-report-type");
+  const propViewMode = document.getElementById("report-prop-view-mode");
+  const propChartKind = document.getElementById("report-prop-chart-kind");
+  const propChartX = document.getElementById("report-prop-chart-x");
+  const propChartY = document.getElementById("report-prop-chart-y");
+  const propSearch = document.getElementById("report-prop-search");
+  const propVendor = document.getElementById("report-prop-vendor");
+  const propLimit = document.getElementById("report-prop-limit");
+  const saveForm = document.getElementById("report-board-save-form");
+  const boardNameInput = document.getElementById("report-board-name");
+  const boardIdInput = document.getElementById("report-board-id");
+  const boardJsonInput = document.getElementById("report-board-json");
+  const saveAsNewButton = document.getElementById("report-board-save-as-new");
+  const presentLink = document.getElementById("report-board-present-link");
+  const exportLink = document.getElementById("report-board-export-link");
+
+  if (
+    !(canvas instanceof HTMLElement) ||
+    !(countLabel instanceof HTMLElement) ||
+    !(statusLabel instanceof HTMLElement) ||
+    !(importPane instanceof HTMLElement) ||
+    !(importText instanceof HTMLTextAreaElement) ||
+    !(emptyState instanceof HTMLElement) ||
+    !(propsPanel instanceof HTMLElement) ||
+    !(propTitle instanceof HTMLInputElement) ||
+    !(propReportType instanceof HTMLSelectElement) ||
+    !(propViewMode instanceof HTMLSelectElement) ||
+    !(propChartKind instanceof HTMLSelectElement) ||
+    !(propChartX instanceof HTMLInputElement) ||
+    !(propChartY instanceof HTMLInputElement) ||
+    !(propSearch instanceof HTMLInputElement) ||
+    !(propVendor instanceof HTMLSelectElement) ||
+    !(propLimit instanceof HTMLSelectElement) ||
+    !(saveForm instanceof HTMLFormElement) ||
+    !(boardNameInput instanceof HTMLInputElement) ||
+    !(boardIdInput instanceof HTMLInputElement) ||
+    !(boardJsonInput instanceof HTMLInputElement)
+  ) {
+    return;
+  }
+
+  const STORAGE_KEY = "tvendor_reports_workspace_designer_v1";
+  const FALLBACK_REPORT = "vendor_inventory";
+  let widgets = [];
+  let selectedIndex = -1;
+  let activeBoardId = "";
+
+  const text = (value) => String(value ?? "").trim();
+  const nextId = () => `widget_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const safeHtml = (value) =>
+    text(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+
+  const validReport = (value) => {
+    const key = text(value);
+    if (key && reportLookup.has(key)) return key;
+    if (reportLookup.has(defaults.report_type)) return text(defaults.report_type);
+    return FALLBACK_REPORT;
+  };
+
+  const normalizeLimit = (value) => {
+    const parsed = Number.parseInt(text(value), 10);
+    if (Number.isFinite(parsed) && rowLimits.includes(parsed)) return parsed;
+    return rowLimits.includes(defaults.limit) ? Number(defaults.limit) : 500;
+  };
+
+  const reportPreset = (reportType) => {
+    const report = reportLookup.get(validReport(reportType)) || {};
+    return {
+      kind: text(report.preset_kind || defaults.chart_kind || "bar"),
+      x: text(report.preset_x || defaults.chart_x || "__row_index__"),
+      y: text(report.preset_y || defaults.chart_y || "__row_count__"),
+      label: text(report.label || reportType || "Report"),
+    };
+  };
+
+  const defaultWidget = (widgetType = "chart", reportType = defaults.report_type) => {
+    const reportKey = validReport(reportType);
+    const preset = reportPreset(reportKey);
+    const cardType = ["chart", "table", "kpi"].includes(text(widgetType)) ? text(widgetType) : "chart";
+    const viewMode = cardType === "table" ? "table" : "chart";
+    const title = cardType === "kpi" ? `${preset.label} KPI` : preset.label;
+    return {
+      id: nextId(),
+      widget_type: cardType,
+      title,
+      report_type: reportKey,
+      view_mode: viewMode,
+      chart_kind: preset.kind,
+      chart_x: cardType === "kpi" ? "__row_index__" : preset.x,
+      chart_y: cardType === "kpi" ? "__row_count__" : preset.y,
+      search: "",
+      vendor: text(defaults.vendor || "all") || "all",
+      limit: normalizeLimit(defaults.limit),
+    };
+  };
+
+  const normalizeWidget = (input) => {
+    const raw = (input && typeof input === "object") ? input : {};
+    const widgetType = text(raw.widget_type || raw.type || "chart");
+    const base = defaultWidget(widgetType, raw.report_type || defaults.report_type);
+    const reportKey = validReport(raw.report_type || base.report_type);
+    const preset = reportPreset(reportKey);
+    const titleValue = text(raw.title);
+    return {
+      id: text(raw.id) || nextId(),
+      widget_type: base.widget_type,
+      title: titleValue || base.title,
+      report_type: reportKey,
+      view_mode: ["table", "chart", "both"].includes(text(raw.view_mode)) ? text(raw.view_mode) : base.view_mode,
+      chart_kind: ["bar", "line"].includes(text(raw.chart_kind)) ? text(raw.chart_kind) : preset.kind,
+      chart_x: text(raw.chart_x) || preset.x,
+      chart_y: text(raw.chart_y) || preset.y,
+      search: text(raw.search),
+      vendor: text(raw.vendor || "all") || "all",
+      limit: normalizeLimit(raw.limit),
+    };
+  };
+
+  const widgetAt = (index) => (index >= 0 && index < widgets.length ? widgets[index] : null);
+
+  const reportParams = (widget) => {
+    const params = new URLSearchParams();
+    params.set("run", "1");
+    params.set("report_type", text(widget.report_type || defaults.report_type));
+    params.set("search", text(widget.search));
+    params.set("vendor", text(widget.vendor || "all") || "all");
+    params.set("lifecycle_state", "all");
+    params.set("project_status", "all");
+    params.set("outcome", "all");
+    params.set("owner_principal", "");
+    params.set("business_unit", "all");
+    params.set("horizon_days", "180");
+    params.set("limit", String(normalizeLimit(widget.limit)));
+    params.set("view_mode", text(widget.view_mode || "chart"));
+    params.set("chart_kind", text(widget.chart_kind || defaults.chart_kind || "bar"));
+    params.set("chart_x", text(widget.chart_x || defaults.chart_x || "__row_index__"));
+    params.set("chart_y", text(widget.chart_y || defaults.chart_y || "__row_count__"));
+    return params;
+  };
+
+  const runUrl = (widget) => `/reports?${reportParams(widget).toString()}`;
+
+  const syncSaveForm = () => {
+    activeBoardId = text(activeBoardId || boardIdInput.value);
+    boardIdInput.value = activeBoardId;
+    const boardName = text(boardNameInput.value) || "Report Board";
+    if (!text(boardNameInput.value)) {
+      boardNameInput.value = boardName;
+    }
+    boardJsonInput.value = JSON.stringify({
+      version: 1,
+      board_id: activeBoardId,
+      board_name: boardName,
+      widgets,
+    });
+    if (presentLink instanceof HTMLAnchorElement) {
+      if (activeBoardId) {
+        presentLink.href = `/reports/workspace/present?board=${encodeURIComponent(activeBoardId)}`;
+        presentLink.classList.remove("hidden");
+      } else {
+        presentLink.classList.add("hidden");
+      }
+    }
+    if (exportLink instanceof HTMLAnchorElement) {
+      if (activeBoardId) {
+        exportLink.href = `/reports/workspace/boards/export?board=${encodeURIComponent(activeBoardId)}`;
+        exportLink.classList.remove("hidden");
+      } else {
+        exportLink.classList.add("hidden");
+      }
+    }
+  };
+
+  const persistDraft = () => {
+    try {
+      window.localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          widgets,
+          selected_index: selectedIndex,
+          board_name: text(boardNameInput.value),
+          board_id: text(activeBoardId),
+          updated_at: new Date().toISOString(),
+        }),
+      );
+    } catch (_error) {
+      // Ignore local storage write errors.
+    }
+  };
+
+  const loadDraft = () => {
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (!raw) return false;
+      const payload = JSON.parse(raw);
+      const incoming = Array.isArray(payload?.widgets) ? payload.widgets : [];
+      if (!incoming.length) return false;
+      widgets = incoming.map((item) => normalizeWidget(item));
+      selectedIndex = Number.isInteger(payload?.selected_index) ? payload.selected_index : 0;
+      if (!text(boardNameInput.value)) {
+        boardNameInput.value = text(payload?.board_name) || "Report Board";
+      }
+      activeBoardId = text(payload?.board_id || activeBoardId);
+      return true;
+    } catch (_error) {
+      return false;
+    }
+  };
+
+  const loadSelectedBoard = () => {
+    const incoming = Array.isArray(selectedBoard?.widgets) ? selectedBoard.widgets : [];
+    if (!incoming.length) return false;
+    widgets = incoming.map((item) => normalizeWidget(item));
+    selectedIndex = 0;
+    activeBoardId = text(selectedBoard?.board_id || selectedBoardId);
+    boardNameInput.value = text(selectedBoard?.board_name) || "Report Board";
+    return true;
+  };
+
+  const openSelectedWidget = () => {
+    const selected = widgetAt(selectedIndex);
+    if (!selected) return;
+    window.open(runUrl(selected), "_blank", "noopener,noreferrer");
+  };
+
+  const renderProps = () => {
+    const selected = widgetAt(selectedIndex);
+    const hasSelection = Boolean(selected);
+    emptyState.classList.toggle("hidden", hasSelection);
+    propsPanel.classList.toggle("hidden", !hasSelection);
+    if (!selected) return;
+
+    propTitle.value = text(selected.title);
+    propReportType.value = text(selected.report_type);
+    propViewMode.value = text(selected.view_mode);
+    propChartKind.value = text(selected.chart_kind);
+    propChartX.value = text(selected.chart_x);
+    propChartY.value = text(selected.chart_y);
+    propSearch.value = text(selected.search);
+    propVendor.value = text(selected.vendor || "all");
+    propLimit.value = String(normalizeLimit(selected.limit));
+  };
+
+  const render = () => {
+    if (widgets.length && (selectedIndex < 0 || selectedIndex >= widgets.length)) {
+      selectedIndex = 0;
+    }
+    if (!widgets.length) {
+      selectedIndex = -1;
+    }
+
+    const widgetCount = widgets.length;
+    countLabel.textContent = `${widgetCount} widget${widgetCount === 1 ? "" : "s"}`;
+    statusLabel.textContent = selectedIndex >= 0 ? "Edit mode" : "No selection";
+    canvas.innerHTML = "";
+
+    if (!widgets.length) {
+      const emptyCard = document.createElement("article");
+      emptyCard.className = "designer-question-card report-designer-empty";
+      emptyCard.innerHTML = "<p>Create a board by adding a widget from the left panel or report catalog.</p>";
+      canvas.appendChild(emptyCard);
+      renderProps();
+      persistDraft();
+      return;
+    }
+
+    widgets.forEach((widget, index) => {
+      const report = reportLookup.get(text(widget.report_type)) || {};
+      const card = document.createElement("article");
+      card.className = `designer-question-card${index === selectedIndex ? " selected" : ""}`;
+      card.setAttribute("draggable", "true");
+      card.dataset.widgetIndex = String(index);
+      card.innerHTML = `
+        <header>
+          <strong>${safeHtml(widget.title)}</strong>
+          <span class="designer-chip">${safeHtml(widget.widget_type)}</span>
+          <span class="designer-chip">${safeHtml(report.label || widget.report_type)}</span>
+          <span class="designer-chip">${safeHtml(widget.view_mode)}</span>
+        </header>
+        <p class="report-designer-card-summary">
+          chart: ${safeHtml(widget.chart_kind)} | x: ${safeHtml(widget.chart_x)} | y: ${safeHtml(widget.chart_y)} | limit: ${safeHtml(widget.limit)}
+        </p>
+        <div class="button-group report-designer-card-actions">
+          <a class="button-link subtle" href="${runUrl(widget)}" target="_blank" rel="noopener noreferrer">Run</a>
+          <button type="button" class="button-link subtle" data-action="duplicate" data-index="${index}">Duplicate</button>
+          <button type="button" class="button-link subtle" data-action="remove" data-index="${index}">Remove</button>
+        </div>
+      `;
+      card.addEventListener("click", () => {
+        selectedIndex = index;
+        render();
+      });
+      card.addEventListener("dragstart", (event) => {
+        if (!event.dataTransfer) return;
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", String(index));
+      });
+      card.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      });
+      card.addEventListener("drop", (event) => {
+        event.preventDefault();
+        if (!event.dataTransfer) return;
+        const sourceIndex = Number.parseInt(event.dataTransfer.getData("text/plain") || "-1", 10);
+        const targetIndex = Number.parseInt(card.dataset.widgetIndex || "-1", 10);
+        if (!(sourceIndex >= 0 && sourceIndex < widgets.length)) return;
+        if (!(targetIndex >= 0 && targetIndex < widgets.length)) return;
+        if (sourceIndex === targetIndex) return;
+        const [moved] = widgets.splice(sourceIndex, 1);
+        widgets.splice(targetIndex, 0, moved);
+        selectedIndex = targetIndex;
+        render();
+      });
+      card.querySelectorAll("[data-action]").forEach((button) => {
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+          const action = button.getAttribute("data-action");
+          const actionIndex = Number.parseInt(button.getAttribute("data-index") || "-1", 10);
+          if (!(actionIndex >= 0 && actionIndex < widgets.length)) return;
+          if (action === "duplicate") {
+            const clone = normalizeWidget(widgets[actionIndex]);
+            clone.id = nextId();
+            clone.title = `${text(clone.title)} Copy`.trim();
+            widgets.splice(actionIndex + 1, 0, clone);
+            selectedIndex = actionIndex + 1;
+          }
+          if (action === "remove") {
+            widgets.splice(actionIndex, 1);
+            if (selectedIndex >= widgets.length) selectedIndex = widgets.length - 1;
+          }
+          render();
+        });
+      });
+      canvas.appendChild(card);
+    });
+    renderProps();
+    syncSaveForm();
+    persistDraft();
+  };
+
+  const updateSelectedWidget = () => {
+    const selected = widgetAt(selectedIndex);
+    if (!selected) return;
+
+    selected.title = text(propTitle.value);
+    const previousReportType = text(selected.report_type);
+    const selectedReportType = validReport(propReportType.value);
+    selected.report_type = selectedReportType;
+    selected.view_mode = ["table", "chart", "both"].includes(text(propViewMode.value)) ? text(propViewMode.value) : "chart";
+    selected.chart_kind = ["bar", "line"].includes(text(propChartKind.value)) ? text(propChartKind.value) : "bar";
+    selected.search = text(propSearch.value);
+    selected.vendor = text(propVendor.value || "all") || "all";
+    selected.limit = normalizeLimit(propLimit.value);
+
+    const chartX = text(propChartX.value);
+    const chartY = text(propChartY.value);
+    selected.chart_x = chartX || reportPreset(selectedReportType).x;
+    selected.chart_y = chartY || reportPreset(selectedReportType).y;
+
+    if (previousReportType !== selectedReportType) {
+      const preset = reportPreset(selectedReportType);
+      const reportLabel = text(reportLookup.get(selectedReportType)?.label || selectedReportType);
+      if (!selected.title || selected.title === reportLabel || selected.title.endsWith(" KPI")) {
+        selected.title = selected.widget_type === "kpi" ? `${reportLabel} KPI` : reportLabel;
+      }
+      selected.chart_kind = preset.kind;
+      selected.chart_x = preset.x;
+      selected.chart_y = preset.y;
+    }
+    render();
+  };
+
+  const addWidget = (widgetType, reportType) => {
+    widgets.push(defaultWidget(widgetType, reportType));
+    selectedIndex = widgets.length - 1;
+    if (!text(boardNameInput.value)) {
+      const presetLabel = text(reportLookup.get(validReport(reportType || defaults.report_type))?.label || "Report Board");
+      boardNameInput.value = `${presetLabel} Board`;
+    }
+    render();
+  };
+
+  document.querySelectorAll("[data-add-widget]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const widgetType = text(button.getAttribute("data-add-widget") || "chart");
+      addWidget(widgetType, defaults.report_type);
+    });
+  });
+
+  document.querySelectorAll("[data-add-report]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const reportType = text(button.getAttribute("data-add-report") || defaults.report_type);
+      addWidget("chart", reportType);
+      const designer = document.getElementById("report-designer-root");
+      if (designer) designer.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+
+  [propTitle, propChartX, propChartY, propSearch].forEach((input) => input.addEventListener("input", updateSelectedWidget));
+  [propReportType, propViewMode, propChartKind, propVendor, propLimit].forEach((input) =>
+    input.addEventListener("change", updateSelectedWidget),
+  );
+
+  const openSelectedButton = document.getElementById("report-designer-open-selected");
+  if (openSelectedButton) {
+    openSelectedButton.addEventListener("click", openSelectedWidget);
+  }
+
+  const openRunnerButton = document.getElementById("report-designer-open-runner");
+  if (openRunnerButton) {
+    openRunnerButton.addEventListener("click", () => {
+      window.open("/reports", "_blank", "noopener,noreferrer");
+    });
+  }
+
+  const duplicateButton = document.getElementById("report-prop-duplicate");
+  if (duplicateButton) {
+    duplicateButton.addEventListener("click", () => {
+      const selected = widgetAt(selectedIndex);
+      if (!selected) return;
+      const clone = normalizeWidget(selected);
+      clone.id = nextId();
+      clone.title = `${text(clone.title)} Copy`.trim();
+      widgets.splice(selectedIndex + 1, 0, clone);
+      selectedIndex += 1;
+      render();
+    });
+  }
+
+  const removeButton = document.getElementById("report-prop-remove");
+  if (removeButton) {
+    removeButton.addEventListener("click", () => {
+      if (!(selectedIndex >= 0 && selectedIndex < widgets.length)) return;
+      widgets.splice(selectedIndex, 1);
+      if (selectedIndex >= widgets.length) selectedIndex = widgets.length - 1;
+      render();
+    });
+  }
+
+  const moveUpButton = document.getElementById("report-prop-move-up");
+  if (moveUpButton) {
+    moveUpButton.addEventListener("click", () => {
+      if (!(selectedIndex > 0 && selectedIndex < widgets.length)) return;
+      const [item] = widgets.splice(selectedIndex, 1);
+      widgets.splice(selectedIndex - 1, 0, item);
+      selectedIndex -= 1;
+      render();
+    });
+  }
+
+  const moveDownButton = document.getElementById("report-prop-move-down");
+  if (moveDownButton) {
+    moveDownButton.addEventListener("click", () => {
+      if (!(selectedIndex >= 0 && selectedIndex < widgets.length - 1)) return;
+      const [item] = widgets.splice(selectedIndex, 1);
+      widgets.splice(selectedIndex + 1, 0, item);
+      selectedIndex += 1;
+      render();
+    });
+  }
+
+  const loadStarterButton = document.getElementById("report-designer-load-starter");
+  if (loadStarterButton) {
+    loadStarterButton.addEventListener("click", () => {
+      widgets = [
+        defaultWidget("chart", "vendor_inventory"),
+        defaultWidget("chart", "contract_renewals"),
+        defaultWidget("table", "owner_coverage"),
+      ];
+      selectedIndex = 0;
+      if (!text(boardNameInput.value)) {
+        boardNameInput.value = "Starter Board";
+      }
+      render();
+    });
+  }
+
+  const exportButton = document.getElementById("report-designer-export");
+  if (exportButton) {
+    exportButton.addEventListener("click", () => {
+      const payload = {
+        version: 1,
+        exported_at: new Date().toISOString(),
+        widgets,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "reports-workspace-board.json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(link.href);
+    });
+  }
+
+  const importToggleButton = document.getElementById("report-designer-import-toggle");
+  if (importToggleButton) {
+    importToggleButton.addEventListener("click", () => {
+      importPane.classList.toggle("hidden");
+      if (!importPane.classList.contains("hidden")) {
+        importText.focus();
+      }
+    });
+  }
+
+  const importCancelButton = document.getElementById("report-designer-import-cancel");
+  if (importCancelButton) {
+    importCancelButton.addEventListener("click", () => {
+      importPane.classList.add("hidden");
+      importText.value = "";
+    });
+  }
+
+  const importApplyButton = document.getElementById("report-designer-import-apply");
+  if (importApplyButton) {
+    importApplyButton.addEventListener("click", () => {
+      let payload;
+      try {
+        payload = JSON.parse(importText.value);
+      } catch (_error) {
+        window.alert("Invalid JSON payload.");
+        return;
+      }
+      const incoming = Array.isArray(payload) ? payload : Array.isArray(payload?.widgets) ? payload.widgets : [];
+      widgets = incoming.map((item) => normalizeWidget(item));
+      selectedIndex = widgets.length ? 0 : -1;
+      importPane.classList.add("hidden");
+      importText.value = "";
+      render();
+    });
+  }
+
+  const clearButton = document.getElementById("report-designer-clear");
+  if (clearButton) {
+    clearButton.addEventListener("click", () => {
+      if (!window.confirm("Clear all report widgets from this board?")) return;
+      widgets = [];
+      selectedIndex = -1;
+      activeBoardId = "";
+      boardIdInput.value = "";
+      boardNameInput.value = "";
+      try {
+        window.localStorage.removeItem(STORAGE_KEY);
+      } catch (_error) {
+        // Ignore local storage write errors.
+      }
+      render();
+    });
+  }
+
+  saveForm.addEventListener("submit", (event) => {
+    if (!widgets.length) {
+      event.preventDefault();
+      window.alert("Add at least one widget before saving.");
+      return;
+    }
+    syncSaveForm();
+  });
+
+  if (saveAsNewButton) {
+    saveAsNewButton.addEventListener("click", () => {
+      activeBoardId = "";
+      boardIdInput.value = "";
+      if (!text(boardNameInput.value)) {
+        boardNameInput.value = "Report Board";
+      }
+      syncSaveForm();
+      saveForm.requestSubmit();
+    });
+  }
+
+  const loadedServerBoard = loadSelectedBoard();
+  if (!loadedServerBoard) {
+    const hasDraft = loadDraft();
+    if (!hasDraft) {
+      widgets = [defaultWidget("chart", defaults.report_type)];
+      selectedIndex = 0;
+    }
+  }
+  if (!text(boardNameInput.value)) {
+    boardNameInput.value = "Report Board";
+  }
+  activeBoardId = text(activeBoardId || boardIdInput.value || selectedBoardId);
+  render();
+})();
+</script>
+{% endblock %}
+

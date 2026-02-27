@@ -1,0 +1,419 @@
+{% extends "base.html" %}
+
+{% block head %}
+  <link rel="stylesheet" href="/static/css/imports_wizard.css?v={{ static_asset_version }}">
+{% endblock %}
+
+{% block content %}
+<div class="section-header">
+  <div>
+    <h1>Sequential Review</h1>
+    <p>Review one area at a time. Confirm current area to unlock the next area.</p>
+  </div>
+  <div class="button-group">
+    <a class="button-link subtle" href="/imports/jobs/{{ import_job_id }}/final">Final Summary</a>
+  </div>
+</div>
+
+<section class="card section-divider">
+  <h2>Progress</h2>
+  <div class="button-group">
+    {% for area in review_area_order %}
+    {% set state = review_area_states.get(area, 'locked') %}
+    {% if state == 'locked' %}
+    <span class="button-link subtle muted">{{ review_area_labels.get(area, area) }} (locked)</span>
+    {% elif area == current_area_key %}
+    <span class="button-link">{{ review_area_labels.get(area, area) }} (current)</span>
+    {% else %}
+    <a class="button-link subtle" href="/imports/jobs/{{ import_job_id }}/review/{{ area }}">{{ review_area_labels.get(area, area) }} ({{ state }})</a>
+    {% endif %}
+    {% endfor %}
+  </div>
+  <p class="muted" style="margin-top:8px;">Next locked area: {{ next_locked_area_key or "-" }}</p>
+</section>
+
+<section class="card section-divider">
+  <h2>{{ current_area_label }}</h2>
+  <p class="muted">
+    total={{ area_review_counts.total }}, ready={{ area_review_counts.ready }}, review={{ area_review_counts.review }}, error={{ area_review_counts.error }}
+  </p>
+  <p class="muted">
+    Save Decisions stores your changes and keeps you on this area. Confirm Area And Continue stores changes, locks this area, and unlocks the next area.
+  </p>
+
+  <form method="post" action="/imports/jobs/{{ import_job_id }}/review/{{ current_area_key }}/save">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if area_context.show_vendor_selector or area_context.show_offering_selector %}
+    <div class="guided-sub-card">
+      <h3>Area Context</h3>
+      <p class="muted">If your file is scoped to one vendor/offering and IDs are missing in rows, select defaults here.</p>
+      <div class="grid grid-2">
+        {% if area_context.show_vendor_selector %}
+        <label>
+          Default Vendor
+          <input type="hidden" id="default-vendor-id" name="default_vendor_id" value="{{ area_context.default_vendor_id }}">
+          <input type="hidden" id="default-vendor-label" name="default_vendor_label" value="{{ area_context.default_vendor_label }}">
+          <div class="target-picker">
+            <input type="search" id="default-vendor-search" placeholder="Search vendor and select" value="{{ area_context.default_vendor_label }}">
+            <div id="default-vendor-menu" class="target-picker-menu" hidden></div>
+          </div>
+        </label>
+        {% endif %}
+        {% if area_context.show_offering_selector %}
+        <label>
+          Default Offering
+          <input type="hidden" id="default-offering-id" name="default_offering_id" value="{{ area_context.default_offering_id }}">
+          <input type="hidden" id="default-offering-label" name="default_offering_label" value="{{ area_context.default_offering_label }}">
+          <div class="target-picker">
+            <input type="search" id="default-offering-search" placeholder="Search offering and select" value="{{ area_context.default_offering_label }}">
+            <div id="default-offering-menu" class="target-picker-menu" hidden></div>
+          </div>
+        </label>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+    <div class="table-wrap table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Line</th>
+            <th>Status</th>
+            <th>Source Group</th>
+            <th>Data</th>
+            <th>Action</th>
+            <th>Target</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in area_rows %}
+          {% set row_id = row.import_stage_row_id %}
+          <tr>
+            <td>
+              {{ row.line_number or row.row_index }}
+              <input type="hidden" name="row_ids" value="{{ row_id }}">
+              <input type="hidden" name="source_row_index_{{ row_id }}" value="{{ row.source_row_index }}">
+              <input type="hidden" name="source_group_key_{{ row_id }}" value="{{ row.source_group_key }}">
+            </td>
+            <td>{{ row.row_status }}</td>
+            <td>{{ row.source_group_key }}</td>
+            <td>
+              {% for key, value in row.row_data.items() %}
+              <div><strong>{{ key }}</strong>: {{ value }}</div>
+              {% endfor %}
+              {% for note in row.notes %}
+              <div class="muted">{{ note }}</div>
+              {% endfor %}
+              {% for err in row.errors %}
+              <div class="status-text error">{{ err }}</div>
+              {% endfor %}
+            </td>
+            <td>
+              <select name="decision_action_{{ row_id }}">
+                <option value="new" {% if row.decision_action == 'new' %}selected{% endif %}>new</option>
+                <option value="merge" {% if row.decision_action == 'merge' %}selected{% endif %}>merge</option>
+                <option value="skip" {% if row.decision_action == 'skip' %}selected{% endif %}>skip</option>
+              </select>
+            </td>
+            <td>
+              <div
+                class="target-picker"
+                data-area-key="{{ current_area_key }}"
+                data-row-id="{{ row_id }}"
+                data-initial-options="{{ row.merge_options | tojson | forceescape }}"
+              >
+                <input
+                  type="hidden"
+                  name="decision_target_{{ row_id }}"
+                  class="target-id-input"
+                  value="{{ row.decision_target_id or row.suggested_target_id }}"
+                >
+                <input
+                  type="hidden"
+                  name="decision_target_label_{{ row_id }}"
+                  class="target-label-input"
+                  value="{{ row.decision_target_label or row.suggested_target_label }}"
+                >
+                <input
+                  type="search"
+                  class="target-query-input"
+                  value="{{ row.decision_target_label or row.suggested_target_label or row.decision_target_id or row.suggested_target_id }}"
+                  placeholder="Search and select target"
+                  autocomplete="off"
+                >
+                <div class="target-picker-menu" hidden></div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="button-group" style="margin-top:12px;">
+      <button type="submit">Save Decisions</button>
+      <button type="submit" formaction="/imports/jobs/{{ import_job_id }}/review/{{ current_area_key }}/confirm">Confirm Area And Continue</button>
+    </div>
+  </form>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const form = document.querySelector('form[action$="/save"]');
+  if (!form) return;
+  const areaKey = {{ current_area_key | tojson }};
+  const vendorIdInput = document.getElementById('default-vendor-id');
+  const vendorLabelInput = document.getElementById('default-vendor-label');
+  const vendorSearchInput = document.getElementById('default-vendor-search');
+  const vendorMenu = document.getElementById('default-vendor-menu');
+  const offeringIdInput = document.getElementById('default-offering-id');
+  const offeringLabelInput = document.getElementById('default-offering-label');
+  const offeringSearchInput = document.getElementById('default-offering-search');
+  const offeringMenu = document.getElementById('default-offering-menu');
+
+  const api = {
+    vendors: (q) => `/api/vendors/search?q=${encodeURIComponent(q)}&limit=20`,
+    offerings: (q, vendorId) => `/api/offerings/search?q=${encodeURIComponent(q)}&vendor_id=${encodeURIComponent(vendorId || '')}&limit=20`,
+    projects: (q) => `/api/projects/search?q=${encodeURIComponent(q)}&limit=20`,
+    contracts: (q) => `/api/contracts/search?q=${encodeURIComponent(q)}&limit=20`,
+    contacts: (q, vendorId) => `/api/contacts/search?q=${encodeURIComponent(q)}&vendor_id=${encodeURIComponent(vendorId || '')}&limit=20`,
+  };
+
+  const areaSearchKind = (key) => {
+    if (['vendor', 'vendor_identifier', 'vendor_owner'].includes(key)) return 'vendors';
+    if (['vendor_contact'].includes(key)) return 'contacts';
+    if (['offering', 'offering_owner'].includes(key)) return 'offerings';
+    if (['contract'].includes(key)) return 'contracts';
+    if (['project'].includes(key)) return 'projects';
+    return 'local';
+  };
+
+  const normalizeRemoteItems = (kind, items) => {
+    const rows = Array.isArray(items) ? items : [];
+    if (kind === 'vendors') {
+      return rows
+        .map((row) => ({ id: String(row.vendor_id || '').trim(), label: String(row.label || row.display_name || row.legal_name || row.vendor_id || '').trim() }))
+        .filter((row) => row.id);
+    }
+    if (kind === 'offerings') {
+      return rows
+        .map((row) => ({ id: String(row.offering_id || '').trim(), label: String(row.label || row.offering_name || row.offering_id || '').trim() }))
+        .filter((row) => row.id);
+    }
+    if (kind === 'projects') {
+      return rows
+        .map((row) => ({ id: String(row.project_id || '').trim(), label: String(row.label || row.project_name || row.project_id || '').trim() }))
+        .filter((row) => row.id);
+    }
+    if (kind === 'contracts') {
+      return rows
+        .map((row) => ({ id: String(row.contract_id || '').trim(), label: String(row.label || row.contract_number || row.contract_id || '').trim() }))
+        .filter((row) => row.id);
+    }
+    if (kind === 'contacts') {
+      return rows
+        .map((row) => ({ id: String(row.contact_id || row.vendor_contact_id || '').trim(), label: String(row.label || row.full_name || row.email || row.contact_id || row.vendor_contact_id || '').trim() }))
+        .filter((row) => row.id);
+    }
+    return [];
+  };
+
+  const dedupeOptions = (rows) => {
+    const seen = new Set();
+    const out = [];
+    (rows || []).forEach((row) => {
+      const id = String(row.id || '').trim();
+      const label = String(row.label || id).trim() || id;
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      out.push({ id, label });
+    });
+    return out;
+  };
+
+  const hideMenu = (menu) => {
+    if (menu) menu.hidden = true;
+  };
+
+  const renderMenu = (menu, options, onPick) => {
+    if (!menu) return;
+    menu.innerHTML = '';
+    const rows = dedupeOptions(options).slice(0, 20);
+    if (!rows.length) {
+      menu.hidden = true;
+      return;
+    }
+    rows.forEach((row) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'target-picker-item';
+      btn.dataset.targetId = row.id;
+      btn.dataset.targetLabel = row.label;
+      btn.textContent = `${row.label} (${row.id})`;
+      btn.addEventListener('click', () => onPick(row));
+      menu.appendChild(btn);
+    });
+    menu.hidden = false;
+  };
+
+  const fetchOptions = async (kind, query, vendorId) => {
+    const normalizedQuery = String(query || '').trim();
+    let url = '';
+    if (kind === 'vendors') url = api.vendors(normalizedQuery);
+    else if (kind === 'offerings') url = api.offerings(normalizedQuery, vendorId);
+    else if (kind === 'projects') url = api.projects(normalizedQuery);
+    else if (kind === 'contracts') url = api.contracts(normalizedQuery);
+    else if (kind === 'contacts') url = api.contacts(normalizedQuery, vendorId);
+    if (!url) return [];
+    try {
+      const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (!res.ok) return [];
+      const payload = await res.json();
+      return normalizeRemoteItems(kind, payload.items || []);
+    } catch (_err) {
+      return [];
+    }
+  };
+
+  const wireContextPicker = ({ searchInput, menu, idInput, labelInput, kind, getVendorId }) => {
+    if (!searchInput || !menu || !idInput || !labelInput) return;
+    let debounceTimer = null;
+    const selectOption = (option) => {
+      idInput.value = option.id;
+      labelInput.value = option.label;
+      searchInput.value = option.label;
+      hideMenu(menu);
+    };
+    const refresh = async () => {
+      const q = String(searchInput.value || '').trim();
+      const remote = await fetchOptions(kind, q, getVendorId ? getVendorId() : '');
+      renderMenu(menu, remote, selectOption);
+    };
+    searchInput.addEventListener('input', () => {
+      idInput.value = '';
+      labelInput.value = '';
+      window.clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(refresh, 180);
+    });
+    searchInput.addEventListener('focus', refresh);
+    document.addEventListener('click', (event) => {
+      if (!menu.contains(event.target) && event.target !== searchInput) {
+        hideMenu(menu);
+      }
+    });
+  };
+
+  wireContextPicker({
+    searchInput: vendorSearchInput,
+    menu: vendorMenu,
+    idInput: vendorIdInput,
+    labelInput: vendorLabelInput,
+    kind: 'vendors',
+  });
+  wireContextPicker({
+    searchInput: offeringSearchInput,
+    menu: offeringMenu,
+    idInput: offeringIdInput,
+    labelInput: offeringLabelInput,
+    kind: 'offerings',
+    getVendorId: () => String(vendorIdInput?.value || ''),
+  });
+
+  const wireTargetPicker = (container) => {
+    const searchInput = container.querySelector('.target-query-input');
+    const targetIdInput = container.querySelector('.target-id-input');
+    const targetLabelInput = container.querySelector('.target-label-input');
+    const menu = container.querySelector('.target-picker-menu');
+    const actionSelect = container.closest('tr')?.querySelector(`select[name^="decision_action_"]`);
+    const kind = areaSearchKind(areaKey);
+    let localOptions = [];
+    try {
+      localOptions = JSON.parse(container.dataset.initialOptions || '[]');
+    } catch (_err) {
+      localOptions = [];
+    }
+    localOptions = (Array.isArray(localOptions) ? localOptions : []).map((item) => ({
+      id: String(item.id || '').trim(),
+      label: String(item.label || item.id || '').trim(),
+    })).filter((item) => item.id);
+
+    const selectOption = (option) => {
+      targetIdInput.value = option.id;
+      targetLabelInput.value = option.label;
+      searchInput.value = option.label;
+      if (actionSelect && String(actionSelect.value || '').toLowerCase() !== 'merge') {
+        actionSelect.value = 'merge';
+      }
+      hideMenu(menu);
+    };
+
+    const updateActionState = () => {
+      const action = String(actionSelect?.value || 'new').toLowerCase();
+      const disabled = action === 'skip';
+      searchInput.disabled = disabled;
+      if (disabled) hideMenu(menu);
+    };
+    updateActionState();
+    actionSelect?.addEventListener('change', updateActionState);
+
+    let debounceTimer = null;
+    const refresh = async () => {
+      if (searchInput.disabled) {
+        hideMenu(menu);
+        return;
+      }
+      const q = String(searchInput.value || '').trim();
+      const filteredLocal = localOptions.filter((item) => {
+        if (!q) return true;
+        const hay = `${item.label} ${item.id}`.toLowerCase();
+        return hay.includes(q.toLowerCase());
+      });
+      const remote = kind === 'local'
+        ? []
+        : await fetchOptions(
+            kind,
+            q || String(searchInput.value || ''),
+            String(vendorIdInput?.value || ''),
+          );
+      renderMenu(menu, [...filteredLocal, ...remote], selectOption);
+    };
+
+    searchInput.addEventListener('input', () => {
+      targetIdInput.value = '';
+      targetLabelInput.value = '';
+      window.clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(refresh, 180);
+    });
+    searchInput.addEventListener('focus', refresh);
+    document.addEventListener('click', (event) => {
+      if (!menu.contains(event.target) && event.target !== searchInput) {
+        hideMenu(menu);
+      }
+    });
+  };
+
+  document.querySelectorAll('.target-picker').forEach(wireTargetPicker);
+
+  form.addEventListener('submit', (event) => {
+    const submitter = event.submitter;
+    const targetAction = String(submitter?.getAttribute('formaction') || form.getAttribute('action') || '');
+    if (!targetAction.includes('/confirm')) return;
+    const rows = Array.from(form.querySelectorAll('tbody tr'));
+    for (const row of rows) {
+      const actionSelect = row.querySelector('select[name^="decision_action_"]');
+      const action = String(actionSelect?.value || '').toLowerCase();
+      if (action !== 'merge') continue;
+      const targetId = String(row.querySelector('.target-id-input')?.value || '').trim();
+      if (targetId) continue;
+      event.preventDefault();
+      const queryInput = row.querySelector('.target-query-input');
+      queryInput?.focus();
+      alert('Merge actions require selecting a target before you can confirm this area.');
+      return;
+    }
+  });
+})();
+</script>
+{% endblock %}

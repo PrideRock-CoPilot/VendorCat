@@ -1,0 +1,5 @@
+﻿source_system	source_object	offering_id	vendor_id	vendor_name	vendor_contact_email	vendor_support_phone	offering_name	offering_type	business_unit	service_type	lifecycle_state	criticality_tier	contract_number	contract_status	annual_contract_value	currency	slm_uptime_target	penalty_clause	implementation_phase	additional_notes
+coupa	coupa_catalog_sync		vnd-73021	Contoso Records	support@contosorecords.example	1-877-555-2202	Records Compliance Vault	software	finance	saas	draft	tier1	CT-2025-778	active	310000	USD	99.95%	Yes	phase_1	Needs mapping for jurisdiction-specific retention schedules.
+peoplesoft	ps_service_feed	off-88910	vnd-73021	Contoso Records	api@contosorecords.example	1-877-555-3202	Invoice Reconciliation API	platform	finance	api	active	tier1	CT-2024-194	active	140000	USD	99.90%	No	phase_2	Outbound webhook inventory is not yet represented in current forms.
+other	manual_batch_oct		vnd-90105	Fabrikam Clinical Exchange	escalations@fabrikamce.example	1-877-555-2203	Clinical Data Intake Gateway	software	healthcare	sftp	draft	tier2	FB-2026-115	draft	590000	USD	99.50%	Yes	phase_0	Store data-sharing constraints and residency notes as import note payload.
+

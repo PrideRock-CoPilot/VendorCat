@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="{{ return_to }}">Vendor 360</a>
+  <span class="breadcrumb-sep" aria-hidden="true">/</span>
+  <a href="/vendors/{{ vendor_id }}/summary?return_to={{ return_to|urlencode }}">{{ vendor_display_name }}</a>
+  <span class="breadcrumb-sep" aria-hidden="true">/</span>
+  <span aria-current="page">Projects</span>
+</nav>
+
+<div class="section-header">
+  <div>
+    <h1>{{ vendor_display_name }} Projects</h1>
+    <p>Track implementation, POC, renewal, and related project activity.</p>
+  </div>
+  <div class="button-group">
+    {% if can_edit and not locked_mode %}
+    <a class="button-link" href="/vendors/{{ vendor_id }}/projects/new?return_to={{ return_to|urlencode }}">+ New Project</a>
+    {% endif %}
+    <a class="button-link subtle" href="/vendors/{{ vendor_id }}/summary?return_to={{ return_to|urlencode }}">Vendor Summary</a>
+    <a class="button-link" href="{{ return_to }}">Back To List</a>
+  </div>
+</div>
+
+<section class="card section-divider hierarchy-rail">
+  <h2>Project Context</h2>
+  <p class="muted">Projects connect vendor and offering execution. Use offerings for business unit, contacts, contracts, and data flows.</p>
+  <div class="section-nav-links">
+    <a href="/vendors/{{ vendor_id }}/summary?return_to={{ return_to|urlencode }}">Vendor Summary</a>
+    <a href="/vendors/{{ vendor_id }}/offerings?return_to={{ return_to|urlencode }}">Offerings Workspace</a>
+    <a href="/vendors/{{ vendor_id }}/contracts?return_to={{ return_to|urlencode }}">Vendor Contracts</a>
+    <a href="/vendors/{{ vendor_id }}/ownership?return_to={{ return_to|urlencode }}">Vendor Contacts & Ownership</a>
+  </div>
+</section>
+
+<section class="metrics">
+  <div class="metric"><span>Lifecycle</span><strong>{{ summary.lifecycle_state }}</strong></div>
+  <div class="metric"><span>Risk Tier</span><strong>{{ summary.risk_tier }}</strong></div>
+  <div class="metric"><span>Offerings</span><strong>{{ summary.offering_count|int }}</strong></div>
+  <div class="metric"><span>Active Contracts</span><strong>{{ summary.active_contract_count|int }}</strong></div>
+  <div class="metric"><span>Demos Selected</span><strong>{{ summary.demos_selected|int }}</strong></div>
+  <div class="metric"><span>Demos Not Selected</span><strong>{{ summary.demos_not_selected|int }}</strong></div>
+</section>
+
+<section class="card section-nav-card sticky-section-nav">
+  <div class="section-nav-links">
+    {% for item in vendor_nav %}
+    <a class="{% if item.active %}active{% endif %}" href="{{ item.url }}">{{ item.label }}</a>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="card section-divider">
+  <h2>Projects</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Project Name</th>
+        <th>Status</th>
+        <th>Start</th>
+        <th>Target</th>
+        <th>Owner</th>
+        <th># Demos</th>
+        <th>Last Activity</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in projects %}
+    <tr>
+      <td><a href="{{ row._open_link }}">{{ row.project_name }}</a></td>
+      <td>{{ row.status }}</td>
+      <td>{{ row.start_date }}</td>
+      <td>{{ row.target_date }}</td>
+      <td>{{ row.owner_principal }}</td>
+      <td>{{ row.demo_count }}</td>
+      <td>{{ row.last_activity_at }}</td>
+      <td class="button-group">
+        <a class="button-link subtle" href="{{ row._open_link }}">Open</a>
+        {% if can_edit and not locked_mode %}
+        <a class="button-link subtle" href="{{ row._edit_link }}">Edit</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8">No projects found.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

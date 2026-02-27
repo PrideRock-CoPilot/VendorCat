@@ -1,0 +1,524 @@
+from __future__ import annotations
+
+from django.db import models
+from django_fsm import FSMField, transition
+
+
+class Vendor(models.Model):
+    vendor_id = models.CharField(max_length=128, unique=True)
+    legal_name = models.CharField(max_length=255)
+    display_name = models.CharField(max_length=255)
+    lifecycle_state = models.CharField(max_length=64, default="active")
+    owner_org_id = models.CharField(max_length=128, default="default-org")
+    risk_tier = models.CharField(max_length=64, default="medium")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "core_vendor"
+        ordering = ["display_name"]
+
+    def __str__(self):
+        return f"{self.display_name} ({self.vendor_id})"
+
+    def get_contacts(self):
+        """Get all active contacts for this vendor"""
+        return self.contacts.filter(is_active=True)
+
+    def get_identifiers(self):
+        """Get all identifiers for this vendor"""
+        return self.identifiers.all()
+
+
+class VendorContact(models.Model):
+    """Vendor contact information (sales/support/billing)"""
+
+    CONTACT_TYPE_CHOICES = [
+        ("primary", "Primary Contact"),
+        ("sales", "Sales Representative"),
+        ("support", "Support Contact"),
+        ("billing", "Billing Contact"),
+        ("technical", "Technical Contact"),
+        ("executive", "Executive"),
+        ("other", "Other"),
+    ]
+
+    vendor = models.ForeignKey(
+        Vendor, on_delete=models.CASCADE, related_name="contacts"
+    )
+    full_name = models.CharField(max_length=255)
+    contact_type = models.CharField(max_length=64, choices=CONTACT_TYPE_CHOICES)
+    email = models.EmailField(blank=True, null=True)
+    phone = models.CharField(max_length=20, blank=True, null=True)
+    title = models.CharField(max_length=255, blank=True, null=True)
+    is_primary = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    notes = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "core_vendor_contact"
+        ordering = ["-is_primary", "full_name"]
+        indexes = [
+            models.Index(fields=["vendor", "is_active"]),
+            models.Index(fields=["vendor", "contact_type"]),
+        ]
+
+    def __str__(self):
+        return f"{self.full_name} ({self.contact_type})"
+
+
+class VendorIdentifier(models.Model):
+    """Vendor identifiers (DUNS, VAT, Tax ID, ERP IDs, etc.)"""
+
+    IDENTIFIER_TYPE_CHOICES = [
+        ("duns", "DUNS Number"),
+        ("tax_id", "Tax ID / EIN"),
+        ("vat_id", "VAT ID"),
+        ("gln", "GLN (Global Location Number)"),
+        ("erp_id", "ERP Vendor ID"),
+        ("sap_id", "SAP Vendor Code"),
+        ("internal_id", "Internal ID"),
+        ("d_u_n_s_plus_4", "DUNS+4"),
+        ("cage_code", "CAGE Code"),
+        ("other", "Other"),
+    ]
+
+    vendor = models.ForeignKey(
+        Vendor, on_delete=models.CASCADE, related_name="identifiers"
+    )
+    identifier_type = models.CharField(max_length=64, choices=IDENTIFIER_TYPE_CHOICES)
+    identifier_value = models.CharField(max_length=255)
+    country_code = models.CharField(max_length=2, blank=True, null=True)
+    is_primary = models.BooleanField(default=False)
+    is_verified = models.BooleanField(default=False)
+    verified_at = models.DateTimeField(blank=True, null=True)
+    verified_by = models.CharField(max_length=255, blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "core_vendor_identifier"
+        ordering = ["-is_primary", "identifier_type"]
+        unique_together = [["vendor", "identifier_type", "identifier_value"]]
+        indexes = [
+            models.Index(fields=["vendor", "identifier_type"]),
+            models.Index(fields=["identifier_type", "identifier_value"]),
+        ]
+
+    def __str__(self):
+        return f"{self.identifier_type}: {self.identifier_value}"
+
+
+class OnboardingWorkflow(models.Model):
+    """State machine for vendor onboarding workflow"""
+
+    STATE_CHOICES = [
+        ("draft", "Draft"),
+        ("pending_information", "Pending Information"),
+        ("under_review", "Under Review"),
+        ("compliance_check", "Compliance Check"),
+        ("approved", "Approved"),
+        ("rejected", "Rejected"),
+        ("active", "Active"),
+        ("archived", "Archived"),
+    ]
+
+    STATUS_CHANGE_REASONS = [
+        ("initial_creation", "Initial Creation"),
+        ("missing_documents", "Missing Required Documents"),
+        ("compliance_issue", "Compliance Issue"),
+        ("risk_assessment", "Risk Assessment"),
+        ("manager_approval", "Manager Approval"),
+        ("rejected_applicant", "Rejected by Applicant"),
+        ("rejected_internal", "Rejected Internally"),
+        ("onboarding_complete", "Onboarding Complete"),
+        ("policy_change", "Policy Change"),
+        ("other", "Other Reason"),
+    ]
+
+    vendor = models.OneToOneField(
+        Vendor, on_delete=models.CASCADE, related_name="onboarding_workflow"
+    )
+    current_state = FSMField(
+        default="draft",
+        choices=STATE_CHOICES,
+        protected=True,
+        db_column="onboarding_state"
+    )
+
+    initiated_by = models.CharField(max_length=255, blank=True, null=True)
+    initiated_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    last_state_change = models.DateTimeField(auto_now=True)
+
+    status_change_reason = models.CharField(
+        max_length=64,
+        choices=STATUS_CHANGE_REASONS,
+        default="initial_creation",
+        null=True,
+        blank=True
+    )
+    status_change_notes = models.TextField(blank=True, null=True)
+
+    assigned_reviewer = models.CharField(max_length=255, blank=True, null=True)
+    assigned_date = models.DateTimeField(blank=True, null=True)
+    review_completed_date = models.DateTimeField(blank=True, null=True)
+    reviewed_by = models.CharField(max_length=255, blank=True, null=True)
+
+    information_request_sent_at = models.DateTimeField(blank=True, null=True)
+    documents_received_at = models.DateTimeField(blank=True, null=True)
+    compliance_check_completed_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        db_table = "core_onboarding_workflow"
+        ordering = ["-initiated_at"]
+
+    def __str__(self):
+        return f"{self.vendor.vendor_id} - {self.get_current_state_display()}"
+
+    @transition(field="current_state", source="draft", target="pending_information")
+    def request_information(self, reason=None, notes=None):
+        from django.utils import timezone
+        self.status_change_reason = reason or "missing_documents"
+        self.status_change_notes = notes
+        self.information_request_sent_at = timezone.now()
+
+    @transition(field="current_state", source="pending_information", target="under_review")
+    def mark_information_received(self, received_date=None):
+        from django.utils import timezone
+        self.status_change_reason = "missing_documents"
+        self.documents_received_at = received_date or timezone.now()
+
+    @transition(field="current_state", source="under_review", target="compliance_check")
+    def assign_for_review(self, reviewer, reason=None, notes=None):
+        from django.utils import timezone
+        self.assigned_reviewer = reviewer
+        self.assigned_date = timezone.now()
+        self.status_change_reason = reason or "risk_assessment"
+        self.status_change_notes = notes
+
+    @transition(field="current_state", source="compliance_check", target="approved")
+    def approve_vendor(self, reviewer, notes=None):
+        from django.utils import timezone
+        self.reviewed_by = reviewer
+        self.review_completed_date = timezone.now()
+        self.status_change_reason = "manager_approval"
+        self.status_change_notes = notes or "Approved"
+        self.compliance_check_completed_at = timezone.now()
+
+    @transition(field="current_state", source="compliance_check", target="rejected")
+    def reject_vendor(self, reviewer, notes=None):
+        from django.utils import timezone
+        self.reviewed_by = reviewer
+        self.review_completed_date = timezone.now()
+        self.status_change_reason = "rejected_internal"
+        self.status_change_notes = notes or "Rejected"
+        self.compliance_check_completed_at = timezone.now()
+
+    @transition(field="current_state", source="approved", target="active")
+    def activate_vendor(self, notes=None):
+        self.status_change_reason = "onboarding_complete"
+        self.status_change_notes = notes or "Activated"
+
+    @transition(field="current_state", source=["draft", "pending_information", "under_review", "compliance_check", "approved"], target="archived")
+    def archive_workflow(self, notes=None):
+        self.status_change_reason = "other"
+        self.status_change_notes = notes or "Archived"
+
+    @transition(field="current_state", source="pending_information", target="draft")
+    def reopen_draft(self, notes=None):
+        self.status_change_reason = "other"
+        self.status_change_notes = notes or "Reopened"
+
+    def is_pending_action(self) -> bool:
+        return self.current_state in ["draft", "pending_information"]
+
+    def is_under_internal_review(self) -> bool:
+        return self.current_state in ["under_review", "compliance_check"]
+
+    def is_completed(self) -> bool:
+        return self.current_state in ["active", "archived", "rejected"]
+
+    def get_days_in_state(self) -> int:
+        from django.utils import timezone
+        delta = timezone.now() - self.last_state_change
+        return delta.days
+
+    def get_total_onboarding_days(self) -> int:
+        from django.utils import timezone
+        delta = timezone.now() - self.initiated_at
+        return delta.days
+
+    def get_next_states(self) -> dict:
+        next_states = {}
+        if self.current_state == "draft":
+            next_states["pending_information"] = "Request Information"
+            next_states["archived"] = "Archive"
+        elif self.current_state == "pending_information":
+            next_states["under_review"] = "Mark Received"
+            next_states["draft"] = "Reopen"
+            next_states["archived"] = "Archive"
+        elif self.current_state == "under_review":
+            next_states["compliance_check"] = "Assign Review"
+            next_states["archived"] = "Archive"
+        elif self.current_state == "compliance_check":
+            next_states["approved"] = "Approve"
+            next_states["rejected"] = "Reject"
+        elif self.current_state == "approved":
+            next_states["active"] = "Activate"
+            next_states["archived"] = "Archive"
+        return next_states
+
+
+# NEW FEATURES ADDED
+class VendorNote(models.Model):
+    """Notes/comments on vendors"""
+    NOTE_TYPE_CHOICES = [
+        ("general", "General"),
+        ("risk", "Risk"),
+        ("compliance", "Compliance"),
+        ("performance", "Performance"),
+        ("issue", "Issue"),
+    ]
+
+    vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, related_name="vendor_notes")
+    note_type = models.CharField(max_length=64, choices=NOTE_TYPE_CHOICES)
+    note_text = models.TextField()
+    created_by = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "core_vendor_note"
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["vendor"])]
+
+    def __str__(self):
+        return f"{self.vendor.vendor_id} - {self.note_type}"
+
+
+class VendorWarning(models.Model):
+    """Data quality/compliance warnings"""
+    SEVERITY_CHOICES = [("info", "Info"), ("warning", "Warning"), ("critical", "Critical")]
+    STATUS_CHOICES = [("active", "Active"), ("acknowledged", "Acknowledged"), ("resolved", "Resolved")]
+
+    vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, related_name="vendor_warnings")
+    warning_category = models.CharField(max_length=128)
+    severity = models.CharField(max_length=64, choices=SEVERITY_CHOICES)
+    status = models.CharField(max_length=64, choices=STATUS_CHOICES, default="active")
+    title = models.CharField(max_length=255)
+    detail = models.TextField(blank=True, null=True)
+    detected_at = models.DateTimeField()
+    resolved_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.CharField(max_length=255)
+
+    class Meta:
+        db_table = "core_vendor_warning"
+        ordering = ["-severity", "-detected_at"]
+        indexes = [models.Index(fields=["vendor", "status"])]
+
+    def __str__(self):
+        return f"{self.title} ({self.severity})"
+
+
+class VendorTicket(models.Model):
+    """Issue tracking for vendors"""
+    STATUS_CHOICES = [("open", "Open"), ("in_progress", "In Progress"), ("closed", "Closed")]
+    PRIORITY_CHOICES = [("low", "Low"), ("medium", "Medium"), ("high", "High"), ("critical", "Critical")]
+
+    vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, related_name="vendor_tickets")
+    ticket_system = models.CharField(max_length=128, blank=True, null=True)
+    external_ticket_id = models.CharField(max_length=128, blank=True, null=True)
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    status = models.CharField(max_length=64, choices=STATUS_CHOICES)
+    priority = models.CharField(max_length=64, choices=PRIORITY_CHOICES, default="medium")
+    opened_date = models.DateTimeField()
+    closed_date = models.DateTimeField(blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+    created_by = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "core_vendor_ticket"
+        ordering = ["-opened_date"]
+        unique_together = [["vendor", "ticket_system", "external_ticket_id"]]
+        indexes = [models.Index(fields=["vendor", "status"])]
+
+    def __str__(self):
+        return f"{self.title} ({self.status})"
+
+
+class OfferingNote(models.Model):
+    """Notes on vendor offerings"""
+    NOTE_TYPE_CHOICES = [("general", "General"), ("performance", "Performance"), ("issue", "Issue")]
+
+    offering_id = models.CharField(max_length=128)
+    note_type = models.CharField(max_length=64, choices=NOTE_TYPE_CHOICES)
+    note_text = models.TextField()
+    created_by = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "core_offering_note"
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["offering_id"])]
+
+    def __str__(self):
+        return f"Offering {self.offering_id} - {self.note_type}"
+
+
+class OfferingTicket(models.Model):
+    """Tickets for specific offerings"""
+    STATUS_CHOICES = [("open", "Open"), ("in_progress", "In Progress"), ("closed", "Closed")]
+    PRIORITY_CHOICES = [("low", "Low"), ("medium", "Medium"), ("high", "High")]
+
+    offering_id = models.CharField(max_length=128)
+    ticket_system = models.CharField(max_length=128, blank=True, null=True)
+    external_ticket_id = models.CharField(max_length=128, blank=True, null=True)
+    title = models.CharField(max_length=255)
+    status = models.CharField(max_length=64, choices=STATUS_CHOICES)
+    priority = models.CharField(max_length=64, choices=PRIORITY_CHOICES, default="medium")
+    opened_date = models.DateTimeField()
+    closed_date = models.DateTimeField(blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+    created_by = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "core_offering_ticket"
+        ordering = ["-opened_date"]
+        unique_together = [["offering_id", "ticket_system", "external_ticket_id"]]
+        indexes = [models.Index(fields=["offering_id"])]
+
+    def __str__(self):
+        return f"{self.title} ({self.status})"
+
+
+class ContractEvent(models.Model):
+    """Lifecycle events for contracts"""
+    EVENT_TYPE_CHOICES = [
+        ("created", "Created"),
+        ("signed", "Signed"),
+        ("activated", "Activated"),
+        ("renewed", "Renewed"),
+        ("expired", "Expired"),
+        ("cancelled", "Cancelled"),
+    ]
+
+    contract_id = models.CharField(max_length=128)
+    event_type = models.CharField(max_length=64, choices=EVENT_TYPE_CHOICES)
+    event_date = models.DateTimeField()
+    notes = models.TextField(blank=True, null=True)
+    actor_user_principal = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "core_contract_event"
+        ordering = ["-event_date"]
+        indexes = [models.Index(fields=["contract_id"])]
+
+    def __str__(self):
+        return f"Contract {self.contract_id} - {self.event_type}"
+
+
+class VendorDemo(models.Model):
+    """Vendor demos/evaluations"""
+    OUTCOME_CHOICES = [("selected", "Selected"), ("not_selected", "Not Selected"), ("pending", "Pending")]
+
+    vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, related_name="vendor_demos")
+    offering_id = models.CharField(max_length=128, blank=True, null=True)
+    demo_id = models.CharField(max_length=128, unique=True)
+    demo_date = models.DateTimeField()
+    overall_score = models.DecimalField(max_digits=4, decimal_places=2, blank=True, null=True)
+    selection_outcome = models.CharField(max_length=64, choices=OUTCOME_CHOICES, default="pending")
+    notes = models.TextField(blank=True, null=True)
+    attendees_internal = models.CharField(max_length=255, blank=True, null=True)
+    attendees_vendor = models.CharField(max_length=255, blank=True, null=True)
+    created_by = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "core_vendor_demo"
+        ordering = ["-demo_date"]
+        indexes = [models.Index(fields=["vendor"])]
+
+    def __str__(self):
+        return f"Demo - {self.vendor.vendor_id}"
+
+
+class DemoScore(models.Model):
+    """Scoring for vendor demos"""
+    demo = models.ForeignKey(VendorDemo, on_delete=models.CASCADE, related_name="scores")
+    score_category = models.CharField(max_length=128)
+    score_value = models.DecimalField(max_digits=5, decimal_places=2)
+    weight = models.DecimalField(max_digits=5, decimal_places=2, blank=True, null=True)
+    comments = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "core_demo_score"
+        ordering = ["score_category"]
+
+    def __str__(self):
+        return f"{self.score_category}: {self.score_value}"
+
+
+class DemoNote(models.Model):
+    """Notes on vendor demos"""
+    NOTE_TYPE_CHOICES = [("observation", "Observation"), ("issue", "Issue"), ("strength", "Strength")]
+
+    demo = models.ForeignKey(VendorDemo, on_delete=models.CASCADE, related_name="demo_notes")
+    note_type = models.CharField(max_length=64, choices=NOTE_TYPE_CHOICES)
+    note_text = models.TextField()
+    created_by = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "core_demo_note"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.note_type}: {self.note_text[:50]}"
+
+
+class VendorBusinessOwner(models.Model):
+    """Internal business owners for vendors"""
+    vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, related_name="business_owners")
+    owner_user_principal = models.CharField(max_length=255)
+    owner_name = models.CharField(max_length=255, blank=True, null=True)
+    owner_department = models.CharField(max_length=255, blank=True, null=True)
+    is_primary = models.BooleanField(default=False)
+    assigned_date = models.DateTimeField(auto_now_add=True)
+    assigned_by = models.CharField(max_length=255)
+
+    class Meta:
+        db_table = "core_vendor_business_owner"
+        unique_together = [["vendor", "owner_user_principal"]]
+        ordering = ["-is_primary"]
+
+    def __str__(self):
+        return f"{self.owner_user_principal} - {self.vendor.vendor_id}"
+
+
+class VendorOrgAssignment(models.Model):
+    """Organizational assignments for vendors"""
+    vendor = models.ForeignKey(Vendor, on_delete=models.CASCADE, related_name="org_assignments")
+    org_id = models.CharField(max_length=128)
+    org_name = models.CharField(max_length=255, blank=True, null=True)
+    is_primary = models.BooleanField(default=False)
+    assigned_date = models.DateTimeField(auto_now_add=True)
+    assigned_by = models.CharField(max_length=255)
+
+    class Meta:
+        db_table = "core_vendor_org_assignment"
+        unique_together = [["vendor", "org_id"]]
+        ordering = ["-is_primary"]
+
+    def __str__(self):
+        return f"{self.vendor.vendor_id} - {self.org_id}"

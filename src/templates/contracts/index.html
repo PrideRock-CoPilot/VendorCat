@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Contracts - VendorCatalog{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Contracts</h1>
+      <p class="text-muted">Manage contracts and agreements</p>
+    </div>
+    <a href="/contracts/new" class="btn btn-primary">
+      ➕ Add Contract
+    </a>
+  </div>
+
+  <!-- Filters & Search -->
+  <div class="card" style="margin-bottom: 16px;">
+    <form method="get" style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 12px; align-items: end;">
+      <div>
+        <label style="margin-bottom: 4px;">Search</label>
+        <input type="text" name="q" placeholder="Contract ID or number..." value="{{ search_query|default:'' }}">
+      </div>
+      <div>
+        <label style="margin-bottom: 4px;">Status</label>
+        <select name="status">
+          <option value="">All Status</option>
+          <option value="draft" {% if request.GET.status == 'draft' %}selected{% endif %}>Draft</option>
+          <option value="active" {% if request.GET.status == 'active' %}selected{% endif %}>Active</option>
+          <option value="expired" {% if request.GET.status == 'expired' %}selected{% endif %}>Expired</option>
+        </select>
+      </div>
+      <div></div>
+      <div style="display: flex; gap: 8px;">
+        <button type="submit" class="btn btn-primary">Filter</button>
+        <a href="/contracts" class="btn btn-secondary">Reset</a>
+      </div>
+    </form>
+  </div>
+
+  <!-- Results -->
+  <div class="card">
+    {% if items %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Contract ID</th>
+            <th>Contract Number</th>
+            <th>Vendor</th>
+            <th>Status</th>
+            <th>Annual Value</th>
+            <th>End Date</th>
+            <th style="text-align: right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in items %}
+            <tr>
+              <td><strong>{{ item.contract_id }}</strong></td>
+              <td>{{ item.contract_number }}</td>
+              <td>
+                <a href="/vendor-360/{{ item.vendor.vendor_id }}" style="color: var(--primary); text-decoration: none;">
+                  {{ item.vendor.display_name }}
+                </a>
+              </td>
+              <td>
+                <span class="table-badge badge-{% if item.contract_status == 'active' %}success{% elif item.contract_status == 'expired' %}danger{% else %}warning{% endif %}">
+                  {{ item.contract_status }}
+                </span>
+              </td>
+              <td>
+                {% if item.annual_value %}
+                  ${{ item.annual_value|floatformat:2 }}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if item.end_date %}
+                  {{ item.end_date|date:"M d, Y" }}
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+              <td style="text-align: right;">
+                <div class="table-actions">
+                  <a href="/contracts/{{ item.contract_id }}" class="btn btn-secondary btn-small">View</a>
+                  <a href="/contracts/{{ item.contract_id }}/edit" class="btn btn-secondary btn-small">Edit</a>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty-state">
+        <div class="empty-icon">📭</div>
+        <h4 class="empty-title">No contracts found</h4>
+        <p class="empty-text">{% if search_query %}Try adjusting your search filters{% else %}Start by adding your first contract{% endif %}</p>
+        {% if not search_query %}
+          <a href="/contracts/new" class="btn btn-primary">New Contract</a>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+{% endblock %}

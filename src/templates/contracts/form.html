@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+
+{% block title %}{% if contract %}Edit Contract{% else %}New Contract{% endif %} - VendorCatalog{% endblock %}
+
+{% block content %}
+  <h1>{% if contract %}Edit Contract{% else %}Create New Contract{% endif %}</h1>
+  <p class="text-muted">{% if contract %}Update contract information{% else %}Set up a new contract{% endif %}</p>
+
+  <div class="card" style="max-width: 600px;">
+    <form method="post">
+      {% csrf_token %}
+
+      {% if messages %}
+        {% for message in messages %}
+          <div class="alert alert-{% if message.tags %}{{ message.tags }}{% else %}info{% endif %}">
+            {{ message }}
+          </div>
+        {% endfor %}
+      {% endif %}
+
+      {% if form_errors %}
+        <div class="alert alert-danger">
+          <strong>Please fix the following errors:</strong>
+          <ul>
+            {% for field, errors in form_errors.items %}
+              {% for error in errors %}
+                <li>{{ field }}: {{ error }}</li>
+              {% endfor %}
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+
+      <div class="form-group">
+        <label for="contract_id">Contract ID</label>
+        <input 
+          type="text" 
+          id="contract_id" 
+          name="contract_id" 
+          value="{{ contract.contract_id|default:'' }}"
+          {% if contract %}disabled{% endif %}
+          placeholder="e.g., CONT-001"
+          required>
+        <small class="text-muted">{% if contract %}Cannot be changed{% else %}Unique identifier for this contract{% endif %}</small>
+      </div>
+
+      <div class="form-group">
+        <label for="contract_number">Contract Number</label>
+        <input 
+          type="text" 
+          id="contract_number" 
+          name="contract_number" 
+          value="{{ contract.contract_number|default:'' }}" 
+          placeholder="Official contract number">
+      </div>
+
+      <div class="form-group">
+        <label for="vendor_id">Vendor</label>
+        <select id="vendor_id" name="vendor_id" required>
+          <option value="">-- Select Vendor --</option>
+        </select>
+        <small class="text-muted">Start typing to search vendors</small>
+      </div>
+
+      <div class="form-group">
+        <label for="contract_status">Status</label>
+        <select id="contract_status" name="contract_status" required>
+          <option value="">-- Select Status --</option>
+          <option value="draft" {% if contract.contract_status == 'draft' %}selected{% endif %}>Draft</option>
+          <option value="active" {% if contract.contract_status == 'active' %}selected{% endif %}>Active</option>
+          <option value="expired" {% if contract.contract_status == 'expired' %}selected{% endif %}>Expired</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="start_date">Start Date</label>
+          <input 
+            type="date" 
+            id="start_date" 
+            name="start_date" 
+            value="{{ contract.start_date|date:'Y-m-d'|default:'' }}">
+        </div>
+        <div class="form-group">
+          <label for="end_date">End Date</label>
+          <input 
+            type="date" 
+            id="end_date" 
+            name="end_date" 
+            value="{{ contract.end_date|date:'Y-m-d'|default:'' }}">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="annual_value">Annual Value</label>
+        <input 
+          type="number" 
+          id="annual_value" 
+          name="annual_value" 
+          value="{{ contract.annual_value|default:'' }}"
+          step="0.01"
+          placeholder="0.00">
+      </div>
+
+      <div class="form-group">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+          <input 
+            type="checkbox" 
+            id="cancelled_flag" 
+            name="cancelled_flag"
+            {% if contract.cancelled_flag %}checked{% endif %}>
+          <span>Mark as cancelled</span>
+        </label>
+      </div>
+
+      <div style="display: flex; gap: 12px; margin-top: 30px;">
+        <button type="submit" class="btn btn-primary">
+          {% if contract %}✓ Update Contract{% else %}+ Create Contract{% endif %}
+        </button>
+        <a href="{% if contract %}/contracts/{{ contract.contract_id }}{% else %}/contracts{% endif %}" class="btn btn-secondary">
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+{% endblock %}

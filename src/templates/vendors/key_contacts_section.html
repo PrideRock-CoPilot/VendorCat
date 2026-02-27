@@ -1,0 +1,82 @@
+<!-- Key Contacts Section -->
+<div class="card" style="margin-top: 24px;">
+  <div class="card-header">
+    <h3 class="card-title">👥 Key Contacts</h3>
+    <p class="card-subtitle">Primary points of contact for this vendor</p>
+  </div>
+
+  {% if key_contacts %}
+    <div class="grid grid-2" style="padding: 16px; gap: 16px;">
+      {% for contact in key_contacts %}
+        <div style="padding: 16px; background: var(--lighter); border-radius: 8px; border-left: 4px solid var(--primary);">
+          <div style="display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px;">
+            <!-- Avatar -->
+            <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--primary); color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 16px; flex-shrink: 0;">
+              {{ contact.full_name|first|upper }}
+            </div>
+            <!-- Info -->
+            <div style="flex-grow: 1; min-width: 0;">
+              <p style="margin: 0 0 4px 0; font-weight: 600; font-size: 14px;">
+                {{ contact.full_name }}
+              </p>
+              <p style="margin: 0; font-size: 12px; color: var(--primary); font-weight: 600;">
+                {{ contact.contact_type|title }}
+              </p>
+              {% if contact.title %}
+                <p class="text-muted" style="margin: 2px 0 0 0; font-size: 12px;">{{ contact.title }}</p>
+              {% endif %}
+            </div>
+          </div>
+
+          <!-- Contact Details -->
+          <div style="space-y: 8px;">
+            <!-- Email -->
+            <a href="mailto:{{ contact.email }}" style="display: flex; align-items: center; gap: 8px; text-decoration: none; color: var(--dark); font-size: 13px; padding: 6px 0; border-bottom: 1px solid rgba(0, 0, 0, 0.05);">
+              <span style="color: var(--primary); font-weight: 600;">✉️</span>
+              <span style="color: var(--primary); word-break: break-all;">{{ contact.email }}</span>
+            </a>
+
+            <!-- Phone -->
+            {% if contact.phone %}
+              <a href="tel:{{ contact.phone }}" style="display: flex; align-items: center; gap: 8px; text-decoration: none; color: var(--dark); font-size: 13px; padding: 6px 0; border-bottom: 1px solid rgba(0, 0, 0, 0.05);">
+                <span style="color: var(--primary); font-weight: 600;">📞</span>
+                <span>{{ contact.phone }}</span>
+              </a>
+            {% endif %}
+
+            <!-- Department -->
+            {% if contact.department %}
+              <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 0;">
+                <span style="color: var(--primary); font-weight: 600;">🏢</span>
+                <span class="text-muted">{{ contact.department }}</span>
+              </div>
+            {% endif %}
+          </div>
+
+          <!-- Status Badge -->
+          {% if not contact.is_active %}
+            <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(0, 0, 0, 0.05);">
+              <span style="display: inline-block; padding: 4px 8px; background: rgba(0, 0, 0, 0.1); color: var(--muted); font-size: 11px; border-radius: 4px; font-weight: 600;">
+                INACTIVE
+              </span>
+            </div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <!-- Empty State -->
+    <div style="padding: 40px; text-align: center;">
+      <div style="font-size: 32px; margin-bottom: 12px;">👤</div>
+      <p style="margin: 0 0 8px 0; font-weight: 600; font-size: 15px; color: var(--dark);">No Key Contacts</p>
+      <p class="text-muted" style="margin: 0 0 16px 0; font-size: 13px;">
+        Add an Account Manager and Technical Lead to make it easy to reach the right people.
+      </p>
+      {% if can_manage_vendor_contacts %}
+        <a href="/vendor-360/{{ vendor.vendor_id }}/contacts" class="btn btn-primary">
+          Add Contacts
+        </a>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>

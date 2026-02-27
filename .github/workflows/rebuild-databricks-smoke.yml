@@ -1,0 +1,40 @@
+name: Rebuild Databricks Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["rebuild/django5-full-parity"]
+
+jobs:
+  databricks-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: src
+      DJANGO_SETTINGS_MODULE: vendorcatalog_rebuild.settings
+      VC_RUNTIME_PROFILE: databricks
+      DATABRICKS_SERVER_HOSTNAME: ${{ secrets.DATABRICKS_SERVER_HOSTNAME }}
+      DATABRICKS_HTTP_PATH: ${{ secrets.DATABRICKS_HTTP_PATH }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install rebuild dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-rebuild.txt
+
+      - name: Validate schema contracts
+        run: python scripts/rebuild/validate_schema.py
+
+      - name: Databricks health smoke
+        run: |
+          python -m pytest tests_rebuild/test_urls_and_pages.py::test_health_endpoints_and_request_id_header -q
+
+      - name: Databricks diagnostics smoke
+        run: |
+          python -m pytest tests_rebuild/test_observability_phase6_rebuild.py::test_diagnostics_bootstrap_endpoint_contains_required_fields -q

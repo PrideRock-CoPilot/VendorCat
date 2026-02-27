@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Vendor Contacts - {{ vendor.vendor_id }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <!-- Header Section -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h1>Vendor Contacts</h1>
+            <p class="text-muted">Managing contacts for <strong>{{ vendor.vendor_id }}</strong> - {{ vendor.display_name }}</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{% url 'vendor_contact_create' vendor.vendor_id %}" class="btn btn-primary">
+                <i class="bi bi-plus-circle"></i> Add New Contact
+            </a>
+            <a href="{% url 'vendors-detail' vendor.vendor_id %}" class="btn btn-secondary">
+                Back to Vendor
+            </a>
+        </div>
+    </div>
+
+    <!-- Alert Messages -->
+    {% if messages %}
+    <div class="row">
+        <div class="col-12">
+            {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Contacts List -->
+    <div class="row">
+        <div class="col-12">
+            {% if contacts %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Name</th>
+                            <th>Type</th>
+                            <th>Email</th>
+                            <th>Phone</th>
+                            <th>Title</th>
+                            <th>Status</th>
+                            <th>Primary</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for contact in contacts %}
+                        <tr>
+                            <td>
+                                <strong>{{ contact.full_name }}</strong>
+                                {% if contact.is_primary %}
+                                <span class="badge bg-success ms-2">Primary</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge bg-info">{{ contact.get_contact_type_display }}</span>
+                            </td>
+                            <td>
+                                {% if contact.email %}
+                                <a href="mailto:{{ contact.email }}">{{ contact.email }}</a>
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if contact.phone %}
+                                <a href="tel:{{ contact.phone }}">{{ contact.phone }}</a>
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ contact.title|default:"—" }}</td>
+                            <td>
+                                {% if contact.is_active %}
+                                <span class="badge bg-success-light text-success">Active</span>
+                                {% else %}
+                                <span class="badge bg-secondary">Inactive</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <input type="checkbox" class="form-check-input" {% if contact.is_primary %}checked{% endif %} disabled>
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <a href="{% url 'vendor_contact_edit' vendor.vendor_id contact.id %}" class="btn btn-outline-primary" title="Edit">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    <a href="{% url 'vendor_contact_delete' vendor.vendor_id contact.id %}" class="btn btn-outline-danger" title="Delete" onclick="return confirm('Are you sure?')">
+                                        <i class="bi bi-trash"></i>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="alert alert-info" role="alert">
+                <i class="bi bi-info-circle"></i> No contacts found for this vendor.
+                <a href="{% url 'vendor_contact_create' vendor.vendor_id %}" class="alert-link">Create one now</a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Summary Card -->
+    {% if contacts %}
+    <div class="row mt-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Total Contacts</h5>
+                    <p class="card-text display-6">{{ contacts|length }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Active</h5>
+                    <p class="card-text display-6">{{ active_count }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Primary Contact</h5>
+                    <p class="card-text">
+                        {% if primary_contact %}
+                        {{ primary_contact.full_name }}
+                        {% else %}
+                        <span class="text-muted">Not set</span>
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">With Email</h5>
+                    <p class="card-text display-6">{{ email_count }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.badge {
+    font-weight: 500;
+    padding: 0.4rem 0.6rem;
+}
+
+.bg-success-light {
+    background-color: #d4edda;
+}
+
+.text-success {
+    color: #155724 !important;
+}
+</style>
+{% endblock %}

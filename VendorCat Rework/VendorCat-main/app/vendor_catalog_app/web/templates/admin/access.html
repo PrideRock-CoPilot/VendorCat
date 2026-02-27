@@ -1,0 +1,475 @@
+{% extends "base.html" %}
+
+{% block head %}
+  <link rel="stylesheet" href="/static/css/admin_portal.css">
+{% endblock %}
+
+{% block content %}
+<div class="section-header">
+  <div>
+    <h1>Admin Portal</h1>
+    <p>Manage users, groups, roles, and Business Unit access.</p>
+  </div>
+</div>
+
+{% include "admin/_nav.html" %}
+
+<section class="card admin-access-shell" data-admin-tabs>
+  <div class="admin-access-tabbar" role="tablist" aria-label="Admin access tabs">
+    <button type="button" class="admin-access-tab {% if selected_access_tab == 'users' %}is-active{% endif %}" data-admin-tab="users" role="tab" aria-selected="{{ 'true' if selected_access_tab == 'users' else 'false' }}">Users</button>
+    <button type="button" class="admin-access-tab {% if selected_access_tab == 'groups' %}is-active{% endif %}" data-admin-tab="groups" role="tab" aria-selected="{{ 'true' if selected_access_tab == 'groups' else 'false' }}">Groups</button>
+    <button type="button" class="admin-access-tab {% if selected_access_tab == 'business_unit' %}is-active{% endif %}" data-admin-tab="business_unit" role="tab" aria-selected="{{ 'true' if selected_access_tab == 'business_unit' else 'false' }}">Business Unit Scopes</button>
+    <button type="button" class="admin-access-tab {% if selected_access_tab == 'roles' %}is-active{% endif %}" data-admin-tab="roles" role="tab" aria-selected="{{ 'true' if selected_access_tab == 'roles' else 'false' }}">Roles</button>
+  </div>
+
+  <section class="admin-access-panel" data-admin-tab-panel="users" role="tabpanel" {% if selected_access_tab != 'users' %}hidden{% endif %}>
+    <div class="admin-panel-header-row admin-users-header-row">
+      <label class="admin-users-filter-label">Search Users
+        <input type="search" id="admin-users-filter" data-admin-users-filter placeholder="Search by display name, login, role, status" value="{{ search_query }}">
+      </label>
+      <div class="button-group">
+        <button type="button" class="button-link subtle" id="admin-users-clear-filter">Clear</button>
+        <button type="button" class="admin-primary-btn" id="open-add-user-drawer">+ Add User</button>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table data-admin-users-table>
+        <thead>
+          <tr>
+            <th>
+              <button type="button" class="admin-sort-button" data-sort-key="user">
+                User
+                <span class="admin-sort-indicator" data-sort-indicator="user"></span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="admin-sort-button" data-sort-key="role">
+                Role
+                <span class="admin-sort-indicator" data-sort-indicator="role"></span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="admin-sort-button" data-sort-key="active">
+                Active
+                <span class="admin-sort-indicator" data-sort-indicator="active"></span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="admin-sort-button" data-sort-key="updated">
+                Last Changed
+                <span class="admin-sort-indicator" data-sort-indicator="updated"></span>
+              </button>
+            </th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in role_rows %}
+          {% set is_active = row.active_flag in [True, 1, "1", "true", "True"] %}
+          {% set display_name = row.user_display_name or row.user_principal %}
+          {% set role_key = (row.role_code or "")|lower %}
+          {% set role_tone = "default" %}
+          {% if "admin" in role_key %}
+            {% set role_tone = "admin" %}
+          {% elif "editor" in role_key or "steward" in role_key %}
+            {% set role_tone = "editor" %}
+          {% elif "viewer" in role_key %}
+            {% set role_tone = "viewer" %}
+          {% elif "auditor" in role_key %}
+            {% set role_tone = "auditor" %}
+          {% endif %}
+          {% set selected_business_units = user_scope_map.get(row.user_principal, []) %}
+          {% set selected_scope_level = user_scope_level_map.get(row.user_principal, "edit") %}
+          <tr
+            data-user-row
+            data-sort-user="{{ display_name|lower }}"
+            data-sort-role="{{ role_key }}"
+            data-sort-active="{{ '1' if is_active else '0' }}"
+            data-sort-updated="{{ row.granted_at }}"
+            data-search="{{ (display_name ~ ' ' ~ (row.user_principal or '') ~ ' ' ~ (row.role_code or '') ~ ' ' ~ ('active' if is_active else 'inactive'))|lower }}"
+          >
+            <td>
+              <div class="admin-user-cell-name">{{ display_name }}</div>
+              <div class="admin-user-cell-login muted">{{ row.user_principal }}</div>
+            </td>
+            <td>
+              <span class="admin-role-chip tone-{{ role_tone }}">{{ row.role_code }}</span>
+            </td>
+            <td>{{ "Yes" if is_active else "No" }}</td>
+            <td>{{ row.granted_at }}</td>
+            <td>
+              <div class="admin-actions-row">
+                <button
+                  type="button"
+                  class="button-link subtle admin-edit-user-button"
+                  data-target-user="{{ row.user_principal }}"
+                  data-target-display-name="{{ display_name }}"
+                  data-target-role="{{ row.role_code }}"
+                  data-target-scope-level="{{ selected_scope_level }}"
+                  data-target-business_units="{{ selected_business_units|join(',') }}"
+                >
+                  Edit
+                </button>
+                {% if is_active %}
+                <button
+                  type="button"
+                  class="button-link subtle danger admin-revoke-user-button"
+                  data-target-user="{{ row.user_principal }}"
+                  data-target-display-name="{{ display_name }}"
+                  data-target-role="{{ row.role_code }}"
+                >
+                  Revoke
+                </button>
+                {% else %}
+                <span class="muted">revoked</span>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5">No user role grants found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% set pager = role_pager %}
+    {% include "admin/_pagination.html" %}
+  </section>
+
+  <section class="admin-access-panel" data-admin-tab-panel="groups" role="tabpanel" {% if selected_access_tab != 'groups' %}hidden{% endif %}>
+    <div class="admin-panel-header-row admin-users-header-row">
+      <label class="admin-users-filter-label">Search Groups
+        <input type="search" id="admin-groups-filter" data-admin-groups-filter placeholder="Search by group, role, status" value="">
+      </label>
+      <div class="button-group">
+        <button type="button" class="button-link subtle" id="admin-groups-clear-filter">Clear</button>
+        <button type="button" class="admin-primary-btn" id="open-add-group-drawer">+ Add Group</button>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table data-admin-groups-table>
+        <thead>
+          <tr>
+            <th>
+              <button type="button" class="admin-sort-button" data-group-sort-key="group">
+                Group
+                <span class="admin-sort-indicator" data-group-sort-indicator="group"></span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="admin-sort-button" data-group-sort-key="role">
+                Role
+                <span class="admin-sort-indicator" data-group-sort-indicator="role"></span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="admin-sort-button" data-group-sort-key="active">
+                Active
+                <span class="admin-sort-indicator" data-group-sort-indicator="active"></span>
+              </button>
+            </th>
+            <th>
+              <button type="button" class="admin-sort-button" data-group-sort-key="updated">
+                Last Changed
+                <span class="admin-sort-indicator" data-group-sort-indicator="updated"></span>
+              </button>
+            </th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in group_role_rows %}
+          {% set is_active = row.active_flag in [True, 1, "1", "true", "True"] %}
+          {% set role_key = (row.role_code or "")|lower %}
+          {% set role_tone = "default" %}
+          {% if "admin" in role_key %}
+            {% set role_tone = "admin" %}
+          {% elif "editor" in role_key or "steward" in role_key %}
+            {% set role_tone = "editor" %}
+          {% elif "viewer" in role_key %}
+            {% set role_tone = "viewer" %}
+          {% elif "auditor" in role_key %}
+            {% set role_tone = "auditor" %}
+          {% endif %}
+          <tr
+            data-group-row
+            data-sort-group="{{ (row.group_principal or '')|lower }}"
+            data-sort-role="{{ role_key }}"
+            data-sort-active="{{ '1' if is_active else '0' }}"
+            data-sort-updated="{{ row.granted_at }}"
+            data-search="{{ ((row.group_principal or '') ~ ' ' ~ (row.role_code or '') ~ ' ' ~ ('active' if is_active else 'inactive'))|lower }}"
+          >
+            <td>{{ row.group_principal }}</td>
+            <td><span class="admin-role-chip tone-{{ role_tone }}">{{ row.role_code }}</span></td>
+            <td>{{ "Yes" if is_active else "No" }}</td>
+            <td>{{ row.granted_at }}</td>
+            <td>
+              <div class="admin-actions-row">
+                <button
+                  type="button"
+                  class="button-link subtle admin-edit-group-button"
+                  data-target-group="{{ row.group_principal }}"
+                  data-target-role="{{ row.role_code }}"
+                >
+                  Edit
+                </button>
+                {% if is_active %}
+                <button
+                  type="button"
+                  class="button-link subtle danger admin-revoke-group-button"
+                  data-target-group="{{ row.group_principal }}"
+                  data-target-role="{{ row.role_code }}"
+                >
+                  Revoke
+                </button>
+                {% else %}
+                <span class="muted">revoked</span>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5">No group role grants found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% set pager = group_pager %}
+    {% include "admin/_pagination.html" %}
+  </section>
+
+  <section class="admin-access-panel" data-admin-tab-panel="business_unit" role="tabpanel" {% if selected_access_tab != 'business_unit' %}hidden{% endif %}>
+    <div class="admin-panel-header-row">
+      <form method="get" action="/admin/access" class="admin-panel-search-form inline-form">
+        <input type="hidden" name="tab" value="business_unit">
+        <label>Business Unit
+          <select name="business_unit_filter">
+            <option value="all" {% if selected_business_unit_filter|lower == 'all' %}selected{% endif %}>All Business Units</option>
+            {% for business_unit in business_unit_options %}
+            <option value="{{ business_unit }}" {% if selected_business_unit_filter == business_unit %}selected{% endif %}>{{ business_unit }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Page Size
+          <select name="page_size">
+            {% for size in [10, 25, 50, 100] %}
+            <option value="{{ size }}" {% if page_size == size %}selected{% endif %}>{{ size }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button type="submit">View Access</button>
+      </form>
+    </div>
+
+    <table>
+      <thead><tr><th>User</th><th>Business Unit</th><th>Access Level</th><th>Active</th><th>Last Changed</th><th>Actions</th></tr></thead>
+      <tbody>
+        {% for row in scope_rows %}
+        {% set is_active = row.active_flag in [True, 1, "1", "true", "True"] %}
+        <tr>
+          <td>{{ row.user_display_name or row.user_principal }}<div class="muted">{{ row.user_principal }}</div></td>
+          <td>{{ row.org_id }}</td>
+          <td>{{ row.scope_level }}</td>
+          <td>{{ "Yes" if is_active else "No" }}</td>
+          <td>{{ row.granted_at }}</td>
+          <td>
+            {% if is_active %}
+            <form method="post" action="/admin/revoke-scope" class="inline-form">
+              <input type="hidden" name="target_user" value="{{ row.user_principal }}">
+              <input type="hidden" name="org_id" value="{{ row.org_id }}">
+              <input type="hidden" name="scope_level" value="{{ row.scope_level }}">
+              <input type="hidden" name="tab" value="business_unit">
+              <button type="submit" class="button-link subtle danger">Revoke</button>
+            </form>
+            {% else %}
+            <span class="muted">revoked</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6">No Business Unit access grants found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% set pager = scope_pager %}
+    {% include "admin/_pagination.html" %}
+  </section>
+
+  <section class="admin-access-panel" data-admin-tab-panel="roles" role="tabpanel" {% if selected_access_tab != 'roles' %}hidden{% endif %}>
+    <div class="admin-panel-header-row">
+      <div>
+        <h2>Role Catalog</h2>
+        <p class="muted">Open full role management for definitions and detailed grant analysis.</p>
+      </div>
+      <a class="button-link subtle" href="/admin/roles">Open Role Catalog</a>
+    </div>
+
+    <table>
+      <thead><tr><th>Role Code</th><th>Name</th><th>Approval</th><th>Edit</th><th>Report</th><th>Direct Apply</th><th>Change Permissions</th></tr></thead>
+      <tbody>
+        {% for row in role_definitions %}
+        <tr>
+          <td><a href="/admin/roles/{{ row.role_code }}">{{ row.role_code }}</a></td>
+          <td>{{ row.role_name }}</td>
+          <td>{{ row.approval_level }}</td>
+          <td>{{ row.can_edit }}</td>
+          <td>{{ row.can_report }}</td>
+          <td>{{ row.can_direct_apply }}</td>
+          <td>{{ row.actions_summary }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7">No roles configured.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</section>
+
+<div class="admin-drawer-backdrop hidden" id="admin-user-drawer-backdrop"></div>
+<aside class="admin-drawer" id="admin-user-drawer" aria-hidden="true">
+  <header class="admin-drawer-header">
+    <div>
+      <h2 id="admin-user-drawer-title">Add User Access</h2>
+      <p class="muted" id="admin-user-drawer-subtitle">Select one user, one role, then apply Business Unit access in one save.</p>
+    </div>
+    <button type="button" class="button-link subtle" id="close-add-user-drawer">Close</button>
+  </header>
+
+  <form method="post" action="/admin/users/save-access" class="grid grid-1" id="admin-user-access-form">
+    <input type="hidden" name="tab" value="users">
+    <input type="hidden" id="admin-drawer-target-user-hidden" value="">
+
+    <label>User
+      <div class="typeahead-block">
+        <input type="text" id="admin-drawer-target-user" name="target_user" placeholder="user@company.com" required data-admin-user-search>
+        <div class="typeahead-results hidden"></div>
+      </div>
+    </label>
+
+    <label>Login Information
+      <input type="text" id="admin-drawer-login-preview" value="" readonly disabled>
+    </label>
+
+    <label>Role
+      <select name="role_code" id="admin-drawer-role" required>
+        <option value="">Select role</option>
+        {% for role in grantable_roles %}
+        <option value="{{ role }}">{{ role }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label>Business Unit Access Level
+      <select name="scope_level" id="admin-drawer-scope-level">
+        <option value="none">None</option>
+        <option value="read">View</option>
+        <option value="edit" selected>Edit</option>
+        <option value="full">Full</option>
+      </select>
+    </label>
+
+    <div class="admin-business_unit-picker-header">
+      <h3>Business Unit Access</h3>
+      <div class="button-group">
+        <button type="button" class="button-link subtle admin-mini-button" data-business_unit-action="all">Select All</button>
+        <button type="button" class="button-link subtle admin-mini-button" data-business_unit-action="clear">Clear All</button>
+      </div>
+    </div>
+    <div class="admin-business_unit-checkbox-list" id="admin-drawer-business_unit-list">
+      {% for business_unit in business_unit_options %}
+      <label class="admin-checkbox-item">
+        <input type="checkbox" name="business_unit_ids" value="{{ business_unit }}" data-business_unit-checkbox>
+        <span>{{ business_unit }}</span>
+      </label>
+      {% endfor %}
+    </div>
+    <p class="muted">Check one or more business unit entries. Clear all removes all business unit access for this user.</p>
+
+    <div class="button-group admin-drawer-actions">
+      <button type="submit">Save</button>
+      <button type="button" class="button-link subtle" id="cancel-add-user-drawer">Cancel</button>
+    </div>
+  </form>
+</aside>
+
+<div class="admin-drawer-backdrop hidden" id="admin-group-drawer-backdrop"></div>
+<aside class="admin-drawer" id="admin-group-drawer" aria-hidden="true">
+  <header class="admin-drawer-header">
+    <div>
+      <h2 id="admin-group-drawer-title">Add Group Access</h2>
+      <p class="muted" id="admin-group-drawer-subtitle">Assign one role per group using a single save.</p>
+    </div>
+    <button type="button" class="button-link subtle" id="close-add-group-drawer">Close</button>
+  </header>
+
+  <form method="post" action="/admin/groups/save-access" class="grid grid-1" id="admin-group-access-form">
+    <input type="hidden" name="tab" value="groups">
+    <input type="hidden" id="admin-drawer-target-group-hidden" value="">
+
+    <label>Group
+      <div class="typeahead-block">
+        <input type="text" id="admin-drawer-target-group" name="target_group" placeholder="group:ad-vendor-admins" required data-admin-group-search>
+        <div class="typeahead-results hidden"></div>
+      </div>
+    </label>
+
+    <label>Role
+      <select name="role_code" id="admin-drawer-group-role" required>
+        <option value="">Select role</option>
+        {% for role in grantable_roles %}
+        <option value="{{ role }}">{{ role }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <div class="button-group admin-drawer-actions">
+      <button type="submit">Save</button>
+      <button type="button" class="button-link subtle" id="cancel-add-group-drawer">Cancel</button>
+    </div>
+  </form>
+</aside>
+
+<div class="admin-modal-backdrop hidden" id="admin-revoke-backdrop"></div>
+<div class="admin-modal hidden" id="admin-revoke-modal" aria-hidden="true" role="dialog" aria-modal="true">
+  <form method="post" action="/admin/revoke-role" class="grid grid-1" id="admin-revoke-form">
+    <input type="hidden" name="target_user" id="admin-revoke-target-user" value="">
+    <input type="hidden" name="role_code" id="admin-revoke-role-code" value="">
+    <input type="hidden" name="tab" value="users">
+    <input type="hidden" name="require_reason" value="1">
+    <h3>Revoke User Role</h3>
+    <p class="muted" id="admin-revoke-message">Confirm revoke and provide a reason to continue.</p>
+    <label>Reason
+      <textarea name="reason" id="admin-revoke-reason" rows="4" required placeholder="Required reason for this revoke"></textarea>
+    </label>
+    <div class="button-group admin-modal-actions">
+      <button type="submit" class="admin-danger-btn">Confirm Revoke</button>
+      <button type="button" class="button-link subtle" id="admin-revoke-cancel">Cancel</button>
+    </div>
+  </form>
+</div>
+
+<div class="admin-modal-backdrop hidden" id="admin-revoke-group-backdrop"></div>
+<div class="admin-modal hidden" id="admin-revoke-group-modal" aria-hidden="true" role="dialog" aria-modal="true">
+  <form method="post" action="/admin/revoke-group-role" class="grid grid-1" id="admin-revoke-group-form">
+    <input type="hidden" name="target_group" id="admin-revoke-group-target" value="">
+    <input type="hidden" name="role_code" id="admin-revoke-group-role-code" value="">
+    <input type="hidden" name="tab" value="groups">
+    <h3>Revoke Group Role</h3>
+    <p class="muted" id="admin-revoke-group-message">Confirm revoke role access for this group.</p>
+    <label>Reason (optional)
+      <textarea name="reason" id="admin-revoke-group-reason" rows="3" placeholder="Optional revoke reason"></textarea>
+    </label>
+    <div class="button-group admin-modal-actions">
+      <button type="submit" class="admin-danger-btn">Confirm Revoke</button>
+      <button type="button" class="button-link subtle" id="admin-revoke-group-cancel">Cancel</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/admin_portal.js"></script>
+{% endblock %}
+

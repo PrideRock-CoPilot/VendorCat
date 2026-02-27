@@ -1,0 +1,15 @@
+# Setup Assets
+
+This folder contains setup and bootstrap artifacts that are intentionally separate from app runtime code.
+
+## Contents
+- `config/tvendor.env`: environment template used by `launch_app.bat`.
+- `databricks/render_sql.py`: renders Databricks SQL templates for a specific `<catalog>.<schema>`.
+- `databricks/generate_tvendor_env.py`: generates `config/tvendor.env` (and normalizes `app/app.yaml`) from a single app config source for Databricks OAuth runtime (no PAT token), including `TVENDOR_SESSION_SECRET`.
+- `databricks/validate_schema_and_bootstrap_admin.py`: validates schema accessibility and bootstraps admin user role grants in Databricks.
+- `databricks/001_create_databricks_schema.sql`: single template bootstrap script (full schema + compatibility updates).
+- `local_db/`: local SQLite bootstrap scripts and schema/seed/query SQL.
+
+## Security model
+- Databricks schema bootstrap is **manual** (or pipeline-controlled).
+- The app validates schema objects at startup and does not auto-create them.

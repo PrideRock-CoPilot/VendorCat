@@ -1,0 +1,437 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Admin Portal</h1>
+<div class="button-group" style="margin-bottom:12px;">
+  <a class="button-link subtle" href="/help/admin-portal-overview">? Help</a>
+</div>
+
+<section class="card section-nav-card">
+  <div class="section-nav-links">
+    <a class="{{ 'active' if admin_section == 'access' else '' }}" href="/admin?section=access">Roles &amp; Users</a>
+    <a class="{{ 'active' if admin_section == 'ownership' else '' }}" href="/admin?section=ownership">Ownership Reassignment</a>
+    <a class="{{ 'active' if admin_section == 'defaults' else '' }}" href="/admin?section=defaults&amp;lookup_type={{ selected_lookup_type }}&amp;status={{ selected_lookup_status }}&amp;as_of={{ selected_as_of }}">Defaults</a>
+  </div>
+</section>
+
+<datalist id="admin-user-principals">
+  {% for row in user_options %}
+  <option value="{{ row.login_identifier }}">{{ row.label }}</option>
+  {% endfor %}
+</datalist>
+
+{% if admin_section == 'defaults' %}
+<section class="card">
+  <h2>Defaults Catalog</h2>
+  <p>Select a category and view options by date/status. Remove hides an option from all frontend lists while keeping history.</p>
+  <form method="get" action="/admin" class="inline-form" style="margin-top:8px;">
+    <input type="hidden" name="section" value="defaults">
+    <label>Category
+      <select name="lookup_type" required>
+        {% for lookup_type in lookup_type_options %}
+        <option value="{{ lookup_type }}" {% if lookup_type == selected_lookup_type %}selected{% endif %}>{{ lookup_type_labels.get(lookup_type, lookup_type) }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Status
+      <select name="status">
+        <option value="active" {% if selected_lookup_status == 'active' %}selected{% endif %}>active</option>
+        <option value="historical" {% if selected_lookup_status == 'historical' %}selected{% endif %}>historical</option>
+        <option value="future" {% if selected_lookup_status == 'future' %}selected{% endif %}>future</option>
+        <option value="all" {% if selected_lookup_status == 'all' %}selected{% endif %}>all</option>
+      </select>
+    </label>
+    <label>As Of
+      <input type="date" name="as_of" value="{{ selected_as_of }}">
+    </label>
+    <button type="submit">View</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>{{ lookup_type_labels.get(selected_lookup_type, selected_lookup_type) }}</h2>
+  <p>Sort order auto-resequences only options active in the same date window. Internal code key is hidden.</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Label</th>
+        <th>Sort</th>
+        <th>Status</th>
+        <th>Valid From</th>
+        <th>Valid To</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in selected_lookup_rows %}
+      <tr>
+        <td>
+          <input type="text" name="option_label" value="{{ row.option_label }}" aria-label="Label for {{ row.option_code }}" form="save-opt-{{ loop.index }}">
+        </td>
+        <td>
+          <input type="number" name="sort_order" min="1" step="1" value="{{ row.sort_order }}" aria-label="Sort for {{ row.option_code }}" form="save-opt-{{ loop.index }}">
+        </td>
+        <td>
+          {{ row.status }}
+        </td>
+        <td>
+          <input type="date" name="valid_from_ts" value="{{ row.valid_from_ts }}" form="save-opt-{{ loop.index }}">
+        </td>
+        <td>
+          <input type="date" name="valid_to_ts" value="{{ row.valid_to_ts }}" form="save-opt-{{ loop.index }}">
+        </td>
+        <td>
+          <div class="inline-form">
+            <form id="save-opt-{{ loop.index }}" method="post" action="/admin/lookup/save" class="inline-form">
+              <input type="hidden" name="lookup_type" value="{{ selected_lookup_type }}">
+              <input type="hidden" name="lookup_status" value="{{ selected_lookup_status }}">
+              <input type="hidden" name="as_of" value="{{ selected_as_of }}">
+              <input type="hidden" name="option_id" value="{{ row.option_id }}">
+              <input type="hidden" name="option_code" value="{{ row.option_code }}">
+              <button type="submit">Save</button>
+            </form>
+            <form method="post" action="/admin/lookup/delete" class="inline-form">
+              <input type="hidden" name="lookup_type" value="{{ selected_lookup_type }}">
+              <input type="hidden" name="lookup_status" value="{{ selected_lookup_status }}">
+              <input type="hidden" name="as_of" value="{{ selected_as_of }}">
+              <input type="hidden" name="option_id" value="{{ row.option_id }}">
+              <button type="submit">Remove</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">No options found for this category.</td></tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="6">
+          <form method="post" action="/admin/lookup/save" class="inline-form">
+            <input type="hidden" name="lookup_type" value="{{ selected_lookup_type }}">
+            <input type="hidden" name="lookup_status" value="{{ selected_lookup_status }}">
+            <input type="hidden" name="as_of" value="{{ selected_as_of }}">
+            <input type="hidden" name="option_id" value="">
+            <input type="hidden" name="option_code" value="">
+            <input type="text" name="option_label" placeholder="New label" aria-label="New option label">
+            <input type="number" name="sort_order" value="{{ next_lookup_sort_order }}" min="1" step="1" aria-label="New option sort order">
+            <input type="date" name="valid_from_ts" value="{{ selected_as_of }}" aria-label="New option valid from">
+            <input type="date" name="valid_to_ts" value="9999-12-31" aria-label="New option valid to">
+            <button type="submit">Add Option</button>
+          </form>
+        </td>
+      </tr>
+    </tfoot>
+  </table>
+</section>
+{% elif admin_section == 'ownership' %}
+<section class="card">
+  <h2>Ownership Reassignment</h2>
+  <p>Select a source owner to see every active ownership assignment and reassign in bulk.</p>
+  <form method="get" action="/admin" class="inline-form" style="margin-top:8px;">
+    <input type="hidden" name="section" value="ownership">
+    <label>Source Owner
+      <input type="text" name="source_owner" list="admin-user-principals" value="{{ selected_owner_source }}" placeholder="user@company.com" required>
+    </label>
+    <button type="submit">Load Ownerships</button>
+  </form>
+</section>
+
+{% if selected_owner_source %}
+<section class="card">
+  <h2>Assignments for {{ selected_owner_source }}</h2>
+  <form method="post" action="/admin/ownership/reassign" style="margin-top:8px;">
+    <input type="hidden" name="source_owner" value="{{ selected_owner_source }}">
+    <div class="grid grid-2" style="margin-bottom:10px;">
+      <label>Default Replacement Owner
+        <input type="text" name="default_target_owner" list="admin-user-principals" placeholder="user@company.com">
+      </label>
+      <label>Action Mode
+        <select name="action_mode">
+          <option value="all_default">Reassign all rows to default owner</option>
+          <option value="selected_default">Reassign selected rows to default owner</option>
+          <option value="selected_per_row">Reassign selected rows using per-row owner (fallback to default)</option>
+        </select>
+      </label>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Select</th>
+          <th>Type</th>
+          <th>Vendor</th>
+          <th>Entity</th>
+          <th>Role</th>
+          <th>Current Owner</th>
+          <th>Per-Row Replacement</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in ownership_rows %}
+        <tr>
+          <td><input type="checkbox" name="selected_assignment_key" value="{{ row.assignment_key }}"></td>
+          <td>{{ row.entity_type }}</td>
+          <td>{{ row.vendor_display_name or row.vendor_id or '-' }}</td>
+          <td>
+            <div>{{ row.entity_name or row.entity_id }}</div>
+            <div class="muted">{{ row.entity_id }}</div>
+          </td>
+          <td>{{ row.owner_role }}</td>
+          <td>{{ row.owner_principal }}</td>
+          <td>
+            <input
+              type="text"
+              name="target_for__{{ row.assignment_key }}"
+              list="admin-user-principals"
+              placeholder="Optional per-row owner"
+            >
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7">No active ownership assignments found for this owner.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div style="margin-top:10px;"><button type="submit">Apply Reassignment</button></div>
+  </form>
+</section>
+{% endif %}
+{% else %}
+<section class="card">
+  <h2>Role Catalog</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Role Code</th>
+        <th>Name</th>
+        <th>Approval</th>
+        <th>Edit</th>
+        <th>Report</th>
+        <th>Direct Apply</th>
+        <th>Change Permissions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in role_definitions %}
+      <tr>
+        <td>{{ row.role_code }}</td>
+        <td>{{ row.role_name }}</td>
+        <td>{{ row.approval_level }}</td>
+        <td>{{ row.can_edit }}</td>
+        <td>{{ row.can_report }}</td>
+        <td>{{ row.can_direct_apply }}</td>
+        <td>{{ row.actions_summary }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7">No roles configured.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <details style="margin-top:10px;">
+    <summary>Create or Update Role</summary>
+    <form method="post" action="/admin/roles/save" class="grid grid-2" style="margin-top:10px;">
+      <label>Role Code
+        <input list="role-code-options" type="text" name="role_code" placeholder="vendor_editor" required>
+        <datalist id="role-code-options">
+          {% for role_code in role_code_options %}
+          <option value="{{ role_code }}"></option>
+          {% endfor %}
+        </datalist>
+      </label>
+      <label>Role Name
+        <input type="text" name="role_name" placeholder="Vendor Editor" required>
+      </label>
+      <label class="full">Description
+        <input type="text" name="description" placeholder="Describe what this role can do.">
+      </label>
+      <label>Approval Level
+        <select name="approval_level">
+          {% for level in role_approval_level_options %}
+          <option value="{{ level }}">{{ level }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="full inline-form">
+        <label><input type="checkbox" name="can_edit"> Can Edit</label>
+        <label><input type="checkbox" name="can_report"> Can Report</label>
+        <label><input type="checkbox" name="can_direct_apply"> Can Direct Apply</label>
+      </div>
+      <div class="full">
+        <h3>Per-Action Change Permissions</h3>
+        <div class="role-permission-grid">
+          {% for action in change_actions %}
+          <label class="role-permission-option">
+            <input type="checkbox" name="perm_{{ action }}">
+            <span>{{ action }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div><button type="submit">Save Role</button></div>
+    </form>
+  </details>
+</section>
+
+<div class="grid grid-2">
+  <section class="card">
+    <h2>Role Grants</h2>
+    <table>
+      <thead><tr><th>User</th><th>Role</th><th>Active</th><th>Granted By</th><th>Granted At</th><th>Actions</th></tr></thead>
+      <tbody>
+        {% for row in role_rows %}
+        {% set is_active = row.active_flag in [True, 1, "1", "true", "True"] %}
+        <tr>
+          <td>{{ row.user_principal }}</td>
+          <td>{{ row.role_code }}</td>
+          <td>{{ row.active_flag }}</td>
+          <td>{{ row.granted_by }}</td>
+          <td>{{ row.granted_at }}</td>
+          <td>
+            {% if is_active %}
+            <div class="inline-form">
+              <form method="post" action="/admin/change-role" class="inline-form">
+                <input type="hidden" name="target_user" value="{{ row.user_principal }}">
+                <input type="hidden" name="current_role_code" value="{{ row.role_code }}">
+                <select name="new_role_code" aria-label="New role for {{ row.user_principal }}">
+                  {% for role in grantable_roles %}
+                  <option value="{{ role }}" {% if role == row.role_code %}selected{% endif %}>{{ role }}</option>
+                  {% endfor %}
+                </select>
+                <button type="submit">Change</button>
+              </form>
+              <form method="post" action="/admin/revoke-role" class="inline-form">
+                <input type="hidden" name="target_user" value="{{ row.user_principal }}">
+                <input type="hidden" name="role_code" value="{{ row.role_code }}">
+                <button type="submit">Revoke</button>
+              </form>
+            </div>
+            {% else %}
+            <span class="muted">revoked</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6">No role grants.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <h3 style="margin-top:10px;">Grant Role</h3>
+    <form method="post" action="/admin/grant-role" class="grid grid-1" style="margin-top:10px;">
+      <label>User Principal<input type="text" name="target_user" list="admin-user-principals" required></label>
+      <label>Role
+        <select name="role_code">
+          {% for role in grantable_roles %}
+          <option value="{{ role }}">{{ role }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div><button type="submit">Grant Role</button></div>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Business Unit Scope Grants</h2>
+    <table>
+      <thead><tr><th>User</th><th>Business Unit</th><th>Scope</th><th>Active</th><th>Granted At</th><th>Actions</th></tr></thead>
+      <tbody>
+        {% for row in scope_rows %}
+        {% set is_active = row.active_flag in [True, 1, "1", "true", "True"] %}
+        <tr>
+          <td>{{ row.user_principal }}</td>
+          <td>{{ row.org_id }}</td>
+          <td>{{ row.scope_level }}</td>
+          <td>{{ row.active_flag }}</td>
+          <td>{{ row.granted_at }}</td>
+          <td>
+            {% if is_active %}
+            <form method="post" action="/admin/revoke-scope" class="inline-form">
+              <input type="hidden" name="target_user" value="{{ row.user_principal }}">
+              <input type="hidden" name="org_id" value="{{ row.org_id }}">
+              <input type="hidden" name="scope_level" value="{{ row.scope_level }}">
+              <button type="submit">Revoke</button>
+            </form>
+            {% else %}
+            <span class="muted">revoked</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6">No scope grants.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <h3 style="margin-top:10px;">Grant Business Unit Scope</h3>
+    <form method="post" action="/admin/grant-scope" class="grid grid-1" style="margin-top:10px;">
+      <label>User Principal<input type="text" name="target_user" required></label>
+      <label>Business Unit<input type="text" name="business_unit_id" required></label>
+      <label>Scope Level
+        <select name="scope_level">
+          <option value="read">read</option>
+          <option value="edit">edit</option>
+          <option value="full">full</option>
+        </select>
+      </label>
+      <div><button type="submit">Grant Scope</button></div>
+    </form>
+  </section>
+</div>
+
+<section class="card" style="margin-top:12px;">
+  <h2>Group Role Grants</h2>
+  <p>Grant a role to an identity group (for example an AD group) so members inherit that role based on forwarded group headers.</p>
+  <table>
+    <thead><tr><th>Group</th><th>Role</th><th>Active</th><th>Granted By</th><th>Granted At</th><th>Revoked At</th><th>Actions</th></tr></thead>
+    <tbody>
+      {% for row in group_role_rows %}
+      {% set is_active = row.active_flag in [True, 1, "1", "true", "True"] %}
+      <tr>
+        <td>{{ row.group_principal }}</td>
+        <td>{{ row.role_code }}</td>
+        <td>{{ row.active_flag }}</td>
+        <td>{{ row.granted_by }}</td>
+        <td>{{ row.granted_at }}</td>
+        <td>{{ row.revoked_at or "-" }}</td>
+        <td>
+          {% if is_active %}
+          <div class="inline-form">
+            <form method="post" action="/admin/change-group-role" class="inline-form">
+              <input type="hidden" name="target_group" value="{{ row.group_principal }}">
+              <input type="hidden" name="current_role_code" value="{{ row.role_code }}">
+              <select name="new_role_code" aria-label="New role for {{ row.group_principal }}">
+                {% for role in grantable_roles %}
+                <option value="{{ role }}" {% if role == row.role_code %}selected{% endif %}>{{ role }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit">Change</button>
+            </form>
+            <form method="post" action="/admin/revoke-group-role" class="inline-form">
+              <input type="hidden" name="target_group" value="{{ row.group_principal }}">
+              <input type="hidden" name="role_code" value="{{ row.role_code }}">
+              <button type="submit">Revoke</button>
+            </form>
+          </div>
+          {% else %}
+          <span class="muted">revoked</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7">No group role grants.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <h3 style="margin-top:10px;">Grant Group Role</h3>
+  <form method="post" action="/admin/grant-group-role" class="grid grid-1" style="margin-top:10px;">
+    <label>Group Principal<input type="text" name="target_group" placeholder="group:ad-vendor-admins" required></label>
+    <label>Role
+      <select name="role_code">
+        {% for role in grantable_roles %}
+        <option value="{{ role }}">{{ role }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <div><button type="submit">Grant Group Role</button></div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

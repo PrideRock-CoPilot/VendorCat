@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Delete Identifier - {{ vendor.vendor_id }}{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-6">
+            <div class="card border-danger">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="card-title mb-0"><i class="bi bi-exclamation-circle"></i> Confirm Delete</h5>
+                </div>
+                <div class="card-body">
+                    <p class="mb-3">You are about to permanently delete the following identifier:</p>
+
+                    <div class="alert alert-light border border-secondary">
+                        <dl class="row mb-0">
+                            <dt class="col-sm-4">Type:</dt>
+                            <dd class="col-sm-8"><strong>{{ identifier.get_identifier_type_display }}</strong></dd>
+
+                            <dt class="col-sm-4">Value:</dt>
+                            <dd class="col-sm-8"><code class="bg-light">{{ identifier.identifier_value }}</code></dd>
+
+                            <dt class="col-sm-4">Country:</dt>
+                            <dd class="col-sm-8">{{ identifier.country_code|default:"Not specified" }}</dd>
+
+                            <dt class="col-sm-4">Verified:</dt>
+                            <dd class="col-sm-8">
+                                {% if identifier.is_verified %}
+                                <span class="badge bg-success">Yes</span>
+                                {% else %}
+                                <span class="badge bg-secondary">No</span>
+                                {% endif %}
+                            </dd>
+                        </dl>
+                    </div>
+
+                    {% if identifier.is_primary %}
+                    <div class="alert alert-warning" role="alert">
+                        <i class="bi bi-exclamation-triangle"></i> <strong>Warning:</strong> This is the primary identifier for this vendor. 
+                        After deletion, no primary identifier will be set.
+                    </div>
+                    {% endif %}
+
+                    <div class="alert alert-danger" role="alert">
+                        <i class="bi bi-exclamation-circle"></i> <strong>Critical:</strong> This action cannot be undone. All associated records will lose this identifier reference.
+                    </div>
+
+                    <form method="post" class="d-grid gap-2 d-sm-flex">
+                        {% csrf_token %}
+
+                        <button type="submit" class="btn btn-danger btn-lg">
+                            <i class="bi bi-trash"></i> Delete Permanently
+                        </button>
+                        <a href="{% url 'vendor_identifier_list' vendor.vendor_id %}" class="btn btn-secondary btn-lg">
+                            <i class="bi bi-x-circle"></i> Cancel
+                        </a>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Back to Details Link -->
+            <div class="mt-4">
+                <a href="{% url 'vendors-detail' vendor.vendor_id %}" class="text-muted">
+                    <i class="bi bi-arrow-left"></i> Back to vendor
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,31 @@
+# Code Owners
+# This file defines who should review PRs for specific parts of the codebase
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for everything in the repo
+*       @tech-lead
+
+# Documentation
+/docs/  @tech-lead
+
+# Database schemas and migrations
+/setup/databricks/  @data-lead @tech-lead
+
+# Core application architecture
+/app/vendor_catalog_app/core/  @tech-lead
+/app/vendor_catalog_app/infrastructure/  @tech-lead
+
+# Security-related code
+/app/vendor_catalog_app/web/security/  @tech-lead @security-lead
+
+# Tests
+/tests/  @tech-lead
+
+# CI/CD configuration
+/.github/  @tech-lead
+
+# Configuration files
+/setup/config/  @tech-lead @ops-lead
+
+# Frontend templates
+/app/vendor_catalog_app/web/templates/  @tech-lead

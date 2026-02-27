@@ -1,0 +1,31 @@
+{% if items %}
+<table style="width:100%; border-collapse: collapse;">
+  <thead>
+    <tr>
+      <th style="text-align:left; border-bottom:1px solid #e5e7eb; padding:8px;">Run ID</th>
+      <th style="text-align:left; border-bottom:1px solid #e5e7eb; padding:8px;">Code</th>
+      <th style="text-align:left; border-bottom:1px solid #e5e7eb; padding:8px;">Status</th>
+      <th style="text-align:left; border-bottom:1px solid #e5e7eb; padding:8px;">Rows</th>
+      <th style="text-align:left; border-bottom:1px solid #e5e7eb; padding:8px;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in items %}
+    <tr>
+      <td style="padding:8px; border-bottom:1px solid #f1f5f9;"><code>{{ item.run_id }}</code></td>
+      <td style="padding:8px; border-bottom:1px solid #f1f5f9;">{{ item.report_code }}</td>
+      <td style="padding:8px; border-bottom:1px solid #f1f5f9;">{{ item.status }}</td>
+      <td style="padding:8px; border-bottom:1px solid #f1f5f9;">{{ item.row_count }}</td>
+      <td style="padding:8px; border-bottom:1px solid #f1f5f9;">
+        <a href="/reports/{{ item.run_id }}">Details</a>
+        {% if item.download_url %}
+          | <a href="{{ item.download_url }}">Download CSV</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No report runs available.</p>
+{% endif %}

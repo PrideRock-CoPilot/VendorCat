@@ -1,0 +1,11 @@
+﻿{% extends "base.html" %}
+
+{% block content %}
+<section class="card">
+  <h1>Something Went Wrong</h1>
+  <p class="muted">{{ error_message }}</p>
+  {% if request_id %}
+    <p class="muted">Request ID: {{ request_id }}</p>
+  {% endif %}
+</section>
+{% endblock %}

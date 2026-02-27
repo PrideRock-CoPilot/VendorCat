@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+
+{% block head %}
+  <link rel="stylesheet" href="/static/css/imports_wizard.css?v={{ static_asset_version }}">
+{% endblock %}
+
+{% block content %}
+<div class="section-header">
+  <div>
+    <h1>Final Review And Apply</h1>
+    <p>Read-only summary by area. Confirm, then apply in hierarchy order.</p>
+  </div>
+  <div class="button-group">
+    <a class="button-link subtle" href="/imports/jobs/{{ import_job_id }}/mapping">Back To Mapping</a>
+  </div>
+</div>
+
+<section class="card section-divider">
+  <h2>Workflow Status</h2>
+  <div class="grid grid-3">
+    <div>
+      <div class="muted">Import Job</div>
+      <strong>{{ import_job_id }}</strong>
+    </div>
+    <div>
+      <div class="muted">Workflow State</div>
+      <strong>{{ workflow_state }}</strong>
+    </div>
+    <div>
+      <div class="muted">Layout</div>
+      <strong>{{ selected_layout }}</strong>
+    </div>
+  </div>
+  <div class="guided-metrics" style="margin-top:10px;">
+    {% for area in review_area_order %}
+    {% set state = review_area_states.get(area, 'locked') %}
+    <span class="status-badge {% if state == 'confirmed' %}status-ready{% elif state == 'in_progress' %}status-review{% else %}status-blocked{% endif %}">
+      {{ review_area_labels.get(area, area) }}: {{ state }}
+    </span>
+    {% endfor %}
+  </div>
+  {% if next_locked_area_key %}
+  <p class="status-text error" style="margin-top:8px;">
+    Sequential review is not complete. Remaining locked area: {{ review_area_labels.get(next_locked_area_key, next_locked_area_key) }}.
+  </p>
+  {% endif %}
+</section>
+
+<section class="card section-divider">
+  <h2>Area Summary</h2>
+  <div class="button-group" role="tablist" aria-label="Import area tabs">
+    {% for area in review_area_order %}
+    {% set count = area_summaries.get(area, {}).get('total', 0) %}
+    <button
+      type="button"
+      class="button-link subtle area-tab-btn"
+      data-area-tab="{{ area }}"
+      aria-controls="area-panel-{{ area }}"
+      aria-selected="{{ 'true' if loop.first else 'false' }}"
+      {% if count == 0 %}data-empty="true"{% endif %}
+    >
+      {{ review_area_labels.get(area, area) }} ({{ count }})
+    </button>
+    {% endfor %}
+  </div>
+
+  {% for area in review_area_order %}
+  {% set summary = area_summaries.get(area, {}) %}
+  {% set rows = area_rows.get(area, []) %}
+  <div id="area-panel-{{ area }}" class="area-tab-panel" data-area-panel="{{ area }}" {% if not loop.first %}hidden{% endif %}>
+    <h3 style="margin-top:12px;">{{ review_area_labels.get(area, area) }}</h3>
+    <p class="muted">
+      total={{ summary.get('total', 0) }},
+      new={{ summary.get('new', 0) }},
+      merge={{ summary.get('merge', 0) }},
+      skip={{ summary.get('skip', 0) }}
+    </p>
+    {% if rows %}
+    <div class="table-wrap table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Line</th>
+            <th>Action</th>
+            <th>Target</th>
+            <th>Data</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td>{{ row.line_number or row.row_index }}</td>
+            <td>{{ row.decision_action or row.suggested_action }}</td>
+            <td>{{ row.decision_target_id or row.suggested_target_id or "-" }}</td>
+            <td>
+              {% for key, value in row.row_data.items() %}
+              <div><strong>{{ key }}</strong>: {{ value }}</div>
+              {% endfor %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="muted">No rows mapped for this area.</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</section>
+
+<section class="card section-divider">
+  <h2>Confirmation</h2>
+  <form method="post" action="/imports/jobs/{{ import_job_id }}/apply">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>
+      Merge Reason (required only when merge decisions exist)
+      <input type="text" name="reason" placeholder="Describe why merge decisions are valid">
+    </label>
+    <label class="guided-confirm-checkbox">
+      <input id="guided-final-confirm" type="checkbox" name="final_confirm" value="true" required>
+      <span>I confirmed this summary and want to apply this import now.</span>
+    </label>
+    <div class="button-group" style="margin-top:10px;">
+      <button type="submit" {% if next_locked_area_key %}disabled{% endif %}>Apply Import</button>
+      <a class="button-link subtle" href="/imports/jobs/{{ import_job_id }}/review/vendor">Back To Review</a>
+    </div>
+  </form>
+</section>
+
+{% if apply_totals %}
+<section class="card section-divider">
+  <h2>Apply Results</h2>
+  <p class="muted">
+    created={{ apply_totals.created or 0 }},
+    merged={{ apply_totals.merged or 0 }},
+    skipped={{ apply_totals.skipped or 0 }},
+    failed={{ apply_totals.failed or 0 }}
+  </p>
+  {% if apply_results %}
+  <div class="table-wrap table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Area</th>
+          <th>Line</th>
+          <th>Status</th>
+          <th>Message</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in apply_results %}
+        <tr>
+          <td>{{ item.area_key }}</td>
+          <td>{{ item.line_number or "-" }}</td>
+          <td>{{ item.status }}</td>
+          <td>{{ item.message }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const tabs = Array.from(document.querySelectorAll('[data-area-tab]'));
+  const panels = Array.from(document.querySelectorAll('[data-area-panel]'));
+  if (!tabs.length || !panels.length) return;
+
+  const activate = (target) => {
+    tabs.forEach((tab) => {
+      const active = tab.getAttribute('data-area-tab') === target;
+      tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    panels.forEach((panel) => {
+      panel.hidden = panel.getAttribute('data-area-panel') !== target;
+    });
+  };
+
+  tabs.forEach((tab) => {
+    tab.addEventListener('click', () => activate(tab.getAttribute('data-area-tab')));
+  });
+})();
+</script>
+{% endblock %}

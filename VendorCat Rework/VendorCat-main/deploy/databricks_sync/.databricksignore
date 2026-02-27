@@ -1,0 +1,14 @@
+﻿README.md
+app.dev_local.yaml
+setup/**
+*.db
+**/*.db
+**/__pycache__/**
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.pytest_cache/**
+**/.mypy_cache/**
+**/.ruff_cache/**
+**/.DS_Store
+vendor_catalog_app/sql/README.md

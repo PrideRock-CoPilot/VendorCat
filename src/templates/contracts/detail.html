@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block title %}{{ contract.contract_id }} - VendorCatalog{% endblock %}
+
+{% block content %}
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+    <div>
+      <h1>{{ contract.contract_id }}</h1>
+      <p class="text-muted">Contract Number: {{ contract.contract_number }}</p>
+    </div>
+    <a href="/contracts/{{ contract.contract_id }}/edit" class="btn btn-primary">
+      ✏️ Edit Contract
+    </a>
+  </div>
+
+  <!-- Key Info Cards -->
+  <div class="grid grid-3" style="margin-bottom: 30px;">
+    <div class="card">
+      <p class="text-muted" style="margin: 0 0 8px 0;">Vendor</p>
+      <p style="font-size: 18px; font-weight: 600; margin: 0;">
+        <a href="/vendor-360/{{ contract.vendor.vendor_id }}" style="color: var(--primary); text-decoration: none;">
+          {{ contract.vendor.display_name }}
+        </a>
+      </p>
+    </div>
+    <div class="card">
+      <p class="text-muted" style="margin: 0 0 8px 0;">Status</p>
+      <span class="table-badge badge-{% if contract.contract_status == 'active' %}success{% elif contract.contract_status == 'expired' %}danger{% else %}warning{% endif %}" style="display: inline-block;">
+        {{ contract.contract_status }}
+      </span>
+    </div>
+    <div class="card">
+      <p class="text-muted" style="margin: 0 0 8px 0;">Annual Value</p>
+      <p style="font-size: 18px; font-weight: 600; margin: 0;">
+        {% if contract.annual_value %}
+          ${{ contract.annual_value|floatformat:2 }}
+        {% else %}
+          <span class="text-muted">—</span>
+        {% endif %}
+      </p>
+    </div>
+  </div>
+
+  <!-- Details -->
+  <div class="card">
+    <h3>Contract Information</h3>
+    <div class="form-row">
+      <div>
+        <p class="text-muted">Contract ID</p>
+        <p style="font-size: 16px;">{{ contract.contract_id }}</p>
+      </div>
+      <div>
+        <p class="text-muted">Contract Number</p>
+        <p style="font-size: 16px;">{{ contract.contract_number }}</p>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div>
+        <p class="text-muted">Vendor</p>
+        <p style="font-size: 16px;">
+          <a href="/vendor-360/{{ contract.vendor.vendor_id }}" style="color: var(--primary);">
+            {{ contract.vendor.display_name }}
+          </a>
+        </p>
+      </div>
+      <div>
+        <p class="text-muted">Status</p>
+        <p style="font-size: 16px;">{{ contract.contract_status }}</p>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div>
+        <p class="text-muted">Start Date</p>
+        <p style="font-size: 16px;">
+          {% if contract.start_date %}
+            {{ contract.start_date|date:"M d, Y" }}
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </p>
+      </div>
+      <div>
+        <p class="text-muted">End Date</p>
+        <p style="font-size: 16px;">
+          {% if contract.end_date %}
+            {{ contract.end_date|date:"M d, Y" }}
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </p>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div>
+        <p class="text-muted">Annual Value</p>
+        <p style="font-size: 16px;">
+          {% if contract.annual_value %}
+            ${{ contract.annual_value|floatformat:2 }}
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </p>
+      </div>
+      <div>
+        <p class="text-muted">Cancelled</p>
+        <p style="font-size: 16px;">
+          {% if contract.cancelled_flag %}
+            <span class="table-badge badge-danger">Yes</span>
+          {% else %}
+            <span class="table-badge badge-success">No</span>
+          {% endif %}
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--border);">
+    <a href="/contracts" class="btn btn-secondary">← Back to Contracts</a>
+  </div>
+{% endblock %}

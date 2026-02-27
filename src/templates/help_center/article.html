@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card">
+  <h1>{{ item.title }}</h1>
+  <p class="muted">Slug: <code>{{ item.slug }}</code></p>
+  <div>{{ item.rendered_html|safe }}</div>
+  <p><a href="/help">Back to Help Center</a></p>
+</section>
+{% endblock %}

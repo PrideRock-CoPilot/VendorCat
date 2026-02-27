@@ -1,0 +1,624 @@
+﻿{% extends "base.html" %}
+
+{% block title %}Executive Dashboard - VendorCatalog{% endblock %}
+
+{% block extra_css %}
+<style>
+  .icon-box {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+  }
+  .trend-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    margin-top: 8px;
+  }
+  .activity-item {
+    display: flex;
+    gap: 12px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-light);
+  }
+  .activity-item:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+  .activity-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 14px;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Executive Dashboard</h1>
+      <p class="text-muted">High-level overview of vendor management operations</p>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="card" style="margin-bottom: 24px;">
+    <form method="get" class="filter-form" style="grid-template-columns: 1fr 1fr 1fr auto;">
+      <div class="form-group">
+        <label>Line of Business</label>
+        <select name="lob">
+          <option value="">All LOBs</option>
+          {% for lob in available_lobs %}
+            <option value="{{ lob }}" {% if lob == selected_lob %}selected{% endif %}>{{ lob }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>From Date</label>
+        <input type="date" name="date_from" value="{{ date_from }}">
+      </div>
+      <div class="form-group">
+        <label>To Date</label>
+        <input type="date" name="date_to" value="{{ date_to }}">
+      </div>
+      <div class="filter-actions">
+        <button type="submit" class="btn btn-primary">Apply Filters</button>
+        <a href="/dashboard" class="btn btn-secondary">Reset</a>
+      </div>
+    </form>
+  </div>
+
+  <!-- Key Performance Indicators -->
+  <div class="grid grid-4" style="margin-bottom: 24px;">
+    <div class="card" style="transition: all 0.2s;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
+        <div>
+          <div class="stat-label" style="margin-bottom: 8px;">Total Vendors</div>
+          <div class="stat-value">{{ vendor_count }}</div>
+        </div>
+        <div class="icon-box" style="background: var(--accent-light);">
+          <span style="color: var(--accent);">🏢</span>
+        </div>
+      </div>
+      <a href="/vendor-360" style="color: var(--accent); text-decoration: none; font-size: 13px; font-weight: 500;">View all →</a>
+    </div>
+
+    <div class="card" style="transition: all 0.2s;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
+        <div>
+          <div class="stat-label" style="margin-bottom: 8px;">Active Projects</div>
+          <div class="stat-value">{{ project_count }}</div>
+        </div>
+        <div class="icon-box" style="background: var(--blue-light);">
+          <span style="color: var(--blue);">📁</span>
+        </div>
+      </div>
+      <a href="/projects" style="color: var(--accent); text-decoration: none; font-size: 13px; font-weight: 500;">View all →</a>
+    </div>
+
+    <div class="card" style="transition: all 0.2s;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
+        <div>
+          <div class="stat-label" style="margin-bottom: 8px;">Active Contracts</div>
+          <div class="stat-value">{{ active_contract_count }}</div>
+        </div>
+        <div class="icon-box" style="background: var(--success-light);">
+          <span style="color: var(--success);">📄</span>
+        </div>
+      </div>
+      <a href="/contracts" style="color: var(--accent); text-decoration: none; font-size: 13px; font-weight: 500;">View all →</a>
+    </div>
+
+    <div class="card" style="transition: all 0.2s;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
+        <div>
+          <div class="stat-label" style="margin-bottom: 8px;">Contract Value</div>
+          <div class="stat-value" style="font-size: 28px;">${{ total_contract_value|floatformat:0 }}</div>
+        </div>
+        <div class="icon-box" style="background: var(--warning-light);">
+          <span style="color: var(--warning);">💰</span>
+        </div>
+      </div>
+      <p style="color: var(--text-muted); font-size: 13px; margin: 0;">Annual Total</p>
+    </div>
+  </div>
+
+  <!-- Charts & Activity Row -->
+  <div class="grid grid-3" style="margin-bottom: 24px; gap: 24px;">
+    <!-- Charts Section -->
+    <div class="card" style="grid-column: span 2;">
+      <div style="display: flex; justify-between; align-items: center; margin-bottom: 20px;">
+        <h3 class="card-title" style="margin: 0;">Vendor Analytics</h3>
+        <select style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; font-size: 13px; color: var(--text-primary);">
+          <option>Last 12 Months</option>
+          <option>Last 6 Months</option>
+          <option>This Year</option>
+        </select>
+      </div>
+      <div style="position: relative; height: 300px;">
+        <canvas id="vendorTrendChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="card">
+      <div style="display: flex; justify-between; align-items: center; margin-bottom: 20px;">
+        <h3 class="card-title" style="margin: 0;">Recent Activity</h3>
+        <a href="/vendor-360" style="color: var(--accent); text-decoration: none; font-size: 13px; font-weight: 500;">View all</a>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 16px;">
+        <div class="activity-item">
+          <div class="activity-icon" style="background: var(--accent-light); color: var(--accent);">
+            ➕
+          </div>
+          <div style="flex: 1;">
+            <p style="font-size: 14px; font-weight: 500; margin: 0 0 4px 0;">New vendor added</p>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 0;">Recently onboarded to catalog</p>
+            <p style="font-size: 11px; color: var(--text-muted); margin: 4px 0 0 0;">2 hours ago</p>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-icon" style="background: var(--blue-light); color: var(--blue);">
+            📝
+          </div>
+          <div style="flex: 1;">
+            <p style="font-size: 14px; font-weight: 500; margin: 0 0 4px 0;">Contract renewed</p>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 0;">Annual subscription extended</p>
+            <p style="font-size: 11px; color: var(--text-muted); margin: 4px 0 0 0;">5 hours ago</p>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-icon" style="background: var(--warning-light); color: var(--warning);">
+            ⚠️
+          </div>
+          <div style="flex: 1;">
+            <p style="font-size: 14px; font-weight: 500; margin: 0 0 4px 0;">Compliance review due</p>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 0;">Security audit pending</p>
+            <p style="font-size: 11px; color: var(--text-muted); margin: 4px 0 0 0;">1 day ago</p>
+          </div>
+        </div>
+        <div class="activity-item">
+          <div class="activity-icon" style="background: var(--success-light); color: var(--success);">
+            ✓
+          </div>
+          <div style="flex: 1;">
+            <p style="font-size: 14px; font-weight: 500; margin: 0 0 4px 0;">Demo completed</p>
+            <p style="font-size: 12px; color: var(--text-muted); margin: 0;">Product POC successful</p>
+            <p style="font-size: 11px; color: var(--text-muted); margin: 4px 0 0 0;">2 days ago</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Distribution Charts -->
+  <div class="grid grid-3" style="margin-bottom: 24px;">
+    <div class="card">
+      <div class="card-header" style="margin-bottom: 16px;">
+        <h3 class="card-title">Vendors by Status</h3>
+      </div>
+      <div style="position: relative; height: 250px;">
+        <canvas id="vendorStatusChart"></canvas>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header" style="margin-bottom: 16px;">
+        <h3 class="card-title">Vendors by Risk Tier</h3>
+      </div>
+      <div style="position: relative; height: 250px;">
+        <canvas id="vendorRiskChart"></canvas>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header" style="margin-bottom: 16px;">
+        <h3 class="card-title">Contracts by Status</h3>
+      </div>
+      <div style="position: relative; height: 250px;">
+        <canvas id="contractStatusChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Trend Charts -->
+  <div class="grid grid-2" style="margin-bottom: 24px;">
+    <div class="card">
+      <div class="card-header" style="margin-bottom: 16px;">
+        <h3 class="card-title">Vendor Growth Trend</h3>
+        <p class="card-subtitle">New vendors added per month (Last 6 months)</p>
+      </div>
+      <div style="position: relative; height: 280px;">
+        <canvas id="vendorMonthlyTrendChart"></canvas>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header" style="margin-bottom: 16px;">
+        <h3 class="card-title">Project Growth Trend</h3>
+        <p class="card-subtitle">New projects created per month (Last 6 months)</p>
+      </div>
+      <div style="position: relative; height: 280px;">
+        <canvas id="projectTrendChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Contract Value Trend -->
+  <div class="card" style="margin-bottom: 24px;">
+    <div class="card-header" style="margin-bottom: 16px;">
+      <h3 class="card-title">Contract Value Trend</h3>
+      <p class="card-subtitle">Total annual contract value by month (Last 6 months)</p>
+    </div>
+    <div style="position: relative; height: 280px;">
+      <canvas id="contractTrendChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Recent Vendor Updates -->
+  <div class="card">
+    <div class="card-header" style="margin-bottom: 20px;">
+      <div>
+        <h3 class="card-title" style="margin: 0 0 4px 0;">Recent Vendor Updates</h3>
+        <p class="card-subtitle" style="margin: 0;">Last 5 vendors modified</p>
+      </div>
+      <a href="/vendor-360" class="btn btn-secondary">View All</a>
+    </div>
+    
+    {% if recent_vendors %}
+      <div style="overflow-x: auto;">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Vendor ID</th>
+              <th>Display Name</th>
+              <th>LOB</th>
+              <th>Status</th>
+              <th>Risk Tier</th>
+              <th style="text-align: right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for vendor in recent_vendors %}
+              <tr style="transition: all 0.2s;">
+                <td><strong style="color: var(--accent);">{{ vendor.vendor_id }}</strong></td>
+                <td>{{ vendor.display_name }}</td>
+                <td><span style="color: var(--text-muted);">{{ vendor.owner_org_id }}</span></td>
+                <td>
+                  <span class="table-badge badge-{% if vendor.lifecycle_state == 'active' %}success{% else %}warning{% endif %}">
+                    {{ vendor.lifecycle_state }}
+                  </span>
+                </td>
+                <td>
+                  <span class="table-badge badge-{% if vendor.risk_tier == 'high' %}danger{% elif vendor.risk_tier == 'medium' %}warning{% else %}success{% endif %}">
+                    {{ vendor.risk_tier }}
+                  </span>
+                </td>
+                <td style="text-align: right;">
+                  <a href="/vendor-360/{{ vendor.vendor_id }}" class="btn btn-secondary btn-small" style="font-size: 13px;">View</a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <div class="empty-icon">📭</div>
+        <h4 class="empty-title">No vendors yet</h4>
+        <p class="empty-text">Start by adding your first vendor</p>
+        <a href="/vendor-360/new" class="btn btn-primary">Add Vendor</a>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Chart.js Initialization -->
+  <script>
+    // Parse chart data from Django context
+    const chartData = {{ chart_data|safe }};
+
+    // Modern color palettes
+    const statusColors = {
+      'active': '#10B981',
+      'inactive': '#6B7280',
+      'prospect': '#3B82F6',
+      'pending': '#F59E0B'
+    };
+
+    const riskColors = {
+      'low': '#10B981',
+      'medium': '#F59E0B',
+      'high': '#EF4444'
+    };
+
+    // Helper function to get colors for chart
+    function getColorsForLabels(labels, colorMap) {
+      return labels.map(label => colorMap[label] || '#6B7280');
+    }
+
+    // Chart.js default config for dark theme
+    Chart.defaults.color = '#9CA3AF';
+    Chart.defaults.borderColor = '#374151';
+
+    // 1. Main Vendor Trend Chart (Line with gradient)
+    const vendorTrendMainCtx = document.getElementById('vendorTrendChart').getContext('2d');
+    new Chart(vendorTrendMainCtx, {
+      type: 'line',
+      data: {
+        labels: chartData.vendor_trend.labels,
+        datasets: [{
+          label: 'New Vendors',
+          data: chartData.vendor_trend.data,
+          borderColor: '#7C3AED',
+          backgroundColor: 'rgba(124, 58, 237, 0.1)',
+          borderWidth: 3,
+          fill: true,
+          tension: 0.4,
+          pointBackgroundColor: '#7C3AED',
+          pointBorderColor: '#fff',
+          pointBorderWidth: 2,
+          pointRadius: 4,
+          pointHoverRadius: 6
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: false
+          },
+          tooltip: {
+            backgroundColor: '#1F2937',
+            titleColor: '#F3F4F6',
+            bodyColor: '#F3F4F6',
+            borderColor: '#374151',
+            borderWidth: 1,
+            padding: 12,
+            displayColors: false
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              stepSize: 1
+            },
+            grid: {
+              color: '#374151'
+            }
+          },
+          x: {
+            grid: {
+              display: false
+            }
+          }
+        }
+      }
+    });
+
+    // 2. Vendor Status Chart (Doughnut)
+    const vendorStatusCtx = document.getElementById('vendorStatusChart').getContext('2d');
+    new Chart(vendorStatusCtx, {
+      type: 'doughnut',
+      data: {
+        labels: chartData.vendor_by_status.labels,
+        datasets: [{
+          data: chartData.vendor_by_status.data,
+          backgroundColor: getColorsForLabels(chartData.vendor_by_status.labels, statusColors),
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: {
+              padding: 15,
+              font: { size: 12 },
+              color: '#9CA3AF'
+            }
+          }
+        }
+      }
+    });
+
+    // 3. Vendor Risk Chart (Doughnut)
+    const vendorRiskCtx = document.getElementById('vendorRiskChart').getContext('2d');
+    new Chart(vendorRiskCtx, {
+      type: 'doughnut',
+      data: {
+        labels: chartData.vendor_by_risk.labels,
+        datasets: [{
+          data: chartData.vendor_by_risk.data,
+          backgroundColor: getColorsForLabels(chartData.vendor_by_risk.labels, riskColors),
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: {
+              padding: 15,
+              font: { size: 12 },
+              color: '#9CA3AF'
+            }
+          }
+        }
+      }
+    });
+
+    // 4. Contract Status Chart (Doughnut)
+    const contractStatusCtx = document.getElementById('contractStatusChart').getContext('2d');
+    new Chart(contractStatusCtx, {
+      type: 'doughnut',
+      data: {
+        labels: chartData.contract_by_status.labels,
+        datasets: [{
+          data: chartData.contract_by_status.data,
+          backgroundColor: getColorsForLabels(chartData.contract_by_status.labels, statusColors),
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: {
+              padding: 15,
+              font: { size: 12 },
+              color: '#9CA3AF'
+            }
+          }
+        }
+      }
+    });
+
+    // 5. Vendor Monthly Trend Chart (Line)
+    const vendorMonthlyTrendCtx = document.getElementById('vendorMonthlyTrendChart').getContext('2d');
+    new Chart(vendorMonthlyTrendCtx, {
+      type: 'line',
+      data: {
+        labels: chartData.vendor_trend.labels,
+        datasets: [{
+          label: 'New Vendors',
+          data: chartData.vendor_trend.data,
+          borderColor: '#7C3AED',
+          backgroundColor: 'rgba(124, 58, 237, 0.1)',
+          borderWidth: 2,
+          fill: true,
+          tension: 0.4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: false
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              stepSize: 1
+            },
+            grid: {
+              color: '#374151'
+            }
+          },
+          x: {
+            grid: {
+              display: false
+            }
+          }
+        }
+      }
+    });
+
+    // 6. Project Trend Chart (Line)
+    const projectTrendCtx = document.getElementById('projectTrendChart').getContext('2d');
+    new Chart(projectTrendCtx, {
+      type: 'line',
+      data: {
+        labels: chartData.project_trend.labels,
+        datasets: [{
+          label: 'New Projects',
+          data: chartData.project_trend.data,
+          borderColor: '#3B82F6',
+          backgroundColor: 'rgba(59, 130, 246, 0.1)',
+          borderWidth: 2,
+          fill: true,
+          tension: 0.4
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: false
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              stepSize: 1
+            },
+            grid: {
+              color: '#374151'
+            }
+          },
+          x: {
+            grid: {
+              display: false
+            }
+          }
+        }
+      }
+    });
+
+    // 7. Contract Value Trend Chart (Bar)
+    const contractTrendCtx = document.getElementById('contractTrendChart').getContext('2d');
+    new Chart(contractTrendCtx, {
+      type: 'bar',
+      data: {
+        labels: chartData.contract_trend.labels,
+        datasets: [{
+          label: 'Contract Value ($)',
+          data: chartData.contract_trend.data,
+          backgroundColor: 'rgba(124, 58, 237, 0.8)',
+          borderColor: '#7C3AED',
+          borderWidth: 0,
+          borderRadius: 8
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: false
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              callback: function(value) {
+                return '$' + value.toLocaleString();
+              }
+            },
+            grid: {
+              color: '#374151'
+            }
+          },
+          x: {
+            grid: {
+              display: false
+            }
+          }
+        }
+      }
+    });
+  </script>
+{% endblock %}

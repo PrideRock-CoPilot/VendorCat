@@ -1,0 +1,55 @@
+﻿name: Rebuild CI
+
+on:
+  push:
+    branches: ["rebuild/**", "rebuild-*", "rebuild/django5-full-parity"]
+  pull_request:
+    branches: ["rebuild/django5-full-parity"]
+
+jobs:
+  rebuild-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: src
+      DJANGO_SETTINGS_MODULE: vendorcatalog_rebuild.settings
+      VC_RUNTIME_PROFILE: local
+      VC_LOCAL_DUCKDB_PATH: src/.local/ci_vendorcatalog.duckdb
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install rebuild dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-rebuild.txt
+
+      - name: Ruff
+        run: python -m ruff check src tests_rebuild
+
+      - name: Mypy
+        run: python -m mypy --config-file mypy-rebuild.ini src tests_rebuild
+
+      - name: Schema contract validation
+        run: python scripts/rebuild/validate_schema.py
+
+      - name: SQL coverage validation
+        run: python scripts/rebuild/validate_sql_coverage.py
+
+      - name: RBAC contract tests
+        run: python -m pytest tests_rebuild/guards/test_rbac_contract.py -q
+
+      - name: Architecture guard tests
+        run: python -m pytest tests_rebuild/guards/test_architecture_guards.py -q
+
+      - name: Rebuild test suite with coverage gate
+        run: |
+          python -m pytest tests_rebuild \
+            --cov=apps \
+            --cov=vendorcatalog_rebuild \
+            --cov-report=term-missing \
+            --cov-fail-under=80 \
+            -q

@@ -597,6 +597,9 @@ CREATE TABLE IF NOT EXISTS app_import_job (
   file_type TEXT,
   detected_format TEXT,
   parser_config_json TEXT,
+  mapping_profile_id TEXT,
+  mapping_request_id TEXT,
+  context_json TEXT,
   row_count INTEGER NOT NULL,
   status TEXT NOT NULL,
   created_count INTEGER NOT NULL DEFAULT 0,
@@ -615,15 +618,46 @@ CREATE TABLE IF NOT EXISTS app_import_stage_row (
   import_job_id TEXT NOT NULL,
   row_index INTEGER NOT NULL,
   line_number TEXT,
+  area_key TEXT,
+  source_group_key TEXT,
   row_payload_json TEXT NOT NULL,
   suggested_action TEXT,
   suggested_target_id TEXT,
+  decision_action TEXT,
+  decision_target_id TEXT,
+  decision_payload_json TEXT,
+  decision_updated_at TEXT,
+  decision_updated_by TEXT,
   created_at TEXT NOT NULL,
   FOREIGN KEY (import_job_id) REFERENCES app_import_job(import_job_id),
   UNIQUE (import_job_id, row_index)
 );
 
+CREATE TABLE IF NOT EXISTS app_import_review_area_state (
+  import_review_area_state_id TEXT PRIMARY KEY,
+  import_job_id TEXT NOT NULL,
+  area_key TEXT NOT NULL,
+  area_order INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  confirmed_at TEXT,
+  confirmed_by TEXT,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL,
+  FOREIGN KEY (import_job_id) REFERENCES app_import_job(import_job_id),
+  UNIQUE (import_job_id, area_key)
+);
+
 CREATE TABLE IF NOT EXISTS app_import_stage_vendor (
+  import_stage_area_row_id TEXT PRIMARY KEY,
+  import_job_id TEXT NOT NULL,
+  row_index INTEGER NOT NULL,
+  line_number TEXT,
+  area_payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (import_job_id) REFERENCES app_import_job(import_job_id)
+);
+
+CREATE TABLE IF NOT EXISTS app_import_stage_vendor_identifier (
   import_stage_area_row_id TEXT PRIMARY KEY,
   import_job_id TEXT NOT NULL,
   row_index INTEGER NOT NULL,
@@ -738,4 +772,29 @@ CREATE TABLE IF NOT EXISTS app_import_mapping_profile (
   created_by TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   updated_by TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS app_import_mapping_profile_request (
+  profile_request_id TEXT PRIMARY KEY,
+  import_job_id TEXT,
+  submitted_by TEXT NOT NULL,
+  layout_key TEXT NOT NULL,
+  proposed_profile_name TEXT,
+  file_format TEXT,
+  source_system TEXT,
+  source_object TEXT,
+  source_signature TEXT,
+  source_fields_json TEXT,
+  source_target_mapping_json TEXT,
+  parser_options_json TEXT,
+  sample_rows_json TEXT,
+  status TEXT NOT NULL,
+  review_note TEXT,
+  reviewed_by TEXT,
+  reviewed_at TEXT,
+  approved_profile_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (import_job_id) REFERENCES app_import_job(import_job_id),
+  FOREIGN KEY (approved_profile_id) REFERENCES app_import_mapping_profile(profile_id)
 );

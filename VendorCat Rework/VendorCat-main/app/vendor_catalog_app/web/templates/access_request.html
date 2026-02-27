@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>Vendor Catalog</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/css/app.css?v={{ static_asset_version }}">
+  <style>
+    .ar-body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Aptos", "Segoe UI Variable", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(1200px 700px at 5% 0%, rgba(20, 184, 166, 0.25), transparent 62%),
+        radial-gradient(1000px 600px at 95% 100%, rgba(14, 116, 144, 0.25), transparent 58%),
+        linear-gradient(160deg, #f5fbff 0%, #eef6ff 45%, #f8fbff 100%);
+      color: #0f172a;
+    }
+
+    .ar-wrap {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 34px 20px;
+    }
+
+    .ar-shell {
+      width: min(1100px, 100%);
+      display: grid;
+      grid-template-columns: 1.05fr 1fr;
+      border-radius: 22px;
+      overflow: hidden;
+      border: 1px solid rgba(148, 163, 184, 0.32);
+      box-shadow: 0 28px 65px rgba(15, 23, 42, 0.2);
+      background: #fff;
+    }
+
+    .ar-hero {
+      position: relative;
+      padding: 38px 34px;
+      background:
+        linear-gradient(175deg, rgba(13, 148, 136, 0.95) 0%, rgba(7, 89, 133, 0.95) 60%, rgba(30, 64, 175, 0.95) 100%),
+        radial-gradient(700px 320px at 5% 0%, rgba(255, 255, 255, 0.2), transparent 60%);
+      color: #f8fafc;
+    }
+
+    .ar-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      color: rgba(248, 250, 252, 0.92);
+      user-select: none;
+      cursor: default;
+    }
+
+    .ar-brand-icon {
+      width: 22px;
+      height: 22px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      border-radius: 999px;
+      background: rgba(236, 253, 245, 0.14);
+    }
+
+    .ar-brand-icon svg {
+      width: 20px;
+      height: 20px;
+      stroke: rgba(236, 253, 245, 0.95);
+      stroke-width: 1.8;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .ar-hero h1 {
+      margin: 0;
+      font-size: 42px;
+      line-height: 1.05;
+      letter-spacing: -0.02em;
+      color: #fff;
+    }
+
+    .ar-subtitle {
+      margin: 16px 0 0;
+      font-size: 16px;
+      line-height: 1.5;
+      color: rgba(248, 250, 252, 0.95);
+      max-width: 44ch;
+    }
+
+    .ar-points {
+      margin: 20px 0 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 10px;
+      font-size: 14px;
+      color: rgba(241, 245, 249, 0.95);
+    }
+
+    .ar-points li {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+
+    .ar-points li::before {
+      content: "\2022";
+      color: #ccfbf1;
+      font-size: 20px;
+      line-height: 1;
+      margin-top: -1px;
+    }
+
+    .ar-form-card {
+      padding: 34px 30px;
+      background: #ffffff;
+    }
+
+    .ar-form-title {
+      margin: 0;
+      font-size: 28px;
+      letter-spacing: -0.01em;
+      color: #0f172a;
+    }
+
+    .ar-form-note {
+      margin: 8px 0 14px;
+      color: #475467;
+      font-size: 14px;
+    }
+
+    .ar-identity {
+      margin: 0 0 14px;
+      border: 1px solid #cbd5e1;
+      border-radius: 12px;
+      background: #f8fafc;
+      padding: 12px 14px;
+    }
+
+    .ar-identity-invalid {
+      border-color: #fecaca;
+      background: #fff1f2;
+    }
+
+    .ar-identity-label {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: #334155;
+      text-transform: uppercase;
+      margin-bottom: 5px;
+    }
+
+    .ar-identity-primary {
+      font-size: 14px;
+      font-weight: 700;
+      color: #0f172a;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .ar-identity-secondary {
+      margin-top: 6px;
+      font-size: 13px;
+      color: #334155;
+      display: grid;
+      gap: 3px;
+    }
+
+    .ar-identity-note {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #475467;
+      line-height: 1.4;
+    }
+
+    .ar-form {
+      display: grid;
+      gap: 14px;
+      margin-top: 10px;
+    }
+
+    .ar-form label {
+      display: grid;
+      gap: 6px;
+      font-weight: 600;
+      font-size: 13px;
+      color: #1d2939;
+    }
+
+    .ar-form select,
+    .ar-form textarea {
+      border-radius: 12px;
+      border: 1px solid #cbd5e1;
+      padding: 11px 12px;
+      font-size: 14px;
+      color: #0f172a;
+      background: #fff;
+      transition: border-color 120ms ease, box-shadow 120ms ease;
+    }
+
+    .ar-form select:focus,
+    .ar-form textarea:focus {
+      outline: none;
+      border-color: #0ea5a4;
+      box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.18);
+    }
+
+    .ar-form textarea {
+      min-height: 160px;
+      resize: vertical;
+    }
+
+    .ar-submit {
+      margin-top: 4px;
+      border: 0;
+      border-radius: 12px;
+      min-height: 44px;
+      padding: 11px 16px;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      color: #fff;
+      cursor: pointer;
+      background: linear-gradient(90deg, #0f766e 0%, #0e7490 100%);
+      box-shadow: 0 8px 16px rgba(14, 116, 144, 0.25);
+    }
+
+    .ar-submit:hover {
+      filter: brightness(1.04);
+    }
+
+    .ar-submit:active {
+      transform: translateY(1px);
+    }
+
+    .ar-submit:disabled {
+      cursor: not-allowed;
+      filter: grayscale(0.2);
+      opacity: 0.65;
+      box-shadow: none;
+    }
+
+    .ar-pending-requests {
+      margin-bottom: 28px;
+      padding: 18px 20px;
+      border-radius: 12px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+    }
+
+    .ar-pending-requests h3 {
+      margin: 0 0 16px 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: #1e293b;
+    }
+
+    .ar-pending-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .ar-pending-item {
+      padding: 12px 14px;
+      border-radius: 8px;
+      background: #fff;
+      border: 1px solid #cbd5e1;
+      font-size: 13px;
+    }
+
+    .ar-pending-role,
+    .ar-pending-status,
+    .ar-pending-date,
+    .ar-pending-notes {
+      margin-bottom: 6px;
+      color: #475569;
+    }
+
+    .ar-pending-item:last-child .ar-pending-role,
+    .ar-pending-item:last-child .ar-pending-status,
+    .ar-pending-item:last-child .ar-pending-date,
+    .ar-pending-item:last-child .ar-pending-notes {
+      margin-bottom: 0;
+    }
+
+    .ar-pending-status strong {
+      color: #0f172a;
+    }
+
+    .status-badge {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+
+    .status-pending {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .status-submitted {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    .status-in-review {
+      background: #e0f2fe;
+      color: #0c4a6e;
+    }
+
+    .status-approved {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .status-rejected {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .status-in_progress {
+      background: #e0f2fe;
+      color: #0c4a6e;
+    }
+
+    .ar-pending-notes {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid #e2e8f0;
+      font-style: italic;
+      color: #64748b;
+    }
+
+    .ar-submitted-card {
+      margin-bottom: 18px;
+      border: 1px solid #86efac;
+      background: #f0fdf4;
+      color: #166534;
+      border-radius: 12px;
+      padding: 14px 16px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .ar-submitted-id {
+      margin-top: 6px;
+      font-size: 13px;
+      color: #14532d;
+    }
+
+    .ar-bootstrap-card {
+      margin-bottom: 18px;
+      border: 1px solid #f59e0b;
+      background: #fffbeb;
+      color: #92400e;
+      border-radius: 12px;
+      padding: 14px 16px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .ar-bootstrap-card h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      color: #78350f;
+    }
+
+    .ar-bootstrap-form {
+      margin-top: 10px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .ar-bootstrap-form input[type="password"] {
+      border-radius: 12px;
+      border: 1px solid #f3d19b;
+      padding: 11px 12px;
+      font-size: 14px;
+      color: #0f172a;
+      background: #fff;
+    }
+
+    .ar-bootstrap-form input[type="password"]:focus {
+      outline: none;
+      border-color: #d97706;
+      box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.2);
+    }
+
+    .ar-bootstrap-button {
+      width: fit-content;
+      border: 0;
+      border-radius: 10px;
+      min-height: 40px;
+      padding: 9px 14px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      color: #fff;
+      cursor: pointer;
+      background: linear-gradient(90deg, #b45309 0%, #b91c1c 100%);
+      box-shadow: 0 8px 16px rgba(180, 83, 9, 0.22);
+    }
+
+    .ar-bootstrap-button:hover {
+      filter: brightness(1.03);
+    }
+
+    .ar-bootstrap-help {
+      margin-top: 6px;
+      font-size: 12px;
+      color: #92400e;
+    }
+
+    @media (max-width: 980px) {
+      .ar-shell {
+        grid-template-columns: 1fr;
+      }
+
+      .ar-hero,
+      .ar-form-card {
+        padding: 26px 22px;
+      }
+
+      .ar-hero h1 {
+        font-size: 34px;
+      }
+    }
+  </style>
+</head>
+<body class="ar-body">
+  <main class="ar-wrap">
+    <section class="ar-shell">
+      <aside class="ar-hero">
+        <span class="ar-brand">
+          <span class="ar-brand-icon" aria-hidden="true">
+            <svg viewBox="0 0 16 16">
+              <path d="M5.7 7.1 7.9 9.3a1.1 1.1 0 0 0 1.6 0l1.1-1.1"></path>
+              <path d="M10.6 5.3 9.4 4.1a1.4 1.4 0 0 0-2 0l-1.2 1.2"></path>
+              <path d="M2.4 6.4 4.9 4a1.2 1.2 0 0 1 1.7 0l1.1 1.1"></path>
+              <path d="m13.6 6.4-2.5-2.4a1.2 1.2 0 0 0-1.7 0L8.3 5.1"></path>
+              <path d="M2.2 7.1h2.6"></path>
+              <path d="M11.2 7.1h2.6"></path>
+            </svg>
+          </span>
+          <span>Vendor Catalog</span>
+        </span>
+        <h1>Access Request</h1>
+        <p class="ar-subtitle">
+          You do not currently have an application role. Submit a request and an approver will review it.
+        </p>
+        <ul class="ar-points">
+          <li>Choose the role that matches your job function.</li>
+          <li>Provide business context for your team, use case, and scope.</li>
+          <li>Requests are routed to approvers and tracked to completion.</li>
+        </ul>
+      </aside>
+
+      <section class="ar-form-card">
+        <h2 class="ar-form-title">Request Form</h2>
+        <p class="ar-form-note">Select one role and provide business context for approver review.</p>
+        <div class="ar-identity {{ '' if identity_is_valid else 'ar-identity-invalid' }}">
+          <div class="ar-identity-label">Detected Identity</div>
+          <div class="ar-identity-primary">
+            <span>{{ user_display_name }}</span>
+            <span>({{ user_principal }})</span>
+          </div>
+          {% if identity_email or identity_network_id %}
+          <div class="ar-identity-secondary">
+            {% if identity_email %}<div>Email: {{ identity_email }}</div>{% endif %}
+            {% if identity_network_id %}<div>Network ID: {{ identity_network_id }}</div>{% endif %}
+          </div>
+          {% endif %}
+          <div class="ar-identity-note">{{ identity_note }}</div>
+        </div>
+        {% if flashes %}
+          {% for flash in flashes %}
+          <div class="flash {{ flash.level }}">{{ flash.message }}</div>
+          {% endfor %}
+        {% endif %}
+
+        {% if initial_admin_bootstrap_required %}
+        <section class="ar-bootstrap-card">
+          <h3>Initial Admin Setup Required</h3>
+          <div>
+            No approvers are configured yet. Activate an initial admin first.
+          </div>
+          {% if initial_admin_bootstrap_password_configured %}
+          <form method="post" action="/access/bootstrap-admin" class="ar-bootstrap-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label for="bootstrap_password">Bootstrap Password
+              <input
+                id="bootstrap_password"
+                name="bootstrap_password"
+                type="password"
+                autocomplete="current-password"
+                required
+              >
+            </label>
+            <button type="submit" class="ar-bootstrap-button">Activate Initial Admin Access</button>
+          </form>
+          <div class="ar-bootstrap-help">
+            This option is available only while zero approvers exist.
+          </div>
+          {% elif initial_admin_bootstrap_check_ok %}
+          <div class="ar-bootstrap-help">
+            Bootstrap password is not configured. Set <code>TVENDOR_INITIAL_ADMIN_BOOTSTRAP_PASSWORD</code> in <code>app.yaml</code>.
+          </div>
+          {% endif %}
+        </section>
+        {% endif %}
+
+        {% if just_submitted_request_id %}
+        <div class="ar-submitted-card">
+          Thank you for submitting your access request. Your request has been received and routed for review.
+          <div class="ar-submitted-id">Request ID: {{ just_submitted_request_id }}</div>
+        </div>
+        {% endif %}
+
+        {% if open_request_exists and not just_submitted_request_id %}
+        <div class="flash info">
+          You already have an open access request. New submissions are disabled until that request is approved or rejected.
+        </div>
+        {% endif %}
+
+        {% if access_requests and not just_submitted_request_id %}
+        <div class="ar-pending-requests">
+          <h3>Your Access Requests</h3>
+          <div class="ar-pending-list">
+            {% for req in access_requests %}
+            <div class="ar-pending-item">
+              <div class="ar-pending-role">
+                <strong>Request ID:</strong> {{ req.change_request_id }}
+              </div>
+              <div class="ar-pending-role">
+                <strong>Role:</strong> {{ req.requested_payload_json | extract_role }}
+              </div>
+              <div class="ar-pending-status">
+                <strong>Status:</strong> 
+                <span class="status-badge status-{{ req.status_code | lower | replace('_', '-') }}">
+                  {{ req.status_label or (req.status_code | replace('_', ' ') | title) }}
+                </span>
+              </div>
+              <div class="ar-pending-date">
+                <strong>Submitted:</strong> {{ req.submitted_at | format_date }}
+              </div>
+              <div class="ar-pending-date">
+                <strong>Last Updated:</strong> {{ req.last_updated_at | format_date }}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        
+        {% set request_submission_blocked = open_request_exists or (not identity_is_valid) or initial_admin_bootstrap_required %}
+        <form method="post" action="/access/request" class="ar-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label for="requested_role">Requested Role
+            <select id="requested_role" name="requested_role" required {% if request_submission_blocked %}disabled{% endif %}>
+              {% for role in requested_role_options %}
+              <option value="{{ role }}" {% if role == selected_role %}selected{% endif %}>{{ role }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label for="justification">Justification
+            <textarea id="justification" name="justification" rows="6" required {% if request_submission_blocked %}disabled{% endif %} placeholder="Explain business need and scope."></textarea>
+          </label>
+          <button
+            type="submit"
+            class="ar-submit"
+            {% if initial_admin_bootstrap_required %}disabled title="No approvers are configured yet. Activate an initial admin first."{% elif open_request_exists %}disabled title="An access request is already open for your account."{% elif not identity_is_valid %}disabled title="Valid user identity required before submitting."{% endif %}
+          >Submit Access Request</button>
+        </form>
+      </section>
+    </section>
+  </main>
+
+  <div
+    id="loading-overlay"
+    class="loading-overlay"
+    data-min-delay-ms="{{ loading_overlay_min_delay_ms }}"
+    data-max-delay-ms="{{ loading_overlay_max_delay_ms }}"
+    data-show-delay-ms="{{ loading_overlay_show_delay_ms }}"
+    data-slow-status-ms="{{ loading_overlay_slow_status_ms }}"
+    data-safety-ms="{{ loading_overlay_safety_ms }}"
+    aria-live="polite"
+    aria-busy="true"
+  >
+    <div class="loading-overlay-card" role="status">
+      <div class="loading-brand-row">
+        <span class="loading-brand-icon" aria-hidden="true"></span>
+        <span>Vendor Catalog</span>
+      </div>
+      <div class="loading-title">Loading Workspace</div>
+      <div class="loading-brand-row">
+        <span class="loading-spinner" aria-hidden="true"></span>
+        <span>Working...</span>
+      </div>
+      <div id="loading-overlay-status" class="loading-status">Preparing data and services...</div>
+      <div class="loading-progress" aria-hidden="true"><span></span></div>
+    </div>
+  </div>
+  <noscript><style>#loading-overlay { display: none !important; }</style></noscript>
+
+  <script src="/static/js/app.js?v={{ static_asset_version }}"></script>
+</body>
+</html>

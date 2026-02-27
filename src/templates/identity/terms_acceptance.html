@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card">
+  <h1>Terms Acceptance</h1>
+  <p class="muted">Current user: {{ user_principal }}</p>
+  <form method="post">
+    {% csrf_token %}
+    <label for="terms_version">Terms version</label>
+    <input id="terms_version" name="terms_version" value="{{ default_terms_version }}" />
+    <button type="submit">Accept Terms</button>
+  </form>
+  {% if message %}
+    <p class="muted">{{ message }}</p>
+  {% endif %}
+</section>
+{% endblock %}

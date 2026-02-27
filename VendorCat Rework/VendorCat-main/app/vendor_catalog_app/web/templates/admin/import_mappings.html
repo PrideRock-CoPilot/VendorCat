@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+
+{% block head %}
+  <link rel="stylesheet" href="/static/css/admin_portal.css">
+{% endblock %}
+
+{% block content %}
+<div class="section-header">
+  <div>
+    <h1>Import Mappings</h1>
+    <p>Review pending mapping submissions and publish approved shared profiles.</p>
+  </div>
+</div>
+
+{% include "admin/_nav.html" %}
+
+<section class="card">
+  <h2>Queue</h2>
+  <form method="get" action="/admin/import-mappings" class="inline-form" style="margin: 8px 0 10px;">
+    <label>Status
+      <select name="status">
+        <option value="pending" {% if queue_status == 'pending' %}selected{% endif %}>pending</option>
+        <option value="approved" {% if queue_status == 'approved' %}selected{% endif %}>approved</option>
+        <option value="rejected" {% if queue_status == 'rejected' %}selected{% endif %}>rejected</option>
+        <option value="all" {% if queue_status == 'all' %}selected{% endif %}>all</option>
+      </select>
+    </label>
+    <button type="submit">Filter</button>
+  </form>
+  <table>
+    <thead>
+      <tr>
+        <th>Requested At</th>
+        <th>Name</th>
+        <th>Layout</th>
+        <th>Source System</th>
+        <th>Submitted By</th>
+        <th>Status</th>
+        <th>Open</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in request_rows %}
+      <tr>
+        <td>{{ row.created_at }}</td>
+        <td>{{ row.proposed_profile_name or row.profile_request_id }}</td>
+        <td>{{ row.layout_key }}</td>
+        <td>{{ row.source_system or "-" }}</td>
+        <td>{{ row.submitted_by }}</td>
+        <td>{{ row.status }}</td>
+        <td>
+          <a href="/admin/import-mappings?status={{ queue_status }}&request_id={{ row.profile_request_id }}">details</a>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7">No mapping requests found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card" style="margin-top:12px;">
+  <h2>Request Details</h2>
+  {% if selected_request %}
+  <div class="grid" style="grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px;">
+    <div><div class="muted">Request</div><strong>{{ selected_request.profile_request_id }}</strong></div>
+    <div><div class="muted">Layout</div><strong>{{ selected_request.layout_key }}</strong></div>
+    <div><div class="muted">Status</div><strong>{{ selected_request.status }}</strong></div>
+    <div><div class="muted">Approved Profile</div><strong>{{ selected_request.approved_profile_id or "-" }}</strong></div>
+  </div>
+  <p class="muted" style="margin-top:8px;">
+    Source system: {{ selected_request.source_system or "-" }} |
+    Source object: {{ selected_request.source_object or "-" }} |
+    Submitted by: {{ selected_request.submitted_by }}
+  </p>
+
+  <h3 style="margin-top:12px;">Source -> Target Mapping</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Source Field</th>
+        <th>Target Field</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for source_key, target_key in selected_request.source_target_mapping.items() %}
+      <tr>
+        <td><code>{{ source_key }}</code></td>
+        <td><code>{{ target_key }}</code></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="2">No mapped fields.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h3 style="margin-top:12px;">Sample Evidence (First 5 Rows)</h3>
+  {% if selected_request.sample_rows %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          {% for key in selected_request.sample_rows[0].keys() %}
+          <th>{{ key }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in selected_request.sample_rows %}
+        <tr>
+          {% for _key, value in row.items() %}
+          <td>{{ value }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No sample rows were captured for this request.</p>
+  {% endif %}
+
+  {% if selected_request.status == 'pending' %}
+  <form method="post" action="/admin/import-mappings/review" class="inline-form" style="margin-top: 12px;">
+    <input type="hidden" name="profile_request_id" value="{{ selected_request.profile_request_id }}">
+    <input type="hidden" name="status" value="{{ queue_status }}">
+    <input type="hidden" name="decision" value="approved">
+    <input type="text" name="review_note" placeholder="Optional approval note">
+    <button type="submit">Approve</button>
+  </form>
+  <form method="post" action="/admin/import-mappings/review" class="inline-form" style="margin-top: 8px;">
+    <input type="hidden" name="profile_request_id" value="{{ selected_request.profile_request_id }}">
+    <input type="hidden" name="status" value="{{ queue_status }}">
+    <input type="hidden" name="decision" value="rejected">
+    <input type="text" name="review_note" placeholder="Rejection note (required)" required>
+    <button type="submit">Reject</button>
+  </form>
+  {% else %}
+  <p class="muted" style="margin-top:10px;">
+    Reviewed by {{ selected_request.reviewed_by or "-" }} at {{ selected_request.reviewed_at or "-" }}.
+    Note: {{ selected_request.review_note or "-" }}
+  </p>
+  {% endif %}
+  {% else %}
+  <p class="muted">Select a request from the queue to review details.</p>
+  {% endif %}
+</section>
+
+<section class="card" style="margin-top:12px;">
+  <h2>Approved Shared Profiles</h2>
+  <p class="muted">Profiles available to all import users after approval.</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Profile</th>
+        <th>Layout</th>
+        <th>File Format</th>
+        <th>Updated</th>
+        <th>Updated By</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for profile in approved_profiles %}
+      <tr>
+        <td>{{ profile.profile_name }}</td>
+        <td>{{ profile.layout_key }}</td>
+        <td>{{ profile.file_format or "-" }}</td>
+        <td>{{ profile.updated_at or profile.created_at }}</td>
+        <td>{{ profile.updated_by or profile.created_by }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5">No approved mapping profiles yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

@@ -1,0 +1,10 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+  "python.analysis.extraPaths": [
+    "app"
+  ],
+  "pylint.args": [
+    "--errors-only",
+    "--rcfile=${workspaceFolder}/.pylintrc"
+  ]
+}

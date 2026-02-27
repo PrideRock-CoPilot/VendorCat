@@ -359,6 +359,34 @@ def test_vendor_merge_center_executes_merge_and_hides_merged_source_by_default(c
     assert source_vendor_id in set(merged_rows.get("vendor_id", []).astype(str).tolist())
 
 
+def test_vendor_merge_center_tour_dismiss_persists_setting(client: TestClient) -> None:
+    dismiss = client.post("/vendors/merge-center/tour/dismiss", json={"dismissed": True})
+    assert dismiss.status_code == 200
+    payload = dismiss.json()
+    assert payload.get("ok") is True
+
+    repo = get_repo()
+    principal = repo.get_current_user()
+    setting = repo.get_user_setting(principal, "vendors.merge_center_tour.v2")
+    assert bool(setting.get("dismissed")) is True
+    assert str(setting.get("version") or "").strip() == "v2"
+
+
+def test_vendor_merge_center_tour_v1_dismissal_still_shows_v2(client: TestClient) -> None:
+    repo = get_repo()
+    principal = repo.get_current_user()
+    repo.save_user_setting(
+        principal,
+        "vendors.merge_center_tour.v1",
+        {"dismissed": True, "version": "v1"},
+    )
+
+    response = client.get("/vendors/merge-center")
+    assert response.status_code == 200
+    assert 'data-show-tour="true"' in response.text
+    assert "data-tour-demo-board" in response.text
+
+
 def test_vendor_detail_redirects_to_canonical_vendor_after_merge(client: TestClient) -> None:
     create_survivor = client.post(
         "/vendors/new",
@@ -443,11 +471,21 @@ def test_vendor_list_uses_q_and_persists_list_preferences(client: TestClient) ->
 
 
 def test_typeahead_vendor_offering_and_project_api(client: TestClient) -> None:
+    vendor_default_response = client.get("/api/vendors/search?limit=5")
+    assert vendor_default_response.status_code == 200
+    vendor_default_payload = vendor_default_response.json()
+    assert len(vendor_default_payload.get("items", [])) > 0
+
     vendor_response = client.get("/api/vendors/search?q=micro&limit=5")
     assert vendor_response.status_code == 200
     vendor_payload = vendor_response.json()
     vendor_ids = {row.get("vendor_id") for row in vendor_payload.get("items", [])}
     assert "vnd-001" in vendor_ids
+
+    offering_default_response = client.get("/api/offerings/search?vendor_id=vnd-001&limit=10")
+    assert offering_default_response.status_code == 200
+    offering_default_payload = offering_default_response.json()
+    assert any(str(row.get("vendor_id")) == "vnd-001" for row in offering_default_payload.get("items", []))
 
     offering_response = client.get("/api/offerings/search?vendor_id=vnd-001&q=azure&limit=10")
     assert offering_response.status_code == 200

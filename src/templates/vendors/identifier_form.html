@@ -1,0 +1,281 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}
+    {% if form.instance.pk %}
+        Edit Identifier - {{ vendor.vendor_id }}
+    {% else %}
+        Add New Identifier - {{ vendor.vendor_id }}
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            {% if form.instance.pk %}
+            <h1>Edit Identifier</h1>
+            {% else %}
+            <h1>Add New Identifier</h1>
+            {% endif %}
+            <p class="text-muted">For vendor: <strong>{{ vendor.vendor_id }}</strong> - {{ vendor.display_name }}</p>
+        </div>
+    </div>
+
+    <!-- Form -->
+    <div class="row">
+        <div class="col-lg-8">
+            <form method="post" class="needs-validation" novalidate>
+                {% csrf_token %}
+
+                <!-- Form Errors -->
+                {% if form.non_field_errors %}
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    {% for error in form.non_field_errors %}
+                    <div>{{ error }}</div>
+                    {% endfor %}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                {% endif %}
+
+                <!-- Identifier Type Field -->
+                <div class="mb-3">
+                    <label for="{{ form.identifier_type.id_for_label }}" class="form-label">
+                        Identifier Type <span class="text-danger">*</span>
+                    </label>
+                    {{ form.identifier_type }}
+                    {% if form.identifier_type.errors %}
+                    <div class="invalid-feedback d-block">
+                        {% for error in form.identifier_type.errors %}{{ error }}{% endfor %}
+                    </div>
+                    {% endif %}
+                    <small class="form-text text-muted">Select the type of business identifier</small>
+                </div>
+
+                <!-- Identifier Value Field -->
+                <div class="mb-3">
+                    <label for="{{ form.identifier_value.id_for_label }}" class="form-label">
+                        Identifier Value <span class="text-danger">*</span>
+                    </label>
+                    {{ form.identifier_value }}
+                    {% if form.identifier_value.errors %}
+                    <div class="invalid-feedback d-block">
+                        {% for error in form.identifier_value.errors %}{{ error }}{% endfor %}
+                    </div>
+                    {% endif %}
+                    <small class="form-text text-muted">Enter the actual identifier value (must be unique per type per vendor)</small>
+                </div>
+
+                <!-- Country Code Field -->
+                <div class="mb-3">
+                    <label for="{{ form.country_code.id_for_label }}" class="form-label">Country Code</label>
+                    {{ form.country_code }}
+                    {% if form.country_code.errors %}
+                    <div class="invalid-feedback d-block">
+                        {% for error in form.country_code.errors %}{{ error }}{% endfor %}
+                    </div>
+                    {% endif %}
+                    <small class="form-text text-muted">2-character ISO code (e.g., US, DE, JP)</small>
+                </div>
+
+                <!-- Verification Section -->
+                <div class="card mb-4 border-info">
+                    <div class="card-header bg-info text-white">
+                        <h6 class="card-title mb-0"><i class="bi bi-shield-check"></i> Verification Information</h6>
+                    </div>
+                    <div class="card-body">
+                        <!-- Verified Checkbox -->
+                        <div class="mb-3 form-check">
+                            {{ form.is_verified }}
+                            <label class="form-check-label" for="{{ form.is_verified.id_for_label }}">
+                                Mark as Verified
+                            </label>
+                            <small class="d-block text-muted mt-1">Check if this identifier has been verified</small>
+                        </div>
+
+                        <!-- Verified By Field -->
+                        <div class="mb-3">
+                            <label for="{{ form.verified_by.id_for_label }}" class="form-label">Verified By</label>
+                            {{ form.verified_by }}
+                            {% if form.verified_by.errors %}
+                            <div class="invalid-feedback d-block">
+                                {% for error in form.verified_by.errors %}{{ error }}{% endfor %}
+                            </div>
+                            {% endif %}
+                            <small class="form-text text-muted">Email or name of person who verified (if applicable)</small>
+                        </div>
+
+                        <!-- Verified At Field -->
+                        <div class="mb-3">
+                            <label for="{{ form.verified_at.id_for_label }}" class="form-label">Verification Date</label>
+                            {{ form.verified_at }}
+                            {% if form.verified_at.errors %}
+                            <div class="invalid-feedback d-block">
+                                {% for error in form.verified_at.errors %}{{ error }}{% endfor %}
+                            </div>
+                            {% endif %}
+                            <small class="form-text text-muted">Date when identifier was verified (ISO 8601 format)</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Primary Identifier Checkbox -->
+                <div class="mb-3 form-check">
+                    {{ form.is_primary }}
+                    <label class="form-check-label" for="{{ form.is_primary.id_for_label }}">
+                        Set as Primary Identifier
+                    </label>
+                    <small class="d-block text-muted mt-1">Mark this as the main identifier for this vendor</small>
+                </div>
+
+                <!-- Notes Field -->
+                <div class="mb-3">
+                    <label for="{{ form.notes.id_for_label }}" class="form-label">Notes</label>
+                    {{ form.notes }}
+                    {% if form.notes.errors %}
+                    <div class="invalid-feedback d-block">
+                        {% for error in form.notes.errors %}{{ error }}{% endfor %}
+                    </div>
+                    {% endif %}
+                    <small class="form-text text-muted">Add context (e.g., source, verification method, usage notes)</small>
+                </div>
+
+                <!-- Form Actions -->
+                <div class="mb-3 pt-2">
+                    <button type="submit" class="btn btn-primary btn-lg">
+                        {% if form.instance.pk %}
+                        <i class="bi bi-check-circle"></i> Save Changes
+                        {% else %}
+                        <i class="bi bi-plus-circle"></i> Create Identifier
+                        {% endif %}
+                    </button>
+                    <a href="{% url 'vendor_identifier_list' vendor.vendor_id %}" class="btn btn-secondary btn-lg">
+                        <i class="bi bi-x-circle"></i> Cancel
+                    </a>
+                </div>
+            </form>
+        </div>
+
+        <!-- Help Panel -->
+        <div class="col-lg-4">
+            <div class="card bg-light">
+                <div class="card-header">
+                    <h6 class="card-title mb-0"><i class="bi bi-info-circle"></i> Identifier Types</h6>
+                </div>
+                <div class="card-body small">
+                    <dl class="row row-cols-1 g-0 fs-11">
+                        <dt class="fw-bold">DUNS</dt>
+                        <dd class="ps-3">Dun & Bradstreet Number</dd>
+
+                        <dt class="fw-bold">TAX_ID</dt>
+                        <dd class="ps-3">US Tax ID / EIN</dd>
+
+                        <dt class="fw-bold">VAT_ID</dt>
+                        <dd class="ps-3">VAT ID (Europe)</dd>
+
+                        <dt class="fw-bold">GLN</dt>
+                        <dd class="ps-3">Global Location Number</dd>
+
+                        <dt class="fw-bold">ERP_ID</dt>
+                        <dd class="ps-3">ERP Vendor Code</dd>
+
+                        <dt class="fw-bold">SAP_ID</dt>
+                        <dd class="ps-3">SAP Vendor Code</dd>
+
+                        <dt class="fw-bold">INTERNAL_ID</dt>
+                        <dd class="ps-3">Internal/Proprietary ID</dd>
+
+                        <dt class="fw-bold">D_U_N_S_PLUS_4</dt>
+                        <dd class="ps-3">DUNS+4 Format</dd>
+
+                        <dt class="fw-bold">CAGE_CODE</dt>
+                        <dd class="ps-3">CAGE Code (US Gov)</dd>
+
+                        <dt class="fw-bold">OTHER</dt>
+                        <dd class="ps-3">Other (describe in notes)</dd>
+                    </dl>
+                </div>
+            </div>
+
+            <div class="card mt-3 border-success">
+                <div class="card-body">
+                    <h6 class="card-title"><i class="bi bi-shield-check"></i> Verification</h6>
+                    <ul class="small mb-0">
+                        <li>Track verification status and who verified it</li>
+                        <li>Helps ensure data accuracy and compliance</li>
+                        <li>Use verification date to monitor age</li>
+                        <li>Reference verification method in notes</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="card mt-3 border-warning">
+                <div class="card-body">
+                    <h6 class="card-title"><i class="bi bi-lightbulb"></i> Tips</h6>
+                    <ul class="small mb-0">
+                        <li>Duplicate identifiers are not allowed</li>
+                        <li>Only one can be marked as primary</li>
+                        <li>Country code helps identify regional IDs</li>
+                        <li>Keep verification records up to date</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.form-label {
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+}
+
+.form-control, .form-select {
+    border-radius: 0.375rem;
+    border: 1px solid #dee2e6;
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: #80bdff;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+.invalid-feedback {
+    color: #dc3545;
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+}
+
+dt {
+    font-weight: 600;
+    color: #333;
+}
+
+dd {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.fs-11 {
+    font-size: 0.875rem !important;
+}
+</style>
+
+<script>
+// Bootstrap form validation
+(function() {
+    'use strict';
+    const forms = document.querySelectorAll('.needs-validation');
+    Array.from(forms).forEach(form => {
+        form.addEventListener('submit', function(event) {
+            if (!form.checkValidity()) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            form.classList.add('was-validated');
+        }, false);
+    });
+})();
+</script>
+{% endblock %}

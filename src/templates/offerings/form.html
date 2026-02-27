@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block title %}{% if offering %}Edit Offering{% else %}New Offering{% endif %} - VendorCatalog{% endblock %}
+
+{% block content %}
+  <h1>{% if offering %}Edit Offering{% else %}Create New Offering{% endif %}</h1>
+  <p class="text-muted">{% if offering %}Update offering information{% else %}Set up a new vendor offering{% endif %}</p>
+
+  <div class="card" style="max-width: 720px;">
+    {% if messages %}
+      {% for message in messages %}
+        <div class="alert alert-{% if message.tags %}{{ message.tags }}{% else %}info{% endif %}">
+          {{ message }}
+        </div>
+      {% endfor %}
+    {% endif %}
+
+    {% if form_errors %}
+      <div class="alert alert-danger">
+        <strong>Please fix the following errors:</strong>
+        <ul>
+          {% for field, errors in form_errors.items %}
+            {% for error in errors %}
+              <li>{{ field }}: {{ error }}</li>
+            {% endfor %}
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    <form method="post">
+      {% csrf_token %}
+
+      <div class="form-group">
+        <label for="offering_id">Offering ID</label>
+        <input
+          type="text"
+          id="offering_id"
+          name="offering_id"
+          value="{{ offering.offering_id|default:'' }}"
+          {% if offering %}disabled{% endif %}
+          placeholder="e.g., offering-001"
+          required>
+        <small class="text-muted">{% if offering %}Cannot be changed{% else %}Unique identifier for this offering{% endif %}</small>
+      </div>
+
+      <div class="form-group">
+        <label for="vendor_id">Vendor</label>
+        <select id="vendor_id" name="vendor_id" required>
+          <option value="">-- Select Vendor --</option>
+          {% for vendor in vendors %}
+            <option value="{{ vendor.vendor_id }}" {% if offering and offering.vendor.vendor_id == vendor.vendor_id %}selected{% elif not offering and prefill_vendor_id == vendor.vendor_id %}selected{% endif %}>
+              {{ vendor.display_name }} ({{ vendor.vendor_id }})
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="offering_name">Offering Name</label>
+        <input
+          type="text"
+          id="offering_name"
+          name="offering_name"
+          value="{{ offering.offering_name|default:'' }}"
+          placeholder="Offering display name"
+          required>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="lifecycle_state">Lifecycle State</label>
+          <select id="lifecycle_state" name="lifecycle_state" required>
+            {% for value in lifecycle_states %}
+              <option value="{{ value }}" {% if offering and offering.lifecycle_state == value %}selected{% elif not offering and value == 'draft' %}selected{% endif %}>{{ value|upper }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="criticality_tier">Criticality</label>
+          <select id="criticality_tier" name="criticality_tier">
+            <option value="">-- Select Criticality --</option>
+            {% for value in criticality_tiers %}
+              <option value="{{ value }}" {% if offering and offering.criticality_tier == value %}selected{% endif %}>{{ value|upper }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="offering_type">Offering Type</label>
+          <select id="offering_type" name="offering_type">
+            <option value="">-- Select Type --</option>
+            {% for value in offering_types %}
+              <option value="{{ value }}" {% if offering and offering.offering_type == value %}selected{% endif %}>{{ value }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="lob">Line of Business</label>
+          <select id="lob" name="lob">
+            <option value="">-- Select LOB --</option>
+            {% for value in lob_options %}
+              <option value="{{ value }}" {% if offering and offering.lob == value %}selected{% endif %}>{{ value }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="service_type">Service Type</label>
+        <select id="service_type" name="service_type">
+          <option value="">-- Select Service Type --</option>
+          {% for value in service_type_options %}
+            <option value="{{ value }}" {% if offering and offering.service_type == value %}selected{% endif %}>{{ value }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div style="display: flex; gap: 12px; margin-top: 30px;">
+        <button type="submit" class="btn btn-primary">
+          {% if offering %}✓ Update Offering{% else %}+ Create Offering{% endif %}
+        </button>
+        <a href="{% if offering %}/offerings/{{ offering.offering_id }}{% else %}/offerings{% endif %}" class="btn btn-secondary">
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+{% endblock %}

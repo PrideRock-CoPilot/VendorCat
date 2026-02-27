@@ -1,9 +1,0 @@
-<section class="card section-nav-card admin-nav-card">
-  <div class="section-nav-links">
-    <a class="{{ 'active' if admin_active_page == 'access' else '' }}" href="/admin/access">Access Control</a>
-    <a class="{{ 'active' if admin_active_page == 'ownership' else '' }}" href="/admin/ownership">Ownership Reassignment</a>
-    <a class="{{ 'active' if admin_active_page == 'defaults' else '' }}" href="/admin/defaults?lookup_type={{ selected_lookup_type|default('doc_source') }}&status={{ selected_lookup_status|default('active') }}&as_of={{ selected_as_of|default('') }}">Defaults Catalog</a>
-    <a class="{{ 'active' if admin_active_page == 'help-inbox' else '' }}" href="/admin/help-inbox">Help Inbox</a>
-    <a class="{{ 'active' if admin_active_page == 'terms' else '' }}" href="/admin/terms">User Agreement</a>
-  </div>
-</section>

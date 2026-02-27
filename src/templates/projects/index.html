@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}Projects - VendorCatalog{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Projects</h1>
+      <p class="text-muted">Manage projects and initiatives</p>
+    </div>
+    {% if can_create_project %}
+      <a href="/projects/new" class="btn btn-primary">
+        ➕ Add Project
+      </a>
+    {% endif %}
+  </div>
+
+  <!-- Filters & Search -->
+  <div class="card" style="margin-bottom: 16px;">
+    <form method="get" style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 12px; align-items: end;">
+      <div>
+        <label style="margin-bottom: 4px;">Search</label>
+        <input type="text" name="q" placeholder="Project ID or name..." value="{{ search_query|default:'' }}">
+      </div>
+      <div>
+        <label style="margin-bottom: 4px;">Status</label>
+        <select name="status">
+          <option value="">All Status</option>
+          <option value="planned" {% if request.GET.status == 'planned' %}selected{% endif %}>Planned</option>
+          <option value="active" {% if request.GET.status == 'active' %}selected{% endif %}>Active</option>
+          <option value="completed" {% if request.GET.status == 'completed' %}selected{% endif %}>Completed</option>
+        </select>
+      </div>
+      <div></div>
+      <div style="display: flex; gap: 8px;">
+        <button type="submit" class="btn btn-primary">Filter</button>
+        <a href="/projects" class="btn btn-secondary">Reset</a>
+      </div>
+    </form>
+  </div>
+
+  <!-- Results -->
+  <div class="card">
+    {% if items %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Project ID</th>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Owner</th>
+            <th style="text-align: right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in items %}
+            <tr>
+              <td><strong>{{ item.project_id }}</strong></td>
+              <td>{{ item.project_name }}</td>
+              <td>
+                <span class="table-badge badge-{% if item.lifecycle_state == 'active' %}success{% elif item.lifecycle_state == 'completed' %}info{% else %}warning{% endif %}">
+                  {{ item.lifecycle_state }}
+                </span>
+              </td>
+              <td>{{ item.owner_principal }}</td>
+              <td style="text-align: right;">
+                <div class="table-actions">
+                  <a href="/projects/{{ item.project_id }}" class="btn btn-secondary btn-small">View</a>
+                  {% if can_edit_project %}
+                    <a href="/projects/{{ item.project_id }}/edit" class="btn btn-secondary btn-small">Edit</a>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty-state">
+        <div class="empty-icon">📭</div>
+        <h4 class="empty-title">No projects found</h4>
+        <p class="empty-text">{% if search_query %}Try adjusting your search filters{% else %}Start by creating your first project{% endif %}</p>
+        {% if not search_query and can_create_project %}
+          <a href="/projects/new" class="btn btn-primary">New Project</a>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+{% endblock %}

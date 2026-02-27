@@ -1,0 +1,142 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}VendorCatalog{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/framework.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  {% block extra_css %}{% endblock %}
+  <style>
+    body.sidebar-collapsed .sidebar {
+      width: 80px;
+    }
+    body.sidebar-collapsed .sidebar-title,
+    body.sidebar-collapsed .sidebar-nav-item span:last-child {
+      display: none;
+    }
+    body.sidebar-collapsed main {
+      left: 80px;  /* Updated for absolute positioning */
+    }
+    body.sidebar-collapsed .sidebar-icon {
+      margin-right: 0 !important;
+    }
+    body.sidebar-collapsed .topbar-brand {
+      min-width: 0;
+      overflow: hidden;
+      text-indent: -9999px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Apply sidebar state immediately to prevent flash -->
+  <script>
+    // This runs immediately after body tag, applying saved state before render
+    if (localStorage.getItem('sidebarCollapsed') === 'true') {
+      document.body.classList.add('sidebar-collapsed');
+    }
+  </script>
+  <div class="app-layout">
+    <!-- Header -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="hamburger-menu" onclick="toggleSidebar()" title="Toggle sidebar">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+        <div class="topbar-brand">
+          📊 VendorCatalog
+        </div>
+      </div>
+      <div class="topbar-right">
+      </div>
+    </header>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <!-- Navigation Groups -->
+      <div class="sidebar-group">
+        <div class="sidebar-title">Main</div>
+        <nav class="sidebar-nav">
+          <a href="/" class="sidebar-nav-item {% if 'dashboard' in request.path %}active{% endif %}">
+            <span class="sidebar-icon">📊</span>
+            <span>Dashboard</span>
+          </a>
+          <a href="/vendor-360" class="sidebar-nav-item {% if 'vendor' in request.path %}active{% endif %}">
+            <span class="sidebar-icon">🏢</span>
+            <span>Vendors</span>
+          </a>
+          <a href="/projects" class="sidebar-nav-item {% if 'projects' in request.path %}active{% endif %}">
+            <span class="sidebar-icon">📋</span>
+            <span>Projects</span>
+          </a>
+        </nav>
+      </div>
+
+      <div class="sidebar-group">
+        <div class="sidebar-title">Operations</div>
+        <nav class="sidebar-nav">
+          <a href="/contracts" class="sidebar-nav-item {% if 'contracts' in request.path %}active{% endif %}">
+            <span class="sidebar-icon">📑</span>
+            <span>Contracts</span>
+          </a>
+          <a href="/offerings" class="sidebar-nav-item {% if 'offerings' in request.path %}active{% endif %}">
+            <span class="sidebar-icon">🎯</span>
+            <span>Offerings</span>
+          </a>
+          <a href="/demos" class="sidebar-nav-item {% if 'demos' in request.path %}active{% endif %}">
+            <span class="sidebar-icon">🎬</span>
+            <span>Demos</span>
+          </a>
+        </nav>
+      </div>
+
+      <div class="sidebar-group">
+        <div class="sidebar-title">Intelligence</div>
+        <nav class="sidebar-nav">
+          <a href="/reports" class="sidebar-nav-item {% if 'reports' in request.path %}active{% endif %}">
+            <span class="sidebar-icon">📈</span>
+            <span>Reports</span>
+          </a>
+          <a href="/help" class="sidebar-nav-item {% if 'help' in request.path %}active{% endif %}">
+            <span class="sidebar-icon">❓</span>
+            <span>Help Center</span>
+          </a>
+        </nav>
+      </div>
+      
+      <!-- User Profile at Bottom -->
+      <div class="sidebar-user">
+        <div class="user-profile">
+          <div class="user-avatar">{{ user_display_name|first|upper|default:"U" }}</div>
+          <div class="user-info">
+            <div class="user-name">{{ user_display_name|default:"User" }}</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main>
+      {% if messages %}
+        {% for message in messages %}
+          <div class="alert alert-{{ message.tags|default:'info' }}">
+            <span>{{ message }}</span>
+          </div>
+        {% endfor %}
+      {% endif %}
+
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
+  <script src="/static/js/sidebar.js"></script>
+  <script src="/static/js/page-transitions.js"></script>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

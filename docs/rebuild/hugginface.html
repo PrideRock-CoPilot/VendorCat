@@ -1,0 +1,2978 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VendorHub - Enterprise Vendor Catalog</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        databricks: {
+                            bg: '#1B1F27',
+                            sidebar: '#111827',
+                            card: '#1F2937',
+                            border: '#374151',
+                            accent: '#7C3AED',
+                            accentHover: '#6D28D9',
+                            blue: '#3B82F6',
+                            text: '#F3F4F6',
+                            muted: '#9CA3AF',
+                            success: '#10B981',
+                            warning: '#F59E0B',
+                            danger: '#EF4444'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Menlo', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1B1F27;
+            color: #F3F4F6;
+        }
+        
+        .gradient-accent {
+            background: linear-gradient(135deg, #7C3AED 0%, #3B82F6 100%);
+        }
+        
+        .glass-effect {
+            background: rgba(31, 41, 55, 0.8);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(55, 65, 81, 0.5);
+        }
+        
+        .nav-item:hover {
+            background: rgba(124, 58, 237, 0.1);
+            border-left: 3px solid #7C3AED;
+        }
+        
+        .nav-item.active {
+            background: rgba(124, 58, 237, 0.15);
+            border-left: 3px solid #7C3AED;
+            color: #7C3AED;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #111827;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #374151;
+            border-radius: 3px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #4B5563;
+        }
+        
+        .status-badge {
+            @apply px-2 py-1 rounded-full text-xs font-medium;
+        }
+        
+        .tab-active {
+            border-bottom: 2px solid #7C3AED;
+            color: #7C3AED;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+        
+        .slide-over {
+            transform: translateX(100%);
+            transition: transform 0.3s ease-in-out;
+        }
+        
+        .slide-over.open {
+            transform: translateX(0);
+        }
+        
+        .dropdown-menu {
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.2s;
+        }
+        
+        .dropdown-menu.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body class="h-screen overflow-hidden bg-databricks-bg text-databricks-text">
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed left-0 top-0 h-full w-64 bg-databricks-sidebar border-r border-databricks-border z-40 transition-transform duration-300 -translate-x-full md:translate-x-0">
+        <div class="h-16 flex items-center px-6 border-b border-databricks-border">
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-lg gradient-accent flex items-center justify-center">
+                    <i data-lucide="database" class="w-5 h-5 text-white"></i>
+                </div>
+                <span class="text-xl font-bold tracking-tight">VendorHub</span>
+            </div>
+        </div>
+
+        <nav class="mt-6 px-3 space-y-1 custom-scrollbar overflow-y-auto h-[calc(100%-4rem)]">
+            <div class="mb-6">
+                <p class="px-3 text-xs font-semibold text-databricks-muted uppercase tracking-wider mb-2">Overview</p>
+                <a href="#" onclick="switchView('dashboard')" class="nav-item active flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-all" id="nav-dashboard">
+                    <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
+                    Executive Dashboard
+                </a>
+                <a href="#" onclick="switchView('analytics')" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-databricks-muted hover:text-databricks-text transition-all" id="nav-analytics">
+                    <i data-lucide="bar-chart-3" class="w-5 h-5"></i>
+                    Cost Analytics
+                </a>
+            </div>
+
+            <div class="mb-6">
+                <p class="px-3 text-xs font-semibold text-databricks-muted uppercase tracking-wider mb-2">Management</p>
+                <a href="#" onclick="switchView('vendors')" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-databricks-muted hover:text-databricks-text transition-all" id="nav-vendors">
+                    <i data-lucide="building-2" class="w-5 h-5"></i>
+                    Vendor Catalog
+                    <span class="ml-auto bg-databricks-accent/20 text-databricks-accent text-xs px-2 py-0.5 rounded-full" id="vendor-count">24</span>
+                </a>
+                <a href="#" onclick="switchView('projects')" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-databricks-muted hover:text-databricks-text transition-all" id="nav-projects">
+                    <i data-lucide="folder-kanban" class="w-5 h-5"></i>
+                    Projects
+                    <span class="ml-auto bg-databricks-blue/20 text-databricks-blue text-xs px-2 py-0.5 rounded-full">8</span>
+                </a>
+                <a href="#" onclick="switchView('demos')" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-databricks-muted hover:text-databricks-text transition-all" id="nav-demos">
+                    <i data-lucide="presentation" class="w-5 h-5"></i>
+                    Demos & POCs
+                </a>
+            </div>
+
+            <div class="mb-6">
+                <p class="px-3 text-xs font-semibold text-databricks-muted uppercase tracking-wider mb-2">Governance</p>
+                <a href="#" onclick="switchView('governance')" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-databricks-muted hover:text-databricks-text transition-all" id="nav-governance">
+                    <i data-lucide="shield-check" class="w-5 h-5"></i>
+                    Compliance
+                    <span class="ml-auto bg-yellow-500/20 text-yellow-500 text-xs px-2 py-0.5 rounded-full">3</span>
+                </a>
+                <a href="#" onclick="switchView('contracts')" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-databricks-muted hover:text-databricks-text transition-all" id="nav-contracts">
+                    <i data-lucide="file-text" class="w-5 h-5"></i>
+                    Contracts
+                </a>
+            </div>
+
+            <div class="mb-6">
+                <p class="px-3 text-xs font-semibold text-databricks-muted uppercase tracking-wider mb-2">Data</p>
+                <a href="#" onclick="switchView('integrations')" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-databricks-muted hover:text-databricks-text transition-all" id="nav-integrations">
+                    <i data-lucide="plug" class="w-5 h-5"></i>
+                    Integrations
+                </a>
+                <a href="#" onclick="switchView('exports')" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-databricks-muted hover:text-databricks-text transition-all" id="nav-exports">
+                    <i data-lucide="download" class="w-5 h-5"></i>
+                    Exports
+                </a>
+            </div>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="md:ml-64 h-full flex flex-col">
+        <!-- Header -->
+        <header class="h-16 bg-databricks-bg border-b border-databricks-border flex items-center justify-between px-6 sticky top-0 z-30">
+            <div class="flex items-center gap-4">
+                <button onclick="toggleSidebar()" class="md:hidden p-2 hover:bg-databricks-card rounded-lg">
+                    <i data-lucide="menu" class="w-5 h-5"></i>
+                </button>
+                <div class="flex items-center gap-2 text-sm text-databricks-muted">
+                    <span class="hover:text-databricks-text cursor-pointer">Workspace</span>
+                    <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                    <span class="text-databricks-text font-medium" id="breadcrumb">Executive Dashboard</span>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-4">
+                <div class="relative hidden sm:block">
+                    <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-databricks-muted"></i>
+                    <input type="text" placeholder="Search vendors, projects..." 
+                           class="bg-databricks-card border border-databricks-border rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-databricks-accent w-64 transition-all"
+                           id="global-search">
+                </div>
+                
+                <button class="p-2 hover:bg-databricks-card rounded-lg relative">
+                    <i data-lucide="bell" class="w-5 h-5 text-databricks-muted"></i>
+                    <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full"></span>
+                </button>
+
+                <div class="relative">
+                    <button onclick="toggleProfileMenu()" class="flex items-center gap-2 hover:bg-databricks-card rounded-lg p-1.5 transition-all">
+                        <div class="w-8 h-8 rounded-full gradient-accent flex items-center justify-center text-sm font-semibold">
+                            JD
+                        </div>
+                        <span class="hidden sm:block text-sm font-medium">John Doe</span>
+                        <i data-lucide="chevron-down" class="w-4 h-4 text-databricks-muted"></i>
+                    </button>
+                    
+                    <div id="profile-menu" class="dropdown-menu absolute right-0 mt-2 w-48 bg-databricks-card border border-databricks-border rounded-lg shadow-xl z-50">
+                        <div class="py-2">
+                            <a href="#" class="block px-4 py-2 text-sm hover:bg-databricks-bg text-databricks-muted hover:text-databricks-text">Profile</a>
+                            <a href="#" class="block px-4 py-2 text-sm hover:bg-databricks-bg text-databricks-muted hover:text-databricks-text">Settings</a>
+                            <div class="border-t border-databricks-border my-1"></div>
+                            <a href="#" class="block px-4 py-2 text-sm hover:bg-databricks-bg text-red-400 hover:text-red-300">Sign out</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Content Views -->
+        <div class="flex-1 overflow-y-auto custom-scrollbar p-6" id="content-area">
+            
+            <!-- Dashboard View -->
+            <div id="view-dashboard" class="space-y-6">
+                <!-- KPI Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-5 hover:border-databricks-accent/50 transition-all">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <p class="text-databricks-muted text-sm">Total Vendors</p>
+                                <h3 class="text-2xl font-bold mt-1">24</h3>
+                            </div>
+                            <div class="p-2 bg-databricks-accent/10 rounded-lg">
+                                <i data-lucide="building-2" class="w-5 h-5 text-databricks-accent"></i>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 text-sm">
+                            <span class="text-databricks-success flex items-center gap-1">
+                                <i data-lucide="trending-up" class="w-4 h-4"></i>
+                                +12%
+                            </span>
+                            <span class="text-databricks-muted">vs last quarter</span>
+                        </div>
+                    </div>
+
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-5 hover:border-databricks-accent/50 transition-all">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <p class="text-databricks-muted text-sm">Active Projects</p>
+                                <h3 class="text-2xl font-bold mt-1">8</h3>
+                            </div>
+                            <div class="p-2 bg-databricks-blue/10 rounded-lg">
+                                <i data-lucide="folder-kanban" class="w-5 h-5 text-databricks-blue"></i>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 text-sm">
+                            <span class="text-databricks-muted">2 pending approval</span>
+                        </div>
+                    </div>
+
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-5 hover:border-databricks-accent/50 transition-all">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <p class="text-databricks-muted text-sm">Annual Spend</p>
+                                <h3 class="text-2xl font-bold mt-1">$2.4M</h3>
+                            </div>
+                            <div class="p-2 bg-emerald-500/10 rounded-lg">
+                                <i data-lucide="dollar-sign" class="w-5 h-5 text-emerald-500"></i>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 text-sm">
+                            <span class="text-databricks-success flex items-center gap-1">
+                                <i data-lucide="trending-down" class="w-4 h-4"></i>
+                                -5%
+                            </span>
+                            <span class="text-databricks-muted">under budget</span>
+                        </div>
+                    </div>
+
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-5 hover:border-databricks-accent/50 transition-all">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <p class="text-databricks-muted text-sm">Risk Alerts</p>
+                                <h3 class="text-2xl font-bold mt-1 text-databricks-warning">3</h3>
+                            </div>
+                            <div class="p-2 bg-databricks-warning/10 rounded-lg">
+                                <i data-lucide="alert-triangle" class="w-5 h-5 text-databricks-warning"></i>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 text-sm">
+                            <span class="text-databricks-danger">2 contracts expiring</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts Section -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-2 bg-databricks-card border border-databricks-border rounded-xl p-6">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="text-lg font-semibold">Spend Analytics</h3>
+                            <select class="bg-databricks-bg border border-databricks-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-databricks-accent">
+                                <option>Last 12 Months</option>
+                                <option>Last 6 Months</option>
+                                <option>This Year</option>
+                            </select>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="spendChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-6">
+                        <h3 class="text-lg font-semibold mb-6">Vendor Distribution</h3>
+                        <div class="chart-container" style="height: 250px;">
+                            <canvas id="distributionChart"></canvas>
+                        </div>
+                        <div class="mt-4 space-y-2">
+                            <div class="flex justify-between text-sm">
+                                <span class="flex items-center gap-2">
+                                    <span class="w-3 h-3 rounded-full bg-databricks-accent"></span>
+                                    Cloud Services
+                                </span>
+                                <span class="font-medium">35%</span>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span class="flex items-center gap-2">
+                                    <span class="w-3 h-3 rounded-full bg-databricks-blue"></span>
+                                    Data Providers
+                                </span>
+                                <span class="font-medium">28%</span>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span class="flex items-center gap-2">
+                                    <span class="w-3 h-3 rounded-full bg-emerald-500"></span>
+                                    Software
+                                </span>
+                                <span class="font-medium">22%</span>
+                            </div>
+                            <div class="flex justify-between text-sm">
+                                <span class="flex items-center gap-2">
+                                    <span class="w-3 h-3 rounded-full bg-orange-500"></span>
+                                    Consulting
+                                </span>
+                                <span class="font-medium">15%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Activity & Upcoming -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-lg font-semibold">Recent Activity</h3>
+                            <button class="text-sm text-databricks-accent hover:text-databricks-accentHover">View all</button>
+                        </div>
+                        <div class="space-y-4">
+                            <div class="flex gap-3 items-start pb-4 border-b border-databricks-border/50">
+                                <div class="w-8 h-8 rounded-full bg-databricks-accent/20 flex items-center justify-center flex-shrink-0">
+                                    <i data-lucide="plus" class="w-4 h-4 text-databricks-accent"></i>
+                                </div>
+                                <div class="flex-1">
+                                    <p class="text-sm font-medium">New vendor onboarded</p>
+                                    <p class="text-xs text-databricks-muted mt-0.5">DataFlow Inc. added to catalog</p>
+                                    <p class="text-xs text-databricks-muted mt-1">2 hours ago</p>
+                                </div>
+                            </div>
+                            <div class="flex gap-3 items-start pb-4 border-b border-databricks-border/50">
+                                <div class="w-8 h-8 rounded-full bg-databricks-blue/20 flex items-center justify-center flex-shrink-0">
+                                    <i data-lucide="file-signature" class="w-4 h-4 text-databricks-blue"></i>
+                                </div>
+                                <div class="flex-1">
+                                    <p class="text-sm font-medium">Contract renewed</p>
+                                    <p class="text-xs text-databricks-muted mt-0.5">Azure subscription extended for 2 years</p>
+                                    <p class="text-xs text-databricks-muted mt-1">5 hours ago</p>
+                                </div>
+                            </div>
+                            <div class="flex gap-3 items-start pb-4 border-b border-databricks-border/50">
+                                <div class="w-8 h-8 rounded-full bg-yellow-500/20 flex items-center justify-center flex-shrink-0">
+                                    <i data-lucide="alert-circle" class="w-4 h-4 text-yellow-500"></i>
+                                </div>
+                                <div class="flex-1">
+                                    <p class="text-sm font-medium">Compliance review required</p>
+                                    <p class="text-xs text-databricks-muted mt-0.5">Snowflake security audit pending</p>
+                                    <p class="text-xs text-databricks-muted mt-1">1 day ago</p>
+                                </div>
+                            </div>
+                            <div class="flex gap-3 items-start">
+                                <div class="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                                    <i data-lucide="check-circle" class="w-4 h-4 text-emerald-500"></i>
+                                </div>
+                                <div class="flex-1">
+                                    <p class="text-sm font-medium">Demo completed</p>
+                                    <p class="text-xs text-databricks-muted mt-0.5">Databricks Delta Sharing POC successful</p>
+                                    <p class="text-xs text-databricks-muted mt-1">2 days ago</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-lg font-semibold">Upcoming Renewals & Demos</h3>
+                            <button class="text-sm text-databricks-accent hover:text-databricks-accentHover">Calendar</button>
+                        </div>
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between p-3 bg-databricks-bg rounded-lg border border-databricks-border">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-lg bg-red-500/20 flex items-center justify-center">
+                                        <i data-lucide="calendar" class="w-5 h-5 text-red-400"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-medium">AWS Enterprise Contract</p>
+                                        <p class="text-xs text-databricks-muted">Expires in 15 days</p>
+                                    </div>
+                                </div>
+                                <span class="text-xs px-2 py-1 bg-red-500/20 text-red-400 rounded">Urgent</span>
+                            </div>
+                            
+                            <div class="flex items-center justify-between p-3 bg-databricks-bg rounded-lg border border-databricks-border">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-lg bg-databricks-accent/20 flex items-center justify-center">
+                                        <i data-lucide="presentation" class="w-5 h-5 text-databricks-accent"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-medium">Fivetran Demo</p>
+                                        <p class="text-xs text-databricks-muted">Tomorrow, 2:00 PM</p>
+                                    </div>
+                                </div>
+                                <span class="text-xs px-2 py-1 bg-databricks-accent/20 text-databricks-accent rounded">Demo</span>
+                            </div>
+
+                            <div class="flex items-center justify-between p-3 bg-databricks-bg rounded-lg border border-databricks-border">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-lg bg-databricks-blue/20 flex items-center justify-center">
+                                        <i data-lucide="shield" class="w-5 h-5 text-databricks-blue"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-sm font-medium">Security Audit: Palantir</p>
+                                        <p class="text-xs text-databricks-muted">In 3 days</p>
+                                    </div>
+                                </div>
+                                <span class="text-xs px-2 py-1 bg-databricks-blue/20 text-databricks-blue rounded">Audit</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Vendors Catalog View -->
+            <div id="view-vendors" class="hidden space-y-6">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div>
+                        <h2 class="text-2xl font-bold">Vendor Catalog</h2>
+                        <p class="text-databricks-muted mt-1">Manage your entire vendor ecosystem</p>
+                    </div>
+                    <button onclick="openAddVendorModal()" class="gradient-accent text-white px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-all flex items-center gap-2">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
+                        Add Vendor
+                    </button>
+                </div>
+
+                <!-- Filters -->
+                <div class="flex flex-wrap gap-3 bg-databricks-card border border-databricks-border rounded-xl p-4">
+                    <div class="relative flex-1 min-w-[200px]">
+                        <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-databricks-muted"></i>
+                        <input type="text" placeholder="Search vendors..." 
+                               class="w-full bg-databricks-bg border border-databricks-border rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-databricks-accent"
+                               id="vendor-search">
+                    </div>
+                    <select class="bg-databricks-bg border border-databricks-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-databricks-accent" id="category-filter">
+                        <option value="">All Categories</option>
+                        <option value="cloud">Cloud Services</option>
+                        <option value="data">Data Providers</option>
+                        <option value="software">Software</option>
+                        <option value="consulting">Consulting</option>
+                    </select>
+                    <select class="bg-databricks-bg border border-databricks-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-databricks-accent" id="status-filter">
+                        <option value="">All Statuses</option>
+                        <option value="active">Active</option>
+                        <option value="pending">Pending</option>
+                        <option value="review">Under Review</option>
+                        <option value="inactive">Inactive</option>
+                    </select>
+                    <button onclick="resetFilters()" class="px-4 py-2 border border-databricks-border rounded-lg text-sm hover:bg-databricks-bg transition-all">
+                        Reset
+                    </button>
+                </div>
+
+                <!-- Vendors Table -->
+                <div class="bg-databricks-card border border-databricks-border rounded-xl overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-databricks-bg border-b border-databricks-border">
+                                <tr>
+                                    <th class="px-6 py-4 font-semibold text-databricks-muted">Vendor</th>
+                                    <th class="px-6 py-4 font-semibold text-databricks-muted">Category</th>
+                                    <th class="px-6 py-4 font-semibold text-databricks-muted">Status</th>
+                                    <th class="px-6 py-4 font-semibold text-databricks-muted">Risk</th>
+                                    <th class="px-6 py-4 font-semibold text-databricks-muted">Annual Spend</th>
+                                    <th class="px-6 py-4 font-semibold text-databricks-muted">Contract End</th>
+                                    <th class="px-6 py-4 font-semibold text-databricks-muted">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-databricks-border" id="vendors-table-body">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="px-6 py-4 border-t border-databricks-border flex justify-between items-center">
+                        <span class="text-sm text-databricks-muted">Showing <span id="showing-count">10</span> of <span id="total-count">24</span> vendors</span>
+                        <div class="flex gap-2">
+                            <button class="px-3 py-1.5 border border-databricks-border rounded-lg text-sm hover:bg-databricks-bg disabled:opacity-50" disabled>Previous</button>
+                            <button class="px-3 py-1.5 border border-databricks-border rounded-lg text-sm hover:bg-databricks-bg">Next</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Projects View -->
+            <div id="view-projects" class="hidden space-y-6">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h2 class="text-2xl font-bold">Active Projects</h2>
+                        <p class="text-databricks-muted mt-1">Track vendor implementations and integrations</p>
+                    </div>
+                    <button class="gradient-accent text-white px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-all flex items-center gap-2">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
+                        New Project
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="projects-grid">
+                    <!-- Project cards populated by JS -->
+                </div>
+            </div>
+
+            <!-- Demos View -->
+            <div id="view-demos" class="hidden space-y-6">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h2 class="text-2xl font-bold">Demos & POCs</h2>
+                        <p class="text-databricks-muted mt-1">Schedule and track vendor demonstrations</p>
+                    </div>
+                    <button class="gradient-accent text-white px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-all flex items-center gap-2">
+                        <i data-lucide="calendar-plus" class="w-4 h-4"></i>
+                        Schedule Demo
+                    </button>
+                </div>
+
+                <div class="bg-databricks-card border border-databricks-border rounded-xl overflow-hidden">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-databricks-bg border-b border-databricks-border">
+                            <tr>
+                                <th class="px-6 py-4 font-semibold text-databricks-muted">Vendor</th>
+                                <th class="px-6 py-4 font-semibold text-databricks-muted">Topic</th>
+                                <th class="px-6 py-4 font-semibold text-databricks-muted">Date</th>
+                                <th class="px-6 py-4 font-semibold text-databricks-muted">Attendees</th>
+                                <th class="px-6 py-4 font-semibold text-databricks-muted">Status</th>
+                                <th class="px-6 py-4 font-semibold text-databricks-muted">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-databricks-border" id="demos-table-body">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Analytics View -->
+            <div id="view-analytics" class="hidden space-y-6">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div>
+                        <h2 class="text-2xl font-bold">Cost Analytics</h2>
+                        <p class="text-databricks-muted mt-1">Deep dive into vendor spending and budget utilization</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <select class="bg-databricks-card border border-databricks-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-databricks-accent">
+                            <option>Last 12 Months</option>
+                            <option>Last 6 Months</option>
+                            <option>This Quarter</option>
+                            <option>Year to Date</option>
+                        </select>
+                        <button class="bg-databricks-card border border-databricks-border text-databricks-text px-4 py-2 rounded-lg text-sm font-medium hover:bg-databricks-bg transition-all flex items-center gap-2">
+                            <i data-lucide="download" class="w-4 h-4"></i>
+                            Export
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Summary Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-5">
+                        <p class="text-databricks-muted text-sm mb-1">Total Spend (YTD)</p>
+                        <h3 class="text-2xl font-bold">$4.2M</h3>
+                        <p class="text-xs text-databricks-success mt-2">+8% vs last year</p>
+                    </div>
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-5">
+                        <p class="text-databricks-muted text-sm mb-1">Budget Variance</p>
+                        <h3 class="text-2xl font-bold text-databricks-success">-5.2%</h3>
+                        <p class="text-xs text-databricks-muted mt-2">$220k under budget</p>
+                    </div>
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-5">
+                        <p class="text-databricks-muted text-sm mb-1">Avg. Cost per Vendor</p>
+                        <h3 class="text-2xl font-bold">$175k</h3>
+                        <p class="text-xs text-databricks-muted mt-2">Across 24 vendors</p>
+                    </div>
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-5">
+                        <p class="text-databricks-muted text-sm mb-1">Projected Q4</p>
+                        <h3 class="text-2xl font-bold">$1.1M</h3>
+                        <p class="text-xs text-databricks-warning mt-2">Based on current run rate</p>
+                    </div>
+                </div>
+
+                <!-- Main Charts -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-2 bg-databricks-card border border-databricks-border rounded-xl p-6">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="text-lg font-semibold">Spend by Category</h3>
+                            <div class="flex gap-2">
+                                <button class="text-xs px-3 py-1 rounded bg-databricks-accent/20 text-databricks-accent">Monthly</button>
+                                <button class="text-xs px-3 py-1 rounded hover:bg-databricks-bg text-databricks-muted">Quarterly</button>
+                            </div>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="categorySpendChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-6">
+                        <h3 class="text-lg font-semibold mb-6">Top Vendors by Spend</h3>
+                        <div class="space-y-4" id="top-vendors-list">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Budget vs Actual -->
+                <div class="bg-databricks-card border border-databricks-border rounded-xl p-6">
+                    <h3 class="text-lg font-semibold mb-6">Budget vs. Actual by Project</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead class="border-b border-databricks-border">
+                                <tr>
+                                    <th class="pb-3 font-semibold text-databricks-muted">Project</th>
+                                    <th class="pb-3 font-semibold text-databricks-muted">Vendor</th>
+                                    <th class="pb-3 font-semibold text-databricks-muted text-right">Budget</th>
+                                    <th class="pb-3 font-semibold text-databricks-muted text-right">Actual</th>
+                                    <th class="pb-3 font-semibold text-databricks-muted text-right">Variance</th>
+                                    <th class="pb-3 font-semibold text-databricks-muted">Utilization</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-databricks-border" id="budget-table-body">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Governance View -->
+            <div id="view-governance" class="hidden space-y-6">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h2 class="text-2xl font-bold">Governance & Compliance</h2>
+                        <p class="text-databricks-muted mt-1">Monitor vendor risk and compliance status</p>
+                    </div>
+                    <button class="bg-databricks-card border border-databricks-border text-databricks-text px-4 py-2 rounded-lg text-sm font-medium hover:bg-databricks-bg transition-all flex items-center gap-2">
+                        <i data-lucide="download" class="w-4 h-4"></i>
+                        Export Report
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-6">
+                        <h3 class="text-lg font-semibold mb-4">Compliance Overview</h3>
+                        <div class="space-y-4">
+                            <div>
+                                <div class="flex justify-between text-sm mb-2">
+                                    <span>SOC 2 Compliant</span>
+                                    <span class="font-medium">18/24</span>
+                                </div>
+                                <div class="w-full bg-databricks-bg rounded-full h-2">
+                                    <div class="bg-emerald-500 h-2 rounded-full" style="width: 75%"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-sm mb-2">
+                                    <span>GDPR Ready</span>
+                                    <span class="font-medium">20/24</span>
+                                </div>
+                                <div class="w-full bg-databricks-bg rounded-full h-2">
+                                    <div class="bg-emerald-500 h-2 rounded-full" style="width: 83%"></div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-sm mb-2">
+                                    <span>ISO 27001</span>
+                                    <span class="font-medium">15/24</span>
+                                </div>
+                                <div class="w-full bg-databricks-bg rounded-full h-2">
+                                    <div class="bg-yellow-500 h-2 rounded-full" style="width: 62%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="lg:col-span-2 bg-databricks-card border border-databricks-border rounded-xl p-6">
+                        <h3 class="text-lg font-semibold mb-4">Risk Assessment Matrix</h3>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-sm">
+                                <thead class="border-b border-databricks-border">
+                                    <tr>
+                                        <th class="pb-3 font-semibold text-databricks-muted">Vendor</th>
+                                        <th class="pb-3 font-semibold text-databricks-muted">Risk Score</th>
+                                        <th class="pb-3 font-semibold text-databricks-muted">Last Audit</th>
+                                        <th class="pb-3 font-semibold text-databricks-muted">Issues</th>
+                                        <th class="pb-3 font-semibold text-databricks-muted">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-databricks-border" id="governance-table-body">
+                                    <!-- Populated by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contracts View -->
+            <div id="view-contracts" class="hidden space-y-6">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div>
+                        <h2 class="text-2xl font-bold">Contract Management</h2>
+                        <p class="text-databricks-muted mt-1">Track agreements, renewals, and legal documents</p>
+                    </div>
+                    <button onclick="openAddContractModal()" class="gradient-accent text-white px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-all flex items-center gap-2">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
+                        Add Contract
+                    </button>
+                </div>
+
+                <!-- Alert Banner -->
+                <div class="bg-databricks-warning/10 border border-databricks-warning/30 rounded-xl p-4 flex items-center gap-3">
+                    <i data-lucide="alert-circle" class="w-5 h-5 text-databricks-warning"></i>
+                    <div class="flex-1">
+                        <p class="text-sm font-medium text-databricks-warning">3 contracts expiring within 30 days</p>
+                    </div>
+                    <button onclick="switchView('vendors')" class="text-sm text-databricks-warning hover:underline">View Details</button>
+                </div>
+
+                <!-- Contract Stats -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-4">
+                        <p class="text-databricks-muted text-xs uppercase mb-1">Active Contracts</p>
+                        <h3 class="text-xl font-bold">22</h3>
+                    </div>
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-4">
+                        <p class="text-databricks-muted text-xs uppercase mb-1">Up for Renewal</p>
+                        <h3 class="text-xl font-bold text-databricks-warning">5</h3>
+                    </div>
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-4">
+                        <p class="text-databricks-muted text-xs uppercase mb-1">Total Contract Value</p>
+                        <h3 class="text-xl font-bold">$12.4M</h3>
+                    </div>
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-4">
+                        <p class="text-databricks-muted text-xs uppercase mb-1">Avg. Contract Term</p>
+                        <h3 class="text-xl font-bold">24 months</h3>
+                    </div>
+                </div>
+
+                <!-- Contracts Table -->
+                <div class="bg-databricks-card border border-databricks-border rounded-xl overflow-hidden">
+                    <div class="p-4 border-b border-databricks-border flex flex-wrap gap-3">
+                        <div class="relative flex-1 min-w-[200px]">
+                            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-databricks-muted"></i>
+                            <input type="text" placeholder="Search contracts..." 
+                                   class="w-full bg-databricks-bg border border-databricks-border rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-databricks-accent">
+                        </div>
+                        <select class="bg-databricks-bg border border-databricks-border rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-databricks-accent">
+                            <option>All Statuses</option>
+                            <option>Active</option>
+                            <option>Expiring Soon</option>
+                            <option>Expired</option>
+                            <option>Pending</option>
+                        </select>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-databricks-bg border-b border-databricks-border">
+                                <tr>
+                                    <th class="px-6 py-4 font-semibold text-databricks-muted">Contract ID</th>
+                                    <th class="px-6 py-4 font-semibold text-databricks-muted">Vendor</th>
+                                    <th class="px-6 py-4 font-semibold text-databricks-muted">Type</th>
+                                    <th class="px-6 py-4 font-semibold text-databricks-muted">Value</th>
+                                    <th class="px-6 py-4 font-semibold text-databricks-muted">Start Date</th>
+                                    <th class="px-6 py-4 font-semibold text-databricks-muted">End Date</th>
+                                    <th class="px-6 py-4 font-semibold text-databricks-muted">Status</th>
+                                    <th class="px-6 py-4 font-semibold text-databricks-muted">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-databricks-border" id="contracts-table-body">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Integrations View -->
+            <div id="view-integrations" class="hidden space-y-6">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h2 class="text-2xl font-bold">Integrations</h2>
+                        <p class="text-databricks-muted mt-1">Manage API connections and data sync configurations</p>
+                    </div>
+                    <button onclick="openAddIntegrationModal()" class="gradient-accent text-white px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-all flex items-center gap-2">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
+                        New Integration
+                    </button>
+                </div>
+
+                <!-- Integration Stats -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-4">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="w-2 h-2 rounded-full bg-emerald-500"></div>
+                            <p class="text-databricks-muted text-xs uppercase">Active</p>
+                        </div>
+                        <h3 class="text-xl font-bold">12</h3>
+                        <p class="text-xs text-databricks-muted mt-1">Syncing normally</p>
+                    </div>
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-4">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="w-2 h-2 rounded-full bg-yellow-500"></div>
+                            <p class="text-databricks-muted text-xs uppercase">Warning</p>
+                        </div>
+                        <h3 class="text-xl font-bold text-yellow-500">2</h3>
+                        <p class="text-xs text-databricks-muted mt-1">Sync delays detected</p>
+                    </div>
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-4">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="w-2 h-2 rounded-full bg-red-500"></div>
+                            <p class="text-databricks-muted text-xs uppercase">Error</p>
+                        </div>
+                        <h3 class="text-xl font-bold text-red-500">1</h3>
+                        <p class="text-xs text-databricks-muted mt-1">Connection failed</p>
+                    </div>
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-4">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="w-2 h-2 rounded-full bg-databricks-muted"></div>
+                            <p class="text-databricks-muted text-xs uppercase">Inactive</p>
+                        </div>
+                        <h3 class="text-xl font-bold">3</h3>
+                        <p class="text-xs text-databricks-muted mt-1">Paused or disabled</p>
+                    </div>
+                </div>
+
+                <!-- Integrations Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="integrations-grid">
+                    <!-- Populated by JS -->
+                </div>
+
+                <!-- API Logs -->
+                <div class="bg-databricks-card border border-databricks-border rounded-xl p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold">Recent Sync Activity</h3>
+                        <button class="text-sm text-databricks-accent hover:text-databricks-accentHover">View All Logs</button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead class="border-b border-databricks-border">
+                                <tr>
+                                    <th class="pb-3 font-semibold text-databricks-muted">Timestamp</th>
+                                    <th class="pb-3 font-semibold text-databricks-muted">Integration</th>
+                                    <th class="pb-3 font-semibold text-databricks-muted">Action</th>
+                                    <th class="pb-3 font-semibold text-databricks-muted">Status</th>
+                                    <th class="pb-3 font-semibold text-databricks-muted">Records</th>
+                                    <th class="pb-3 font-semibold text-databricks-muted">Duration</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-databricks-border" id="integration-logs-body">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Exports View -->
+            <div id="view-exports" class="hidden space-y-6">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h2 class="text-2xl font-bold">Data Exports</h2>
+                        <p class="text-databricks-muted mt-1">Generate and download vendor data reports</p>
+                    </div>
+                </div>
+
+                <!-- Quick Export Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-6 hover:border-databricks-accent/50 transition-all cursor-pointer" onclick="generateExport('vendors')">
+                        <div class="w-12 h-12 rounded-lg bg-databricks-accent/10 flex items-center justify-center mb-4">
+                            <i data-lucide="building-2" class="w-6 h-6 text-databricks-accent"></i>
+                        </div>
+                        <h3 class="font-semibold mb-2">Vendor Master Data</h3>
+                        <p class="text-sm text-databricks-muted mb-4">Complete vendor catalog with contacts, categories, and status</p>
+                        <div class="flex items-center gap-2 text-sm text-databricks-accent">
+                            <i data-lucide="download" class="w-4 h-4"></i>
+                            <span>Export CSV/Excel</span>
+                        </div>
+                    </div>
+
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-6 hover:border-databricks-accent/50 transition-all cursor-pointer" onclick="generateExport('spend')">
+                        <div class="w-12 h-12 rounded-lg bg-databricks-blue/10 flex items-center justify-center mb-4">
+                            <i data-lucide="dollar-sign" class="w-6 h-6 text-databricks-blue"></i>
+                        </div>
+                        <h3 class="font-semibold mb-2">Spend Analysis</h3>
+                        <p class="text-sm text-databricks-muted mb-4">Detailed spending breakdown by vendor, category, and time period</p>
+                        <div class="flex items-center gap-2 text-sm text-databricks-blue">
+                            <i data-lucide="download" class="w-4 h-4"></i>
+                            <span>Export CSV/Excel</span>
+                        </div>
+                    </div>
+
+                    <div class="bg-databricks-card border border-databricks-border rounded-xl p-6 hover:border-databricks-accent/50 transition-all cursor-pointer" onclick="generateExport('contracts')">
+                        <div class="w-12 h-12 rounded-lg bg-emerald-500/10 flex items-center justify-center mb-4">
+                            <i data-lucide="file-text" class="w-6 h-6 text-emerald-500"></i>
+                        </div>
+                        <h3 class="font-semibold mb-2">Contract Report</h3>
+                        <p class="text-sm text-databricks-muted mb-4">All active contracts with renewal dates and values</p>
+                        <div class="flex items-center gap-2 text-sm text-emerald-500">
+                            <i data-lucide="download" class="w-4 h-4"></i>
+                            <span>Export CSV/Excel</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Custom Report Builder -->
+                <div class="bg-databricks-card border border-databricks-border rounded-xl p-6">
+                    <h3 class="text-lg font-semibold mb-4">Custom Report Builder</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Data Source</label>
+                            <select class="w-full bg-databricks-bg border border-databricks-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-databricks-accent" id="report-source">
+                                <option value="vendors">Vendors</option>
+                                <option value="projects">Projects</option>
+                                <option value="contracts">Contracts</option>
+                                <option value="spend">Spend Data</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Date Range</label>
+                            <select class="w-full bg-databricks-bg border border-databricks-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-databricks-accent">
+                                <option>Last 30 days</option>
+                                <option>Last 90 days</option>
+                                <option>Last 6 months</option>
+                                <option>Last 12 months</option>
+                                <option>Custom range</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Format</label>
+                            <select class="w-full bg-databricks-bg border border-databricks-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-databricks-accent">
+                                <option>Excel (.xlsx)</option>
+                                <option>CSV (.csv)</option>
+                                <option>PDF Report</option>
+                                <option>JSON</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2">Include Fields</label>
+                        <div class="flex flex-wrap gap-2">
+                            <label class="flex items-center gap-2 px-3 py-1.5 bg-databricks-bg rounded-lg border border-databricks-border cursor-pointer hover:border-databricks-accent/50">
+                                <input type="checkbox" checked class="rounded border-databricks-border bg-databricks-bg text-databricks-accent focus:ring-databricks-accent">
+                                <span class="text-sm">Vendor Name</span>
+                            </label>
+                            <label class="flex items-center gap-2 px-3 py-1.5 bg-databricks-bg rounded-lg border border-databricks-border cursor-pointer hover:border-databricks-accent/50">
+                                <input type="checkbox" checked class="rounded border-databricks-border bg-databricks-bg text-databricks-accent focus:ring-databricks-accent">
+                                <span class="text-sm">Category</span>
+                            </label>
+                            <label class="flex items-center gap-2 px-3 py-1.5 bg-databricks-bg rounded-lg border border-databricks-border cursor-pointer hover:border-databricks-accent/50">
+                                <input type="checkbox" checked class="rounded border-databricks-border bg-databricks-bg text-databricks-accent focus:ring-databricks-accent">
+                                <span class="text-sm">Spend</span>
+                            </label>
+                            <label class="flex items-center gap-2 px-3 py-1.5 bg-databricks-bg rounded-lg border border-databricks-border cursor-pointer hover:border-databricks-accent/50">
+                                <input type="checkbox" class="rounded border-databricks-border bg-databricks-bg text-databricks-accent focus:ring-databricks-accent">
+                                <span class="text-sm">Contacts</span>
+                            </label>
+                            <label class="flex items-center gap-2 px-3 py-1.5 bg-databricks-bg rounded-lg border border-databricks-border cursor-pointer hover:border-databricks-accent/50">
+                                <input type="checkbox" class="rounded border-databricks-border bg-databricks-bg text-databricks-accent focus:ring-databricks-accent">
+                                <span class="text-sm">Contracts</span>
+                            </label>
+                            <label class="flex items-center gap-2 px-3 py-1.5 bg-databricks-bg rounded-lg border border-databricks-border cursor-pointer hover:border-databricks-accent/50">
+                                <input type="checkbox" class="rounded border-databricks-border bg-databricks-bg text-databricks-accent focus:ring-databricks-accent">
+                                <span class="text-sm">Compliance Status</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="flex gap-3">
+                        <button onclick="generateCustomReport()" class="gradient-accent text-white px-6 py-2 rounded-lg text-sm font-medium hover:opacity-90 transition-all flex items-center gap-2">
+                            <i data-lucide="file-down" class="w-4 h-4"></i>
+                            Generate Report
+                        </button>
+                        <button class="px-6 py-2 border border-databricks-border rounded-lg text-sm hover:bg-databricks-bg transition-all">
+                            Save Template
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Recent Exports -->
+                <div class="bg-databricks-card border border-databricks-border rounded-xl p-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-semibold">Recent Exports</h3>
+                        <button class="text-sm text-databricks-accent hover:text-databricks-accentHover">Clear History</button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead class="border-b border-databricks-border">
+                                <tr>
+                                    <th class="pb-3 font-semibold text-databricks-muted">Report Name</th>
+                                    <th class="pb-3 font-semibold text-databricks-muted">Generated</th>
+                                    <th class="pb-3 font-semibold text-databricks-muted">Format</th>
+                                    <th class="pb-3 font-semibold text-databricks-muted">Size</th>
+                                    <th class="pb-3 font-semibold text-databricks-muted">Created By</th>
+                                    <th class="pb-3 font-semibold text-databricks-muted">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-databricks-border" id="recent-exports-body">
+                                <!-- Populated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- Vendor Detail Slide-over -->
+    <div id="vendor-detail-panel" class="fixed inset-y-0 right-0 w-full md:w-[600px] bg-databricks-bg border-l border-databricks-border shadow-2xl z-50 slide-over overflow-y-auto custom-scrollbar">
+        <div class="sticky top-0 bg-databricks-bg border-b border-databricks-border p-6 flex justify-between items-center z-10">
+            <div class="flex items-center gap-3">
+                <div id="detail-logo" class="w-12 h-12 rounded-lg bg-databricks-accent/20 flex items-center justify-center text-xl font-bold">
+                    A
+                </div>
+                <div>
+                    <h2 class="text-xl font-bold" id="detail-name">Vendor Name</h2>
+                    <p class="text-sm text-databricks-muted" id="detail-category">Category</p>
+                </div>
+            </div>
+            <button onclick="closeVendorDetail()" class="p-2 hover:bg-databricks-card rounded-lg transition-all">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <div class="p-6">
+            <!-- Tabs -->
+            <div class="flex border-b border-databricks-border mb-6">
+                <button onclick="switchDetailTab('overview')" class="tab-btn tab-active px-4 py-3 text-sm font-medium transition-all" data-tab="overview">Overview</button>
+                <button onclick="switchDetailTab('offerings')" class="tab-btn px-4 py-3 text-sm font-medium text-databricks-muted hover:text-databricks-text transition-all" data-tab="offerings">Offerings</button>
+                <button onclick="switchDetailTab('projects')" class="tab-btn px-4 py-3 text-sm font-medium text-databricks-muted hover:text-databricks-text transition-all" data-tab="projects">Projects</button>
+                <button onclick="switchDetailTab('governance')" class="tab-btn px-4 py-3 text-sm font-medium text-databricks-muted hover:text-databricks-text transition-all" data-tab="governance">Governance</button>
+                <button onclick="switchDetailTab('costs')" class="tab-btn px-4 py-3 text-sm font-medium text-databricks-muted hover:text-databricks-text transition-all" data-tab="costs">Costs</button>
+            </div>
+
+            <!-- Tab Content -->
+            <div id="tab-overview" class="tab-content space-y-6">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-databricks-card border border-databricks-border rounded-lg p-4">
+                        <p class="text-xs text-databricks-muted uppercase mb-1">Status</p>
+                        <span id="detail-status" class="status-badge bg-emerald-500/20 text-emerald-400">Active</span>
+                    </div>
+                    <div class="bg-databricks-card border border-databricks-border rounded-lg p-4">
+                        <p class="text-xs text-databricks-muted uppercase mb-1">Risk Level</p>
+                        <span id="detail-risk" class="status-badge bg-yellow-500/20 text-yellow-400">Medium</span>
+                    </div>
+                    <div class="bg-databricks-card border border-databricks-border rounded-lg p-4">
+                        <p class="text-xs text-databricks-muted uppercase mb-1">Contract Value</p>
+                        <p id="detail-value" class="text-lg font-semibold">$450,000</p>
+                    </div>
+                    <div class="bg-databricks-card border border-databricks-border rounded-lg p-4">
+                        <p class="text-xs text-databricks-muted uppercase mb-1">Renewal Date</p>
+                        <p id="detail-renewal" class="text-lg font-semibold">Dec 15, 2024</p>
+                    </div>
+                </div>
+
+                <div class="bg-databricks-card border border-databricks-border rounded-lg p-4">
+                    <h4 class="font-semibold mb-3">Key Contacts</h4>
+                    <div class="space-y-3" id="detail-contacts">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <div class="bg-databricks-card border border-databricks-border rounded-lg p-4">
+                    <h4 class="font-semibold mb-3">Description</h4>
+                    <p class="text-sm text-databricks-muted leading-relaxed" id="detail-description">
+                        Enterprise data platform providing cloud-based storage and analytics solutions. Specializes in big data processing and machine learning workloads.
+                    </p>
+                </div>
+            </div>
+
+            <div id="tab-offerings" class="tab-content hidden space-y-4">
+                <div id="offerings-list" class="space-y-3">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <div id="tab-projects" class="tab-content hidden space-y-4">
+                <div id="projects-list" class="space-y-3">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <div id="tab-governance" class="tab-content hidden space-y-4">
+                <div class="bg-databricks-card border border-databricks-border rounded-lg p-4">
+                    <h4 class="font-semibold mb-4">Compliance Documents</h4>
+                    <div id="compliance-docs" class="space-y-2">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+                <div class="bg-databricks-card border border-databricks-border rounded-lg p-4">
+                    <h4 class="font-semibold mb-4">Security Assessment</h4>
+                    <div class="space-y-3">
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm">Data Encryption</span>
+                            <span class="text-xs px-2 py-1 bg-emerald-500/20 text-emerald-400 rounded">Compliant</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm">Access Controls</span>
+                            <span class="text-xs px-2 py-1 bg-emerald-500/20 text-emerald-400 rounded">Compliant</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm">Audit Logging</span>
+                            <span class="text-xs px-2 py-1 bg-yellow-500/20 text-yellow-400 rounded">In Progress</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-costs" class="tab-content hidden">
+                <div class="bg-databricks-card border border-databricks-border rounded-lg p-4 mb-4">
+                    <h4 class="font-semibold mb-4">Cost Breakdown</h4>
+                    <div class="chart-container" style="height: 200px;">
+                        <canvas id="vendorCostChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-databricks-card border border-databricks-border rounded-lg p-4">
+                    <h4 class="font-semibold mb-4">Invoices</h4>
+                    <div id="invoices-list" class="space-y-2">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Overlay for mobile sidebar and slide-over -->
+    <div id="overlay" onclick="closeAllDrawers()" class="fixed inset-0 bg-black/50 z-30 hidden backdrop-blur-sm transition-opacity"></div>
+
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        // Mock Data
+        const vendors = [
+            {
+                id: 1,
+                name: "Databricks",
+                category: "Cloud Services",
+                categoryCode: "cloud",
+                status: "active",
+                risk: "low",
+                spend: 1200000,
+                contractEnd: "2025-12-15",
+                logo: "D",
+                description: "Unified analytics platform for data engineering, machine learning, and collaborative data science.",
+                contacts: [
+                    { name: "Sarah Chen", role: "Account Executive", email: "sarah.chen@databricks.com" },
+                    { name: "Mike Ross", role: "Technical Lead", email: "mike.ross@databricks.com" }
+                ],
+                offerings: [
+                    { name: "Delta Lake", type: "Storage", description: "Open source storage layer", price: "$0.10/GB" },
+                    { name: "MLflow", type: "ML Platform", description: "Machine learning lifecycle management", price: "Included" },
+                    { name: "SQL Analytics", type: "Analytics", description: "BI and SQL workloads", price: "$0.20/DBU" }
+                ],
+                projects: [
+                    { name: "Lakehouse Migration", status: "active", budget: 500000, spent: 320000 },
+                    { name: "ML Platform Setup", status: "completed", budget: 200000, spent: 195000 }
+                ],
+                compliance: {
+                    soc2: true,
+                    gdpr: true,
+                    iso27001: true,
+                    documents: [
+                        { name: "SOC 2 Type II Report", date: "2024-01-15", status: "valid" },
+                        { name: "GDPR Compliance Cert", date: "2024-02-01", status: "valid" }
+                    ]
+                },
+                invoices: [
+                    { date: "2024-01-01", amount: 98000, status: "paid" },
+                    { date: "2024-02-01", amount: 102000, status: "paid" },
+                    { date: "2024-03-01", amount: 95000, status: "pending" }
+                ]
+            },
+            {
+                id: 2,
+                name: "Snowflake",
+                category: "Data Providers",
+                categoryCode: "data",
+                status: "active",
+                risk: "low",
+                spend: 850000,
+                contractEnd: "2024-09-20",
+                logo: "S",
+                description: "Cloud-based data warehousing and analytics platform.",
+                contacts: [
+                    { name: "Jennifer Walsh", role: "Sales Director", email: "jennifer@snowflake.com" }
+                ],
+                offerings: [
+                    { name: "Data Cloud", type: "Warehouse", description: "Elastic data warehouse", price: "$2/credit" },
+                    { name: "Data Sharing", type: "Integration", description: "Secure data sharing", price: "Variable" }
+                ],
+                projects: [
+                    { name: "Data Warehouse Modernization", status: "active", budget: 400000, spent: 280000 }
+                ],
+                compliance: {
+                    soc2: true,
+                    gdpr: true,
+                    iso27001: true,
+                    documents: [
+                        { name: "SOC 2 Report", date: "2023-12-01", status: "valid" }
+                    ]
+                },
+                invoices: [
+                    { date: "2024-01-01", amount: 65000, status: "paid" },
+                    { date: "2024-02-01", amount: 72000, status: "paid" }
+                ]
+            },
+            {
+                id: 3,
+                name: "AWS",
+                category: "Cloud Services",
+                categoryCode: "cloud",
+                status: "active",
+                risk: "low",
+                spend: 2100000,
+                contractEnd: "2024-06-30",
+                logo: "A",
+                description: "Comprehensive cloud computing platform offering compute, storage, and machine learning services.",
+                contacts: [
+                    { name: "David Kim", role: "Enterprise Account Manager", email: "david.kim@aws.amazon.com" },
+                    { name: "Lisa Park", role: "Solutions Architect", email: "lisa.park@aws.amazon.com" }
+                ],
+                offerings: [
+                    { name: "EC2", type: "Compute", description: "Virtual servers", price: "Variable" },
+                    { name: "S3", type: "Storage", description: "Object storage", price: "$0.023/GB" },
+                    { name: "SageMaker", type: "ML", description: "ML platform", price: "Variable" }
+                ],
+                projects: [
+                    { name: "Cloud Migration Phase 2", status: "active", budget: 800000, spent: 450000 },
+                    { name: "Disaster Recovery Setup", status: "planning", budget: 300000, spent: 0 }
+                ],
+                compliance: {
+                    soc2: true,
+                    gdpr: true,
+                    iso27001: true,
+                    documents: [
+                        { name: "AWS SOC 2", date: "2024-01-01", status: "valid" },
+                        { name: "ISO 27001 Cert", date: "2024-01-01", status: "valid" }
+                    ]
+                },
+                invoices: [
+                    { date: "2024-01-01", amount: 165000, status: "paid" },
+                    { date: "2024-02-01", amount: 158000, status: "paid" }
+                ]
+            },
+            {
+                id: 4,
+                name: "Palantir",
+                category: "Software",
+                categoryCode: "software",
+                status: "review",
+                risk: "high",
+                spend: 450000,
+                contractEnd: "2024-12-01",
+                logo: "P",
+                description: "Data integration and analysis platform specializing in big data analytics.",
+                contacts: [
+                    { name: "Alex Thompson", role: "Account Manager", email: "alex@palantir.com" }
+                ],
+                offerings: [
+                    { name: "Foundry", type: "Platform", description: "Data integration platform", price: "Custom" },
+                    { name: "Gotham", type: "Analytics", description: "Intelligence platform", price: "Custom" }
+                ],
+                projects: [
+                    { name: "Data Integration POC", status: "active", budget: 150000, spent: 75000 }
+                ],
+                compliance: {
+                    soc2: true,
+                    gdpr: false,
+                    iso27001: true,
+                    documents: [
+                        { name: "Security Review", date: "2024-02-15", status: "pending" }
+                    ]
+                },
+                invoices: [
+                    { date: "2024-01-01", amount: 35000, status: "paid" }
+                ]
+            },
+            {
+                id: 5,
+                name: "Fivetran",
+                category: "Data Providers",
+                categoryCode: "data",
+                status: "active",
+                risk: "medium",
+                spend: 180000,
+                contractEnd: "2025-03-15",
+                logo: "F",
+                description: "Automated data integration platform for ETL pipelines.",
+                contacts: [
+                    { name: "Rachel Green", role: "Customer Success", email: "rachel@fivetran.com" }
+                ],
+                offerings: [
+                    { name: "Data Connectors", type: "Integration", description: "150+ source connectors", price: "$1/MTU" },
+                    { name: "Transformations", type: "ETL", description: "dbt transformations", price: "Included" }
+                ],
+                projects: [
+                    { name: "Marketing Data Integration", status: "completed", budget: 50000, spent: 48000 }
+                ],
+                compliance: {
+                    soc2: true,
+                    gdpr: true,
+                    iso27001: false,
+                    documents: [
+                        { name: "SOC 2 Type II", date: "2024-01-10", status: "valid" }
+                    ]
+                },
+                invoices: [
+                    { date: "2024-01-01", amount: 14000, status: "paid" },
+                    { date: "2024-02-01", amount: 15000, status: "paid" }
+                ]
+            },
+            {
+                id: 6,
+                name: "McKinsey Digital",
+                category: "Consulting",
+                categoryCode: "consulting",
+                status: "active",
+                risk: "low",
+                spend: 600000,
+                contractEnd: "2024-08-30",
+                logo: "M",
+                description: "Strategic consulting and digital transformation services.",
+                contacts: [
+                    { name: "Robert Chen", role: "Partner", email: "robert.chen@mckinsey.com" }
+                ],
+                offerings: [
+                    { name: "Digital Strategy", type: "Consulting", description: "Transformation roadmap", price: "Fixed fee" },
+                    { name: "Implementation", type: "Services", description: "Technical implementation", price: "T&M" }
+                ],
+                projects: [
+                    { name: "Data Strategy 2024", status: "active", budget: 400000, spent: 250000 }
+                ],
+                compliance: {
+                    soc2: true,
+                    gdpr: true,
+                    iso27001: true,
+                    documents: [
+                        { name: "MSA", date: "2023-06-01", status: "valid" },
+                        { name: "NDA", date: "2023-06-01", status: "valid" }
+                    ]
+                },
+                invoices: [
+                    { date: "2024-01-15", amount: 100000, status: "paid" },
+                    { date: "2024-02-15", amount: 75000, status: "pending" }
+                ]
+            }
+        ];
+
+        const projects = [
+            { id: 1, name: "Lakehouse Migration", vendor: "Databricks", status: "active", progress: 65, budget: 500000, spent: 320000, dueDate: "2024-06-15", priority: "high" },
+            { id: 2, name: "Data Warehouse Modernization", vendor: "Snowflake", status: "active", progress: 40, budget: 400000, spent: 280000, dueDate: "2024-08-20", priority: "high" },
+            { id: 3, name: "Cloud Migration Phase 2", vendor: "AWS", status: "active", progress: 55, budget: 800000, spent: 450000, dueDate: "2024-07-30", priority: "medium" },
+            { id: 4, name: "Data Integration POC", vendor: "Palantir", status: "active", progress: 25, budget: 150000, spent: 75000, dueDate: "2024-05-15", priority: "medium" },
+            { id: 5, name: "Data Strategy 2024", vendor: "McKinsey Digital", status: "active", progress: 70, budget: 400000, spent: 250000, dueDate: "2024-09-30", priority: "high" },
+            { id: 6, name: "Marketing Analytics Platform", vendor: "Fivetran", status: "completed", progress: 100, budget: 80000, spent: 78000, dueDate: "2024-02-28", priority: "low" }
+        ];
+
+        const demos = [
+            { id: 1, vendor: "Databricks", topic: "Delta Sharing Architecture", date: "2024-03-20", attendees: 12, status: "completed", rating: 4.5 },
+            { id: 2, vendor: "Fivetran", topic: "New Connector Showcase", date: "2024-03-25", attendees: 8, status: "scheduled", rating: null },
+            { id: 3, vendor: "Snowflake", topic: "Iceberg Tables Deep Dive", date: "2024-03-28", attendees: 15, status: "scheduled", rating: null },
+            { id: 4, vendor: "Palantir", topic: "Foundry Security Features", date: "2024-03-15", attendees: 6, status: "completed", rating: 3.8 },
+            { id: 5, vendor: "AWS", topic: "SageMaker New Features", date: "2024-04-05", attendees: 20, status: "scheduled", rating: null }
+        ];
+
+        let currentVendor = null;
+        let vendorCostChart = null;
+
+        // Initialize Charts
+        function initCharts() {
+            // Spend Analytics Chart
+            const ctx1 = document.getElementById('spendChart').getContext('2d');
+            new Chart(ctx1, {
+                type: 'line',
+                data: {
+                    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+                    datasets: [{
+                        label: 'Cloud Services',
+                        data: [180, 185, 190, 195, 200, 210, 205, 215, 220, 225, 230, 240],
+                        borderColor: '#7C3AED',
+                        backgroundColor: 'rgba(124, 58, 237, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }, {
+                        label: 'Data Providers',
+                        data: [120, 125, 130, 128, 135, 140, 145, 150, 155, 160, 165, 170],
+                        borderColor: '#3B82F6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }, {
+                        label: 'Consulting',
+                        data: [80, 85, 80, 90, 85, 95, 100, 95, 105, 110, 105, 115],
+                        borderColor: '#F59E0B',
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            labels: { color: '#9CA3AF' }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(55, 65, 81, 0.5)' },
+                            ticks: { color: '#9CA3AF' }
+                        },
+                        y: {
+                            grid: { color: 'rgba(55, 65, 81, 0.5)' },
+                            ticks: { color: '#9CA3AF' }
+                        }
+                    }
+                }
+            });
+
+            // Distribution Chart
+            const ctx2 = document.getElementById('distributionChart').getContext('2d');
+            new Chart(ctx2, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Cloud Services', 'Data Providers', 'Software', 'Consulting'],
+                    datasets: [{
+                        data: [35, 28, 22, 15],
+                        backgroundColor: ['#7C3AED', '#3B82F6', '#10B981', '#F59E0B'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    cutout: '70%'
+                }
+            });
+        }
+
+        // Analytics View Functions
+        function renderAnalytics() {
+            // Category Spend Chart
+            const ctx = document.getElementById('categorySpendChart')?.getContext('2d');
+            if (ctx) {
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Cloud Services', 'Data Providers', 'Software', 'Consulting', 'Security'],
+                        datasets: [{
+                            label: 'Budget',
+                            data: [1300000, 900000, 600000, 700000, 300000],
+                            backgroundColor: 'rgba(124, 58, 237, 0.3)',
+                            borderColor: '#7C3AED',
+                            borderWidth: 1
+                        }, {
+                            label: 'Actual',
+                            data: [1200000, 850000, 450000, 600000, 280000],
+                            backgroundColor: '#3B82F6',
+                            borderColor: '#3B82F6',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                labels: { color: '#9CA3AF' }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                grid: { display: false },
+                                ticks: { color: '#9CA3AF' }
+                            },
+                            y: {
+                                grid: { color: 'rgba(55, 65, 81, 0.5)' },
+                                ticks: { 
+                                    color: '#9CA3AF',
+                                    callback: function(value) {
+                                        return '
+
+        // Navigation
+        function switchView(viewName) {
+            // Hide all views
+            ['dashboard', 'vendors', 'projects', 'demos', 'governance', 'analytics', 'contracts', 'integrations', 'exports'].forEach(v => {
+                const viewEl = document.getElementById(`view-${v}`);
+                const navEl = document.getElementById(`nav-${v}`);
+                if (viewEl) viewEl.classList.add('hidden');
+                if (navEl) {
+                    navEl.classList.remove('active');
+                    navEl.classList.add('text-databricks-muted');
+                }
+            });
+
+            // Show selected view
+            const selectedView = document.getElementById(`view-${viewName}`);
+            const selectedNav = document.getElementById(`nav-${viewName}`);
+            if (selectedView) selectedView.classList.remove('hidden');
+            if (selectedNav) {
+                selectedNav.classList.add('active');
+                selectedNav.classList.remove('text-databricks-muted');
+            }
+
+            // Update breadcrumb
+            const names = {
+                dashboard: 'Executive Dashboard',
+                vendors: 'Vendor Catalog',
+                projects: 'Projects',
+                demos: 'Demos & POCs',
+                governance: 'Governance & Compliance',
+                analytics: 'Cost Analytics',
+                contracts: 'Contract Management',
+                integrations: 'Integrations',
+                exports: 'Data Exports'
+            };
+            document.getElementById('breadcrumb').textContent = names[viewName] || viewName;
+
+            // Close sidebar on mobile
+            if (window.innerWidth < 768) {
+                document.getElementById('sidebar').classList.add('-translate-x-full');
+                document.getElementById('overlay').classList.add('hidden');
+            }
+
+            // Initialize view-specific content
+            if (viewName === 'vendors') renderVendorsTable();
+            if (viewName === 'projects') renderProjects();
+            if (viewName === 'demos') renderDemos();
+            if (viewName === 'governance') renderGovernance();
+            if (viewName === 'analytics') renderAnalytics();
+            if (viewName === 'contracts') renderContracts();
+            if (viewName === 'integrations') renderIntegrations();
+            if (viewName === 'exports') renderExports();
+
+            lucide.createIcons();
+        }
+
+        function closeVendorDetail() {
+            document.getElementById('vendor-detail-panel').classList.remove('open');
+            document.getElementById('overlay').classList.add('hidden');
+            if (vendorCostChart) {
+                vendorCostChart.destroy();
+                vendorCostChart = null;
+            }
+        }
+
+        function switchDetailTab(tabName) {
+            // Hide all tabs
+            ['overview', 'offerings', 'projects', 'governance', 'costs'].forEach(t => {
+                const tabContent = document.getElementById(`tab-${t}`);
+                const tabBtn = document.querySelector(`button[data-tab="${t}"]`);
+                if (tabContent) tabContent.classList.add('hidden');
+                if (tabBtn) {
+                    tabBtn.classList.remove('tab-active');
+                    tabBtn.classList.add('text-databricks-muted');
+                }
+            });
+
+            // Show selected tab
+            const selectedTab = document.getElementById(`tab-${tabName}`);
+            const selectedBtn = document.querySelector(`button[data-tab="${tabName}"]`);
+            if (selectedTab) selectedTab.classList.remove('hidden');
+            if (selectedBtn) {
+                selectedBtn.classList.add('tab-active');
+                selectedBtn.classList.remove('text-databricks-muted');
+            }
+
+            // Initialize chart if costs tab
+            if (tabName === 'costs') {
+                setTimeout(initVendorCostChart, 100);
+            }
+        }
+
+        function initVendorCostChart() {
+            const ctx = document.getElementById('vendorCostChart');
+            if (!ctx) return;
+            
+            if (vendorCostChart) {
+                vendorCostChart.destroy();
+            }
+
+            vendorCostChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+                    datasets: [{
+                        label: 'Monthly Spend',
+                        data: [85000, 92000, 88000, 95000, 102000, 98000],
+                        backgroundColor: '#7C3AED',
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#9CA3AF' }
+                        },
+                        y: {
+                            grid: { color: 'rgba(55, 65, 81, 0.5)' },
+                            ticks: { 
+                                color: '#9CA3AF',
+                                callback: function(value) {
+                                    return '
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('overlay');
+            
+            if (sidebar.classList.contains('-translate-x-full')) {
+                sidebar.classList.remove('-translate-x-full');
+                overlay.classList.remove('hidden');
+            } else {
+                sidebar.classList.add('-translate-x-full');
+                overlay.classList.add('hidden');
+            }
+        }
+
+        function toggleProfileMenu() {
+            const menu = document.getElementById('profile-menu');
+            menu.classList.toggle('show');
+        }
+
+        function closeAllDrawers() {
+            document.getElementById('sidebar').classList.add('-translate-x-full');
+            document.getElementById('vendor-detail-panel').classList.remove('open');
+            document.getElementById('overlay').classList.add('hidden');
+        }
+
+        // Vendor Management
+        function renderVendorsTable() {
+            const tbody = document.getElementById('vendors-table-body');
+            const searchTerm = document.getElementById('vendor-search')?.value?.toLowerCase() || '';
+            const categoryFilter = document.getElementById('category-filter')?.value || '';
+            const statusFilter = document.getElementById('status-filter')?.value || '';
+
+            let filtered = vendors.filter(v => {
+                const matchesSearch = v.name.toLowerCase().includes(searchTerm);
+                const matchesCategory = !categoryFilter || v.categoryCode === categoryFilter;
+                const matchesStatus = !statusFilter || v.status === statusFilter;
+                return matchesSearch && matchesCategory && matchesStatus;
+            });
+
+            tbody.innerHTML = filtered.map(v => `
+                <tr class="hover:bg-databricks-bg/50 transition-all cursor-pointer" onclick="openVendorDetail(${v.id})">
+                    <td class="px-6 py-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-databricks-accent/20 flex items-center justify-center font-bold text-databricks-accent">
+                                ${v.logo}
+                            </div>
+                            <div>
+                                <p class="font-medium text-databricks-text">${v.name}</p>
+                                <p class="text-xs text-databricks-muted">${v.offerings.length} offerings</p>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 text-databricks-muted">${v.category}</td>
+                    <td class="px-6 py-4">
+                        <span class="status-badge ${getStatusColor(v.status)} capitalize">${v.status}</span>
+                    </td>
+                    <td class="px-6 py-4">
+                        <span class="status-badge ${getRiskColor(v.risk)} capitalize">${v.risk}</span>
+                    </td>
+                    <td class="px-6 py-4 font-mono">$${(v.spend / 1000).toFixed(0)}k</td>
+                    <td class="px-6 py-4 text-databricks-muted">${formatDate(v.contractEnd)}</td>
+                    <td class="px-6 py-4">
+                        <button onclick="event.stopPropagation(); openVendorDetail(${v.id})" class="text-databricks-accent hover:text-databricks-accentHover">
+                            <i data-lucide="external-link" class="w-4 h-4"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+
+            document.getElementById('showing-count').textContent = filtered.length;
+            lucide.createIcons();
+        }
+
+        function getStatusColor(status) {
+            const colors = {
+                active: 'bg-emerald-500/20 text-emerald-400',
+                pending: 'bg-yellow-500/20 text-yellow-400',
+                review: 'bg-orange-500/20 text-orange-400',
+                inactive: 'bg-gray-500/20 text-gray-400'
+            };
+            return colors[status] || colors.inactive;
+        }
+
+        function getRiskColor(risk) {
+            const colors = {
+                low: 'bg-emerald-500/20 text-emerald-400',
+                medium: 'bg-yellow-500/20 text-yellow-400',
+                high: 'bg-red-500/20 text-red-400'
+            };
+            return colors[risk] || colors.low;
+        }
+
+        function formatDate(dateStr) {
+            return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function resetFilters() {
+            document.getElementById('vendor-search').value = '';
+            document.getElementById('category-filter').value = '';
+            document.getElementById('status-filter').value = '';
+            renderVendorsTable();
+        }
+
+        // Vendor Detail Panel
+        function openVendorDetail(vendorId) {
+            currentVendor = vendors.find(v => v.id === vendorId);
+            if (!currentVendor) return;
+
+            document.getElementById('detail-name').textContent = currentVendor.name;
+            document.getElementById('detail-category').textContent = currentVendor.category;
+            document.getElementById('detail-logo').textContent = currentVendor.logo;
+            document.getElementById('detail-status').textContent = currentVendor.status;
+            document.getElementById('detail-status').className = `status-badge ${getStatusColor(currentVendor.status)} capitalize`;
+            document.getElementById('detail-risk').textContent = currentVendor.risk;
+            document.getElementById('detail-risk').className = `status-badge ${getRiskColor(currentVendor.risk)} capitalize`;
+            document.getElementById('detail-value').textContent = `$${(currentVendor.spend / 1000000).toFixed(2)}M`;
+            document.getElementById('detail-renewal').textContent = formatDate(currentVendor.contractEnd);
+            document.getElementById('detail-description').textContent = currentVendor.description;
+
+            // Contacts
+            document.getElementById('detail-contacts').innerHTML = currentVendor.contacts.map(c => `
+                <div class="flex items-center justify-between p-2 bg-databricks-bg rounded border border-databricks-border">
+                    <div>
+                        <p class="font-medium text-sm">${c.name}</p>
+                        <p class="text-xs text-databricks-muted">${c.role}</p>
+                    </div>
+                    <a href="mailto:${c.email}" class="text-databricks-accent hover:text-databricks-accentHover">
+                        <i data-lucide="mail" class="w-4 h-4"></i>
+                    </a>
+                </div>
+            `).join('');
+
+            // Offerings
+            document.getElementById('offerings-list').innerHTML = currentVendor.offerings.map(o => `
+                <div class="p-4 bg-databricks-bg rounded-lg border border-databricks-border">
+                    <div class="flex justify-between items-start mb-2">
+                        <div>
+                            <h4 class="font-semibold">${o.name}</h4>
+                            <span class="text-xs px-2 py-0.5 bg-databricks-accent/20 text-databricks-accent rounded">${o.type}</span>
+                        </div>
+                        <span class="text-sm font-medium text-databricks-accent">${o.price}</span>
+                    </div>
+                    <p class="text-sm text-databricks-muted">${o.description}</p>
+                </div>
+            `).join('');
+
+            // Projects
+            document.getElementById('projects-list').innerHTML = currentVendor.projects.map(p => `
+                <div class="p-4 bg-databricks-bg rounded-lg border border-databricks-border">
+                    <div class="flex justify-between items-start mb-2">
+                        <h4 class="font-semibold">${p.name}</h4>
+                        <span class="text-xs px-2 py-0.5 rounded capitalize ${getStatusColor(p.status)}">${p.status}</span>
+                    </div>
+                    <div class="flex justify-between text-sm text-databricks-muted mb-2">
+                        <span>Budget: ${(p.budget / 1000).toFixed(0)}k</span>
+                        <span>Spent: ${(p.spent / 1000).toFixed(0)}k</span>
+                    </div>
+                    <div class="w-full bg-databricks-card rounded-full h-2">
+                        <div class="bg-databricks-accent h-2 rounded-full" style="width: ${(p.spent / p.budget * 100)}%"></div>
+                    </div>
+                </div>
+            `).join('');
+
+            // Compliance Docs
+            document.getElementById('compliance-docs').innerHTML = currentVendor.compliance.documents.map(d => `
+                <div class="flex items-center justify-between p-3 bg-databricks-bg rounded border border-databricks-border">
+                    <div class="flex items-center gap-3">
+                        <i data-lucide="file-text" class="w-4 h-4 text-databricks-muted"></i>
+                        <div>
+                            <p class="text-sm font-medium">${d.name}</p>
+                            <p class="text-xs text-databricks-muted">Valid until ${formatDate(d.date)}</p>
+                        </div>
+                    </div>
+                    <span class="text-xs px-2 py-0.5 rounded ${d.status === 'valid' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-yellow-500/20 text-yellow-400'} capitalize">
+                        ${d.status}
+                    </span>
+                </div>
+            `).join('');
+
+            // Invoices
+            document.getElementById('invoices-list').innerHTML = currentVendor.invoices.map(i => `
+                <div class="flex items-center justify-between p-3 bg-databricks-bg rounded border border-databricks-border">
+                    <div class="flex items-center gap-3">
+                        <i data-lucide="file-invoice" class="w-4 h-4 text-databricks-muted"></i>
+                        <div>
+                            <p class="text-sm font-medium">${formatDate(i.date)}</p>
+                            <p class="text-xs text-databricks-muted">Invoice #${Math.random().toString(36).substr(2, 9).toUpperCase()}</p>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm font-medium">${(i.amount / 1000).toFixed(1)}k</p>
+                        <span class="text-xs px-2 py-0.5 rounded ${i.status === 'paid' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-yellow-500/20 text-yellow-400'} capitalize">
+                            ${i.status}
+                        </span>
+                    </div>
+                </div>
+            `).join('');
+            
+            // Initialize cost chart
+            setTimeout(initVendorCostChart, 100);
+        } + (value / 1000) + 'k';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Top Vendors List
+            const topVendors = [...vendors].sort((a, b) => b.spend - a.spend).slice(0, 5);
+            document.getElementById('top-vendors-list').innerHTML = topVendors.map((v, i) => `
+                <div class="flex items-center justify-between p-3 bg-databricks-bg rounded-lg border border-databricks-border">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-lg bg-databricks-accent/20 flex items-center justify-center text-sm font-bold text-databricks-accent">
+                            ${v.logo}
+                        </div>
+                        <div>
+                            <p class="font-medium text-sm">${v.name}</p>
+                            <p class="text-xs text-databricks-muted">${v.category}</p>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <p class="font-semibold text-sm">${(v.spend / 1000000).toFixed(2)}M</p>
+                        <div class="w-24 bg-databricks-bg rounded-full h-1.5 mt-1">
+                            <div class="bg-databricks-accent h-1.5 rounded-full" style="width: ${Math.min((v.spend / 2500000) * 100, 100)}%"></div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            // Budget Table
+            document.getElementById('budget-table-body').innerHTML = projects.map(p => {
+                const variance = p.spent - p.budget;
+                const variancePercent = ((variance / p.budget) * 100).toFixed(1);
+                const utilization = ((p.spent / p.budget) * 100).toFixed(0);
+                return `
+                    <tr>
+                        <td class="py-3 font-medium">${p.name}</td>
+                        <td class="py-3 text-databricks-muted">${p.vendor}</td>
+                        <td class="py-3 text-right font-mono">${(p.budget / 1000).toFixed(0)}k</td>
+                        <td class="py-3 text-right font-mono">${(p.spent / 1000).toFixed(0)}k</td>
+                        <td class="py-3 text-right font-mono ${variance > 0 ? 'text-red-400' : 'text-emerald-400'}">
+                            ${variance > 0 ? '+' : ''}${(variance / 1000).toFixed(0)}k
+                        </td>
+                        <td class="py-3">
+                            <div class="flex items-center gap-2">
+                                <div class="flex-1 bg-databricks-bg rounded-full h-2">
+                                    <div class="h-2 rounded-full ${utilization > 90 ? 'bg-red-500' : utilization > 70 ? 'bg-yellow-500' : 'bg-emerald-500'}" 
+                                         style="width: ${Math.min(utilization, 100)}%"></div>
+                                </div>
+                                <span class="text-xs w-8">${utilization}%</span>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Contracts View Functions
+        function renderContracts() {
+            const contracts = [
+                { id: 'CNT-2024-001', vendor: 'Databricks', type: 'Enterprise License', value: 1200000, start: '2022-12-15', end: '2025-12-15', status: 'active' },
+                { id: 'CNT-2024-002', vendor: 'Snowflake', type: 'Data Warehouse', value: 850000, start: '2021-09-20', end: '2024-09-20', status: 'expiring' },
+                { id: 'CNT-2024-003', vendor: 'AWS', type: 'Enterprise Agreement', value: 2100000, start: '2022-06-30', end: '2024-06-30', status: 'expiring' },
+                { id: 'CNT-2024-004', vendor: 'Palantir', type: 'Software License', value: 450000, start: '2023-12-01', end: '2024-12-01', status: 'active' },
+                { id: 'CNT-2024-005', vendor: 'Fivetran', type: 'SaaS Subscription', value: 180000, start: '2024-03-15', end: '2025-03-15', status: 'active' },
+                { id: 'CNT-2024-006', vendor: 'McKinsey Digital', type: 'Professional Services', value: 600000, start: '2023-08-30', end: '2024-08-30', status: 'expiring' },
+                { id: 'CNT-2024-007', vendor: 'Azure', type: 'Cloud Services', value: 950000, start: '2023-01-01', end: '2026-01-01', status: 'active' }
+            ];
+
+            document.getElementById('contracts-table-body').innerHTML = contracts.map(c => `
+                <tr class="hover:bg-databricks-bg/50 transition-all">
+                    <td class="px-6 py-4 font-mono text-sm">${c.id}</td>
+                    <td class="px-6 py-4 font-medium">${c.vendor}</td>
+                    <td class="px-6 py-4 text-databricks-muted">${c.type}</td>
+                    <td class="px-6 py-4 font-mono">${(c.value / 1000).toFixed(0)}k</td>
+                    <td class="px-6 py-4 text-databricks-muted">${formatDate(c.start)}</td>
+                    <td class="px-6 py-4 text-databricks-muted">${formatDate(c.end)}</td>
+                    <td class="px-6 py-4">
+                        <span class="status-badge ${getContractStatusColor(c.status)} capitalize">${c.status}</span>
+                    </td>
+                    <td class="px-6 py-4">
+                        <div class="flex gap-2">
+                            <button class="p-1.5 hover:bg-databricks-bg rounded" title="View">
+                                <i data-lucide="eye" class="w-4 h-4 text-databricks-muted"></i>
+                            </button>
+                            <button class="p-1.5 hover:bg-databricks-bg rounded" title="Download">
+                                <i data-lucide="download" class="w-4 h-4 text-databricks-muted"></i>
+                            </button>
+                            <button class="p-1.5 hover:bg-databricks-bg rounded" title="Renew">
+                                <i data-lucide="refresh-cw" class="w-4 h-4 text-databricks-accent"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function getContractStatusColor(status) {
+            const colors = {
+                active: 'bg-emerald-500/20 text-emerald-400',
+                expiring: 'bg-yellow-500/20 text-yellow-400',
+                expired: 'bg-red-500/20 text-red-400',
+                pending: 'bg-databricks-accent/20 text-databricks-accent'
+            };
+            return colors[status] || colors.active;
+        }
+
+        // Integrations View Functions
+        function renderIntegrations() {
+            const integrations = [
+                { name: 'Databricks API', vendor: 'Databricks', type: 'REST API', status: 'active', lastSync: '2 min ago', records: 15420 },
+                { name: 'Snowflake Connector', vendor: 'Snowflake', type: 'Database', status: 'active', lastSync: '5 min ago', records: 8934 },
+                { name: 'AWS Cost Explorer', vendor: 'AWS', type: 'Cloud API', status: 'warning', lastSync: '1 hour ago', records: 3421 },
+                { name: 'Salesforce Sync', vendor: 'Salesforce', type: 'CRM', status: 'active', lastSync: '15 min ago', records: 5623 },
+                { name: 'ServiceNow', vendor: 'ServiceNow', type: 'ITSM', status: 'error', lastSync: '3 hours ago', records: 0 },
+                { name: 'Jira Integration', vendor: 'Atlassian', type: 'Project Mgmt', status: 'active', lastSync: '10 min ago', records: 1289 },
+                { name: 'Slack Notifications', vendor: 'Slack', type: 'Messaging', status: 'inactive', lastSync: 'Never', records: 0 },
+                { name: 'GitHub Webhook', vendor: 'GitHub', type: 'DevOps', status: 'active', lastSync: '1 min ago', records: 45 }
+            ];
+
+            document.getElementById('integrations-grid').innerHTML = integrations.map(i => `
+                <div class="bg-databricks-card border border-databricks-border rounded-xl p-5 hover:border-databricks-accent/30 transition-all">
+                    <div class="flex justify-between items-start mb-4">
+                        <div class="w-10 h-10 rounded-lg bg-databricks-bg flex items-center justify-center">
+                            <i data-lucide="${getIntegrationIcon(i.type)}" class="w-5 h-5 text-databricks-accent"></i>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <div class="w-2 h-2 rounded-full ${getStatusColorDot(i.status)}"></div>
+                            <span class="text-xs capitalize ${getStatusTextColor(i.status)}">${i.status}</span>
+                        </div>
+                    </div>
+                    <h3 class="font-semibold mb-1">${i.name}</h3>
+                    <p class="text-sm text-databricks-muted mb-4">${i.vendor}</p>
+                    <div class="flex justify-between text-xs text-databricks-muted border-t border-databricks-border pt-3">
+                        <span>Last sync: ${i.lastSync}</span>
+                        <span>${i.records.toLocaleString()} records</span>
+                    </div>
+                    <div class="mt-3 flex gap-2">
+                        <button class="flex-1 py-1.5 text-xs bg-databricks-bg hover:bg-databricks-border rounded transition-all">Configure</button>
+                        <button class="flex-1 py-1.5 text-xs bg-databricks-bg hover:bg-databricks-border rounded transition-all">Sync Now</button>
+                    </div>
+                </div>
+            `).join('');
+
+            // Integration Logs
+            const logs = [
+                { time: '2024-03-20 14:32:15', integration: 'Databricks API', action: 'Incremental Sync', status: 'success', records: 1542, duration: '45s' },
+                { time: '2024-03-20 14:28:03', integration: 'Snowflake Connector', action: 'Full Refresh', status: 'success', records: 8934, duration: '3m 12s' },
+                { time: '2024-03-20 14:15:22', integration: 'AWS Cost Explorer', action: 'Daily Pull', status: 'warning', records: 3421, duration: '2m 45s' },
+                { time: '2024-03-20 13:45:10', integration: 'ServiceNow', action: 'Ticket Sync', status: 'error', records: 0, duration: '30s' },
+                { time: '2024-03-20 13:30:05', integration: 'Salesforce Sync', action: 'Contact Update', status: 'success', records: 234, duration: '12s' }
+            ];
+
+            document.getElementById('integration-logs-body').innerHTML = logs.map(l => `
+                <tr>
+                    <td class="py-3 font-mono text-xs text-databricks-muted">${l.time}</td>
+                    <td class="py-3 font-medium text-sm">${l.integration}</td>
+                    <td class="py-3 text-databricks-muted text-sm">${l.action}</td>
+                    <td class="py-3">
+                        <span class="inline-flex items-center gap-1 text-xs">
+                            <div class="w-1.5 h-1.5 rounded-full ${getStatusColorDot(l.status)}"></div>
+                            <span class="capitalize ${getStatusTextColor(l.status)}">${l.status}</span>
+                        </span>
+                    </td>
+                    <td class="py-3 text-databricks-muted text-sm">${l.records.toLocaleString()}</td>
+                    <td class="py-3 text-databricks-muted text-sm">${l.duration}</td>
+                </tr>
+            `).join('');
+        }
+
+        function getIntegrationIcon(type) {
+            const icons = {
+                'REST API': 'code',
+                'Database': 'database',
+                'Cloud API': 'cloud',
+                'CRM': 'users',
+                'ITSM': 'ticket',
+                'Project Mgmt': 'folder-kanban',
+                'Messaging': 'message-square',
+                'DevOps': 'git-branch'
+            };
+            return icons[type] || 'plug';
+        }
+
+        function getStatusColorDot(status) {
+            const colors = {
+                active: 'bg-emerald-500',
+                warning: 'bg-yellow-500',
+                error: 'bg-red-500',
+                inactive: 'bg-databricks-muted'
+            };
+            return colors[status] || colors.inactive;
+        }
+
+        function getStatusTextColor(status) {
+            const colors = {
+                active: 'text-emerald-400',
+                warning: 'text-yellow-400',
+                error: 'text-red-400',
+                inactive: 'text-databricks-muted'
+            };
+            return colors[status] || colors.inactive;
+        }
+
+        // Exports View Functions
+        function renderExports() {
+            const recentExports = [
+                { name: 'Vendor_Master_Q1_2024.xlsx', date: '2024-03-19 09:15', format: 'Excel', size: '2.4 MB', user: 'John Doe' },
+                { name: 'Spend_Analysis_FY24.csv', date: '2024-03-18 16:30', format: 'CSV', size: '856 KB', user: 'John Doe' },
+                { name: 'Contract_Summary_Mar.pdf', date: '2024-03-15 11:20', format: 'PDF', size: '1.2 MB', user: 'Jane Smith' },
+                { name: 'Integration_Logs.json', date: '2024-03-14 14:00', format: 'JSON', size: '4.1 MB', user: 'John Doe' },
+                { name: 'Compliance_Report_Q1.pdf', date: '2024-03-10 10:45', format: 'PDF', size: '3.8 MB', user: 'Mike Johnson' }
+            ];
+
+            document.getElementById('recent-exports-body').innerHTML = recentExports.map(e => `
+                <tr>
+                    <td class="py-3">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="${getFileIcon(e.format)}" class="w-4 h-4 text-databricks-muted"></i>
+                            <span class="font-medium text-sm">${e.name}</span>
+                        </div>
+                    </td>
+                    <td class="py-3 text-databricks-muted text-sm">${e.date}</td>
+                    <td class="py-3 text-sm"><span class="px-2 py-1 bg-databricks-bg rounded text-xs">${e.format}</span></td>
+                    <td class="py-3 text-databricks-muted text-sm">${e.size}</td>
+                    <td class="py-3 text-databricks-muted text-sm">${e.user}</td>
+                    <td class="py-3">
+                        <div class="flex gap-2">
+                            <button class="p-1.5 hover:bg-databricks-bg rounded text-databricks-accent" title="Download">
+                                <i data-lucide="download" class="w-4 h-4"></i>
+                            </button>
+                            <button class="p-1.5 hover:bg-databricks-bg rounded text-databricks-muted" title="Share">
+                                <i data-lucide="share-2" class="w-4 h-4"></i>
+                            </button>
+                            <button class="p-1.5 hover:bg-databricks-bg rounded text-databricks-muted" title="Delete">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function getFileIcon(format) {
+            const icons = {
+                'Excel': 'file-spreadsheet',
+                'CSV': 'file-text',
+                'PDF': 'file-text',
+                'JSON': 'file-code'
+            };
+            return icons[format] || 'file';
+        }
+
+        function generateExport(type) {
+            const messages = {
+                vendors: 'Vendor Master Data export is being generated...',
+                spend: 'Spend Analysis report is being prepared...',
+                contracts: 'Contract Report is being compiled...'
+            };
+            alert(messages[type] || 'Export started');
+        }
+
+        function generateCustomReport() {
+            const source = document.getElementById('report-source').value;
+            alert(`Custom report from ${source} data is being generated. You will be notified when it's ready.`);
+        }
+
+        function openAddContractModal() {
+            alert('Add Contract modal would open here. This would include fields for vendor selection, contract terms, value, dates, and document upload.');
+        }
+
+        function openAddIntegrationModal() {
+            alert('Add Integration modal would open here. This would show available connectors and API configurations.');
+        }
+
+        // Navigation
+        function switchView(viewName) {
+            // Hide all views
+            ['dashboard', 'vendors', 'projects', 'demos', 'governance', 'analytics', 'contracts', 'integrations', 'exports'].forEach(v => {
+                document.getElementById(`view-${v}`)?.classList.add('hidden');
+                document.getElementById(`nav-${v}`)?.classList.remove('active');
+                document.getElementById(`nav-${v}`)?.classList.add('text-databricks-muted');
+            });
+
+            // Show selected view
+            document.getElementById(`view-${viewName}`)?.classList.remove('hidden');
+            document.getElementById(`nav-${viewName}`)?.classList.add('active');
+            document.getElementById(`nav-${viewName}`)?.classList.remove('text-databricks-muted');
+
+            // Update breadcrumb
+            const names = {
+                dashboard: 'Executive Dashboard',
+                vendors: 'Vendor Catalog',
+                projects: 'Projects',
+                demos: 'Demos & POCs',
+                governance: 'Governance & Compliance'
+            };
+            document.getElementById('breadcrumb').textContent = names[viewName] || viewName;
+
+            // Close sidebar on mobile
+            if (window.innerWidth < 768) {
+                document.getElementById('sidebar').classList.add('-translate-x-full');
+                document.getElementById('overlay').classList.add('hidden');
+            }
+
+            // Initialize view-specific content
+            if (viewName === 'vendors') renderVendorsTable();
+            if (viewName === 'projects') renderProjects();
+            if (viewName === 'demos') renderDemos();
+            if (viewName === 'governance') renderGovernance();
+
+            lucide.createIcons();
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('overlay');
+            
+            if (sidebar.classList.contains('-translate-x-full')) {
+                sidebar.classList.remove('-translate-x-full');
+                overlay.classList.remove('hidden');
+            } else {
+                sidebar.classList.add('-translate-x-full');
+                overlay.classList.add('hidden');
+            }
+        }
+
+        function toggleProfileMenu() {
+            const menu = document.getElementById('profile-menu');
+            menu.classList.toggle('show');
+        }
+
+        function closeAllDrawers() {
+            document.getElementById('sidebar').classList.add('-translate-x-full');
+            document.getElementById('vendor-detail-panel').classList.remove('open');
+            document.getElementById('overlay').classList.add('hidden');
+        }
+
+        // Vendor Management
+        function renderVendorsTable() {
+            const tbody = document.getElementById('vendors-table-body');
+            const searchTerm = document.getElementById('vendor-search')?.value?.toLowerCase() || '';
+            const categoryFilter = document.getElementById('category-filter')?.value || '';
+            const statusFilter = document.getElementById('status-filter')?.value || '';
+
+            let filtered = vendors.filter(v => {
+                const matchesSearch = v.name.toLowerCase().includes(searchTerm);
+                const matchesCategory = !categoryFilter || v.categoryCode === categoryFilter;
+                const matchesStatus = !statusFilter || v.status === statusFilter;
+                return matchesSearch && matchesCategory && matchesStatus;
+            });
+
+            tbody.innerHTML = filtered.map(v => `
+                <tr class="hover:bg-databricks-bg/50 transition-all cursor-pointer" onclick="openVendorDetail(${v.id})">
+                    <td class="px-6 py-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-databricks-accent/20 flex items-center justify-center font-bold text-databricks-accent">
+                                ${v.logo}
+                            </div>
+                            <div>
+                                <p class="font-medium text-databricks-text">${v.name}</p>
+                                <p class="text-xs text-databricks-muted">${v.offerings.length} offerings</p>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 text-databricks-muted">${v.category}</td>
+                    <td class="px-6 py-4">
+                        <span class="status-badge ${getStatusColor(v.status)} capitalize">${v.status}</span>
+                    </td>
+                    <td class="px-6 py-4">
+                        <span class="status-badge ${getRiskColor(v.risk)} capitalize">${v.risk}</span>
+                    </td>
+                    <td class="px-6 py-4 font-mono">$${(v.spend / 1000).toFixed(0)}k</td>
+                    <td class="px-6 py-4 text-databricks-muted">${formatDate(v.contractEnd)}</td>
+                    <td class="px-6 py-4">
+                        <button onclick="event.stopPropagation(); openVendorDetail(${v.id})" class="text-databricks-accent hover:text-databricks-accentHover">
+                            <i data-lucide="external-link" class="w-4 h-4"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+
+            document.getElementById('showing-count').textContent = filtered.length;
+            lucide.createIcons();
+        }
+
+        function getStatusColor(status) {
+            const colors = {
+                active: 'bg-emerald-500/20 text-emerald-400',
+                pending: 'bg-yellow-500/20 text-yellow-400',
+                review: 'bg-orange-500/20 text-orange-400',
+                inactive: 'bg-gray-500/20 text-gray-400'
+            };
+            return colors[status] || colors.inactive;
+        }
+
+        function getRiskColor(risk) {
+            const colors = {
+                low: 'bg-emerald-500/20 text-emerald-400',
+                medium: 'bg-yellow-500/20 text-yellow-400',
+                high: 'bg-red-500/20 text-red-400'
+            };
+            return colors[risk] || colors.low;
+        }
+
+        function formatDate(dateStr) {
+            return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function resetFilters() {
+            document.getElementById('vendor-search').value = '';
+            document.getElementById('category-filter').value = '';
+            document.getElementById('status-filter').value = '';
+            renderVendorsTable();
+        }
+
+        // Vendor Detail Panel
+        function openVendorDetail(vendorId) {
+            currentVendor = vendors.find(v => v.id === vendorId);
+            if (!currentVendor) return;
+
+            document.getElementById('detail-name').textContent = currentVendor.name;
+            document.getElementById('detail-category').textContent = currentVendor.category;
+            document.getElementById('detail-logo').textContent = currentVendor.logo;
+            document.getElementById('detail-status').textContent = currentVendor.status;
+            document.getElementById('detail-status').className = `status-badge ${getStatusColor(currentVendor.status)} capitalize`;
+            document.getElementById('detail-risk').textContent = currentVendor.risk;
+            document.getElementById('detail-risk').className = `status-badge ${getRiskColor(currentVendor.risk)} capitalize`;
+            document.getElementById('detail-value').textContent = `$${(currentVendor.spend / 1000000).toFixed(2)}M`;
+            document.getElementById('detail-renewal').textContent = formatDate(currentVendor.contractEnd);
+            document.getElementById('detail-description').textContent = currentVendor.description;
+
+            // Contacts
+            document.getElementById('detail-contacts').innerHTML = currentVendor.contacts.map(c => `
+                <div class="flex items-center justify-between p-2 bg-databricks-bg rounded border border-databricks-border">
+                    <div>
+                        <p class="font-medium text-sm">${c.name}</p>
+                        <p class="text-xs text-databricks-muted">${c.role}</p>
+                    </div>
+                    <a href="mailto:${c.email}" class="text-databricks-accent hover:text-databricks-accentHover">
+                        <i data-lucide="mail" class="w-4 h-4"></i>
+                    </a>
+                </div>
+            `).join('');
+
+            // Offerings
+            document.getElementById('offerings-list').innerHTML = currentVendor.offerings.map + (value / 1000) + 'k';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function openAddVendorModal() {
+            alert('Add Vendor modal would open here with form fields for vendor details, contacts, and initial contract information.');
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('overlay');
+            
+            if (sidebar.classList.contains('-translate-x-full')) {
+                sidebar.classList.remove('-translate-x-full');
+                overlay.classList.remove('hidden');
+            } else {
+                sidebar.classList.add('-translate-x-full');
+                overlay.classList.add('hidden');
+            }
+        }
+
+        function toggleProfileMenu() {
+            const menu = document.getElementById('profile-menu');
+            menu.classList.toggle('show');
+        }
+
+        function closeAllDrawers() {
+            document.getElementById('sidebar').classList.add('-translate-x-full');
+            document.getElementById('vendor-detail-panel').classList.remove('open');
+            document.getElementById('overlay').classList.add('hidden');
+        }
+
+        // Vendor Management
+        function renderVendorsTable() {
+            const tbody = document.getElementById('vendors-table-body');
+            const searchTerm = document.getElementById('vendor-search')?.value?.toLowerCase() || '';
+            const categoryFilter = document.getElementById('category-filter')?.value || '';
+            const statusFilter = document.getElementById('status-filter')?.value || '';
+
+            let filtered = vendors.filter(v => {
+                const matchesSearch = v.name.toLowerCase().includes(searchTerm);
+                const matchesCategory = !categoryFilter || v.categoryCode === categoryFilter;
+                const matchesStatus = !statusFilter || v.status === statusFilter;
+                return matchesSearch && matchesCategory && matchesStatus;
+            });
+
+            tbody.innerHTML = filtered.map(v => `
+                <tr class="hover:bg-databricks-bg/50 transition-all cursor-pointer" onclick="openVendorDetail(${v.id})">
+                    <td class="px-6 py-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-databricks-accent/20 flex items-center justify-center font-bold text-databricks-accent">
+                                ${v.logo}
+                            </div>
+                            <div>
+                                <p class="font-medium text-databricks-text">${v.name}</p>
+                                <p class="text-xs text-databricks-muted">${v.offerings.length} offerings</p>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 text-databricks-muted">${v.category}</td>
+                    <td class="px-6 py-4">
+                        <span class="status-badge ${getStatusColor(v.status)} capitalize">${v.status}</span>
+                    </td>
+                    <td class="px-6 py-4">
+                        <span class="status-badge ${getRiskColor(v.risk)} capitalize">${v.risk}</span>
+                    </td>
+                    <td class="px-6 py-4 font-mono">$${(v.spend / 1000).toFixed(0)}k</td>
+                    <td class="px-6 py-4 text-databricks-muted">${formatDate(v.contractEnd)}</td>
+                    <td class="px-6 py-4">
+                        <button onclick="event.stopPropagation(); openVendorDetail(${v.id})" class="text-databricks-accent hover:text-databricks-accentHover">
+                            <i data-lucide="external-link" class="w-4 h-4"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+
+            document.getElementById('showing-count').textContent = filtered.length;
+            lucide.createIcons();
+        }
+
+        function getStatusColor(status) {
+            const colors = {
+                active: 'bg-emerald-500/20 text-emerald-400',
+                pending: 'bg-yellow-500/20 text-yellow-400',
+                review: 'bg-orange-500/20 text-orange-400',
+                inactive: 'bg-gray-500/20 text-gray-400'
+            };
+            return colors[status] || colors.inactive;
+        }
+
+        function getRiskColor(risk) {
+            const colors = {
+                low: 'bg-emerald-500/20 text-emerald-400',
+                medium: 'bg-yellow-500/20 text-yellow-400',
+                high: 'bg-red-500/20 text-red-400'
+            };
+            return colors[risk] || colors.low;
+        }
+
+        function formatDate(dateStr) {
+            return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function resetFilters() {
+            document.getElementById('vendor-search').value = '';
+            document.getElementById('category-filter').value = '';
+            document.getElementById('status-filter').value = '';
+            renderVendorsTable();
+        }
+
+        // Vendor Detail Panel
+        function openVendorDetail(vendorId) {
+            currentVendor = vendors.find(v => v.id === vendorId);
+            if (!currentVendor) return;
+
+            document.getElementById('detail-name').textContent = currentVendor.name;
+            document.getElementById('detail-category').textContent = currentVendor.category;
+            document.getElementById('detail-logo').textContent = currentVendor.logo;
+            document.getElementById('detail-status').textContent = currentVendor.status;
+            document.getElementById('detail-status').className = `status-badge ${getStatusColor(currentVendor.status)} capitalize`;
+            document.getElementById('detail-risk').textContent = currentVendor.risk;
+            document.getElementById('detail-risk').className = `status-badge ${getRiskColor(currentVendor.risk)} capitalize`;
+            document.getElementById('detail-value').textContent = `$${(currentVendor.spend / 1000000).toFixed(2)}M`;
+            document.getElementById('detail-renewal').textContent = formatDate(currentVendor.contractEnd);
+            document.getElementById('detail-description').textContent = currentVendor.description;
+
+            // Contacts
+            document.getElementById('detail-contacts').innerHTML = currentVendor.contacts.map(c => `
+                <div class="flex items-center justify-between p-2 bg-databricks-bg rounded border border-databricks-border">
+                    <div>
+                        <p class="font-medium text-sm">${c.name}</p>
+                        <p class="text-xs text-databricks-muted">${c.role}</p>
+                    </div>
+                    <a href="mailto:${c.email}" class="text-databricks-accent hover:text-databricks-accentHover">
+                        <i data-lucide="mail" class="w-4 h-4"></i>
+                    </a>
+                </div>
+            `).join('');
+
+            // Offerings
+            document.getElementById('offerings-list').innerHTML = currentVendor.offerings.map(o => `
+                <div class="p-4 bg-databricks-bg rounded-lg border border-databricks-border">
+                    <div class="flex justify-between items-start mb-2">
+                        <div>
+                            <h4 class="font-semibold">${o.name}</h4>
+                            <span class="text-xs px-2 py-0.5 bg-databricks-accent/20 text-databricks-accent rounded">${o.type}</span>
+                        </div>
+                        <span class="text-sm font-medium text-databricks-accent">${o.price}</span>
+                    </div>
+                    <p class="text-sm text-databricks-muted">${o.description}</p>
+                </div>
+            `).join('');
+
+            // Projects
+            document.getElementById('projects-list').innerHTML = currentVendor.projects.map(p => `
+                <div class="p-4 bg-databricks-bg rounded-lg border border-databricks-border">
+                    <div class="flex justify-between items-start mb-2">
+                        <h4 class="font-semibold">${p.name}</h4>
+                        <span class="text-xs px-2 py-0.5 rounded capitalize ${getStatusColor(p.status)}">${p.status}</span>
+                    </div>
+                    <div class="flex justify-between text-sm text-databricks-muted mb-2">
+                        <span>Budget: ${(p.budget / 1000).toFixed(0)}k</span>
+                        <span>Spent: ${(p.spent / 1000).toFixed(0)}k</span>
+                    </div>
+                    <div class="w-full bg-databricks-card rounded-full h-2">
+                        <div class="bg-databricks-accent h-2 rounded-full" style="width: ${(p.spent / p.budget * 100)}%"></div>
+                    </div>
+                </div>
+            `).join('');
+
+            // Compliance Docs
+            document.getElementById('compliance-docs').innerHTML = currentVendor.compliance.documents.map(d => `
+                <div class="flex items-center justify-between p-3 bg-databricks-bg rounded border border-databricks-border">
+                    <div class="flex items-center gap-3">
+                        <i data-lucide="file-text" class="w-4 h-4 text-databricks-muted"></i>
+                        <div>
+                            <p class="text-sm font-medium">${d.name}</p>
+                            <p class="text-xs text-databricks-muted">Valid until ${formatDate(d.date)}</p>
+                        </div>
+                    </div>
+                    <span class="text-xs px-2 py-0.5 rounded ${d.status === 'valid' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-yellow-500/20 text-yellow-400'} capitalize">
+                        ${d.status}
+                    </span>
+                </div>
+            `).join('');
+
+            // Invoices
+            document.getElementById('invoices-list').innerHTML = currentVendor.invoices.map(i => `
+                <div class="flex items-center justify-between p-3 bg-databricks-bg rounded border border-databricks-border">
+                    <div class="flex items-center gap-3">
+                        <i data-lucide="file-invoice" class="w-4 h-4 text-databricks-muted"></i>
+                        <div>
+                            <p class="text-sm font-medium">${formatDate(i.date)}</p>
+                            <p class="text-xs text-databricks-muted">Invoice #${Math.random().toString(36).substr(2, 9).toUpperCase()}</p>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm font-medium">${(i.amount / 1000).toFixed(1)}k</p>
+                        <span class="text-xs px-2 py-0.5 rounded ${i.status === 'paid' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-yellow-500/20 text-yellow-400'} capitalize">
+                            ${i.status}
+                        </span>
+                    </div>
+                </div>
+            `).join('');
+            
+            // Initialize cost chart
+            setTimeout(initVendorCostChart, 100);
+        } + (value / 1000) + 'k';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Top Vendors List
+            const topVendors = [...vendors].sort((a, b) => b.spend - a.spend).slice(0, 5);
+            document.getElementById('top-vendors-list').innerHTML = topVendors.map((v, i) => `
+                <div class="flex items-center justify-between p-3 bg-databricks-bg rounded-lg border border-databricks-border">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-lg bg-databricks-accent/20 flex items-center justify-center text-sm font-bold text-databricks-accent">
+                            ${v.logo}
+                        </div>
+                        <div>
+                            <p class="font-medium text-sm">${v.name}</p>
+                            <p class="text-xs text-databricks-muted">${v.category}</p>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <p class="font-semibold text-sm">${(v.spend / 1000000).toFixed(2)}M</p>
+                        <div class="w-24 bg-databricks-bg rounded-full h-1.5 mt-1">
+                            <div class="bg-databricks-accent h-1.5 rounded-full" style="width: ${Math.min((v.spend / 2500000) * 100, 100)}%"></div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            // Budget Table
+            document.getElementById('budget-table-body').innerHTML = projects.map(p => {
+                const variance = p.spent - p.budget;
+                const variancePercent = ((variance / p.budget) * 100).toFixed(1);
+                const utilization = ((p.spent / p.budget) * 100).toFixed(0);
+                return `
+                    <tr>
+                        <td class="py-3 font-medium">${p.name}</td>
+                        <td class="py-3 text-databricks-muted">${p.vendor}</td>
+                        <td class="py-3 text-right font-mono">${(p.budget / 1000).toFixed(0)}k</td>
+                        <td class="py-3 text-right font-mono">${(p.spent / 1000).toFixed(0)}k</td>
+                        <td class="py-3 text-right font-mono ${variance > 0 ? 'text-red-400' : 'text-emerald-400'}">
+                            ${variance > 0 ? '+' : ''}${(variance / 1000).toFixed(0)}k
+                        </td>
+                        <td class="py-3">
+                            <div class="flex items-center gap-2">
+                                <div class="flex-1 bg-databricks-bg rounded-full h-2">
+                                    <div class="h-2 rounded-full ${utilization > 90 ? 'bg-red-500' : utilization > 70 ? 'bg-yellow-500' : 'bg-emerald-500'}" 
+                                         style="width: ${Math.min(utilization, 100)}%"></div>
+                                </div>
+                                <span class="text-xs w-8">${utilization}%</span>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Contracts View Functions
+        function renderContracts() {
+            const contracts = [
+                { id: 'CNT-2024-001', vendor: 'Databricks', type: 'Enterprise License', value: 1200000, start: '2022-12-15', end: '2025-12-15', status: 'active' },
+                { id: 'CNT-2024-002', vendor: 'Snowflake', type: 'Data Warehouse', value: 850000, start: '2021-09-20', end: '2024-09-20', status: 'expiring' },
+                { id: 'CNT-2024-003', vendor: 'AWS', type: 'Enterprise Agreement', value: 2100000, start: '2022-06-30', end: '2024-06-30', status: 'expiring' },
+                { id: 'CNT-2024-004', vendor: 'Palantir', type: 'Software License', value: 450000, start: '2023-12-01', end: '2024-12-01', status: 'active' },
+                { id: 'CNT-2024-005', vendor: 'Fivetran', type: 'SaaS Subscription', value: 180000, start: '2024-03-15', end: '2025-03-15', status: 'active' },
+                { id: 'CNT-2024-006', vendor: 'McKinsey Digital', type: 'Professional Services', value: 600000, start: '2023-08-30', end: '2024-08-30', status: 'expiring' },
+                { id: 'CNT-2024-007', vendor: 'Azure', type: 'Cloud Services', value: 950000, start: '2023-01-01', end: '2026-01-01', status: 'active' }
+            ];
+
+            document.getElementById('contracts-table-body').innerHTML = contracts.map(c => `
+                <tr class="hover:bg-databricks-bg/50 transition-all">
+                    <td class="px-6 py-4 font-mono text-sm">${c.id}</td>
+                    <td class="px-6 py-4 font-medium">${c.vendor}</td>
+                    <td class="px-6 py-4 text-databricks-muted">${c.type}</td>
+                    <td class="px-6 py-4 font-mono">${(c.value / 1000).toFixed(0)}k</td>
+                    <td class="px-6 py-4 text-databricks-muted">${formatDate(c.start)}</td>
+                    <td class="px-6 py-4 text-databricks-muted">${formatDate(c.end)}</td>
+                    <td class="px-6 py-4">
+                        <span class="status-badge ${getContractStatusColor(c.status)} capitalize">${c.status}</span>
+                    </td>
+                    <td class="px-6 py-4">
+                        <div class="flex gap-2">
+                            <button class="p-1.5 hover:bg-databricks-bg rounded" title="View">
+                                <i data-lucide="eye" class="w-4 h-4 text-databricks-muted"></i>
+                            </button>
+                            <button class="p-1.5 hover:bg-databricks-bg rounded" title="Download">
+                                <i data-lucide="download" class="w-4 h-4 text-databricks-muted"></i>
+                            </button>
+                            <button class="p-1.5 hover:bg-databricks-bg rounded" title="Renew">
+                                <i data-lucide="refresh-cw" class="w-4 h-4 text-databricks-accent"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function getContractStatusColor(status) {
+            const colors = {
+                active: 'bg-emerald-500/20 text-emerald-400',
+                expiring: 'bg-yellow-500/20 text-yellow-400',
+                expired: 'bg-red-500/20 text-red-400',
+                pending: 'bg-databricks-accent/20 text-databricks-accent'
+            };
+            return colors[status] || colors.active;
+        }
+
+        // Integrations View Functions
+        function renderIntegrations() {
+            const integrations = [
+                { name: 'Databricks API', vendor: 'Databricks', type: 'REST API', status: 'active', lastSync: '2 min ago', records: 15420 },
+                { name: 'Snowflake Connector', vendor: 'Snowflake', type: 'Database', status: 'active', lastSync: '5 min ago', records: 8934 },
+                { name: 'AWS Cost Explorer', vendor: 'AWS', type: 'Cloud API', status: 'warning', lastSync: '1 hour ago', records: 3421 },
+                { name: 'Salesforce Sync', vendor: 'Salesforce', type: 'CRM', status: 'active', lastSync: '15 min ago', records: 5623 },
+                { name: 'ServiceNow', vendor: 'ServiceNow', type: 'ITSM', status: 'error', lastSync: '3 hours ago', records: 0 },
+                { name: 'Jira Integration', vendor: 'Atlassian', type: 'Project Mgmt', status: 'active', lastSync: '10 min ago', records: 1289 },
+                { name: 'Slack Notifications', vendor: 'Slack', type: 'Messaging', status: 'inactive', lastSync: 'Never', records: 0 },
+                { name: 'GitHub Webhook', vendor: 'GitHub', type: 'DevOps', status: 'active', lastSync: '1 min ago', records: 45 }
+            ];
+
+            document.getElementById('integrations-grid').innerHTML = integrations.map(i => `
+                <div class="bg-databricks-card border border-databricks-border rounded-xl p-5 hover:border-databricks-accent/30 transition-all">
+                    <div class="flex justify-between items-start mb-4">
+                        <div class="w-10 h-10 rounded-lg bg-databricks-bg flex items-center justify-center">
+                            <i data-lucide="${getIntegrationIcon(i.type)}" class="w-5 h-5 text-databricks-accent"></i>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <div class="w-2 h-2 rounded-full ${getStatusColorDot(i.status)}"></div>
+                            <span class="text-xs capitalize ${getStatusTextColor(i.status)}">${i.status}</span>
+                        </div>
+                    </div>
+                    <h3 class="font-semibold mb-1">${i.name}</h3>
+                    <p class="text-sm text-databricks-muted mb-4">${i.vendor}</p>
+                    <div class="flex justify-between text-xs text-databricks-muted border-t border-databricks-border pt-3">
+                        <span>Last sync: ${i.lastSync}</span>
+                        <span>${i.records.toLocaleString()} records</span>
+                    </div>
+                    <div class="mt-3 flex gap-2">
+                        <button class="flex-1 py-1.5 text-xs bg-databricks-bg hover:bg-databricks-border rounded transition-all">Configure</button>
+                        <button class="flex-1 py-1.5 text-xs bg-databricks-bg hover:bg-databricks-border rounded transition-all">Sync Now</button>
+                    </div>
+                </div>
+            `).join('');
+
+            // Integration Logs
+            const logs = [
+                { time: '2024-03-20 14:32:15', integration: 'Databricks API', action: 'Incremental Sync', status: 'success', records: 1542, duration: '45s' },
+                { time: '2024-03-20 14:28:03', integration: 'Snowflake Connector', action: 'Full Refresh', status: 'success', records: 8934, duration: '3m 12s' },
+                { time: '2024-03-20 14:15:22', integration: 'AWS Cost Explorer', action: 'Daily Pull', status: 'warning', records: 3421, duration: '2m 45s' },
+                { time: '2024-03-20 13:45:10', integration: 'ServiceNow', action: 'Ticket Sync', status: 'error', records: 0, duration: '30s' },
+                { time: '2024-03-20 13:30:05', integration: 'Salesforce Sync', action: 'Contact Update', status: 'success', records: 234, duration: '12s' }
+            ];
+
+            document.getElementById('integration-logs-body').innerHTML = logs.map(l => `
+                <tr>
+                    <td class="py-3 font-mono text-xs text-databricks-muted">${l.time}</td>
+                    <td class="py-3 font-medium text-sm">${l.integration}</td>
+                    <td class="py-3 text-databricks-muted text-sm">${l.action}</td>
+                    <td class="py-3">
+                        <span class="inline-flex items-center gap-1 text-xs">
+                            <div class="w-1.5 h-1.5 rounded-full ${getStatusColorDot(l.status)}"></div>
+                            <span class="capitalize ${getStatusTextColor(l.status)}">${l.status}</span>
+                        </span>
+                    </td>
+                    <td class="py-3 text-databricks-muted text-sm">${l.records.toLocaleString()}</td>
+                    <td class="py-3 text-databricks-muted text-sm">${l.duration}</td>
+                </tr>
+            `).join('');
+        }
+
+        function getIntegrationIcon(type) {
+            const icons = {
+                'REST API': 'code',
+                'Database': 'database',
+                'Cloud API': 'cloud',
+                'CRM': 'users',
+                'ITSM': 'ticket',
+                'Project Mgmt': 'folder-kanban',
+                'Messaging': 'message-square',
+                'DevOps': 'git-branch'
+            };
+            return icons[type] || 'plug';
+        }
+
+        function getStatusColorDot(status) {
+            const colors = {
+                active: 'bg-emerald-500',
+                warning: 'bg-yellow-500',
+                error: 'bg-red-500',
+                inactive: 'bg-databricks-muted'
+            };
+            return colors[status] || colors.inactive;
+        }
+
+        function getStatusTextColor(status) {
+            const colors = {
+                active: 'text-emerald-400',
+                warning: 'text-yellow-400',
+                error: 'text-red-400',
+                inactive: 'text-databricks-muted'
+            };
+            return colors[status] || colors.inactive;
+        }
+
+        // Exports View Functions
+        function renderExports() {
+            const recentExports = [
+                { name: 'Vendor_Master_Q1_2024.xlsx', date: '2024-03-19 09:15', format: 'Excel', size: '2.4 MB', user: 'John Doe' },
+                { name: 'Spend_Analysis_FY24.csv', date: '2024-03-18 16:30', format: 'CSV', size: '856 KB', user: 'John Doe' },
+                { name: 'Contract_Summary_Mar.pdf', date: '2024-03-15 11:20', format: 'PDF', size: '1.2 MB', user: 'Jane Smith' },
+                { name: 'Integration_Logs.json', date: '2024-03-14 14:00', format: 'JSON', size: '4.1 MB', user: 'John Doe' },
+                { name: 'Compliance_Report_Q1.pdf', date: '2024-03-10 10:45', format: 'PDF', size: '3.8 MB', user: 'Mike Johnson' }
+            ];
+
+            document.getElementById('recent-exports-body').innerHTML = recentExports.map(e => `
+                <tr>
+                    <td class="py-3">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="${getFileIcon(e.format)}" class="w-4 h-4 text-databricks-muted"></i>
+                            <span class="font-medium text-sm">${e.name}</span>
+                        </div>
+                    </td>
+                    <td class="py-3 text-databricks-muted text-sm">${e.date}</td>
+                    <td class="py-3 text-sm"><span class="px-2 py-1 bg-databricks-bg rounded text-xs">${e.format}</span></td>
+                    <td class="py-3 text-databricks-muted text-sm">${e.size}</td>
+                    <td class="py-3 text-databricks-muted text-sm">${e.user}</td>
+                    <td class="py-3">
+                        <div class="flex gap-2">
+                            <button class="p-1.5 hover:bg-databricks-bg rounded text-databricks-accent" title="Download">
+                                <i data-lucide="download" class="w-4 h-4"></i>
+                            </button>
+                            <button class="p-1.5 hover:bg-databricks-bg rounded text-databricks-muted" title="Share">
+                                <i data-lucide="share-2" class="w-4 h-4"></i>
+                            </button>
+                            <button class="p-1.5 hover:bg-databricks-bg rounded text-databricks-muted" title="Delete">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function getFileIcon(format) {
+            const icons = {
+                'Excel': 'file-spreadsheet',
+                'CSV': 'file-text',
+                'PDF': 'file-text',
+                'JSON': 'file-code'
+            };
+            return icons[format] || 'file';
+        }
+
+        function generateExport(type) {
+            const messages = {
+                vendors: 'Vendor Master Data export is being generated...',
+                spend: 'Spend Analysis report is being prepared...',
+                contracts: 'Contract Report is being compiled...'
+            };
+            alert(messages[type] || 'Export started');
+        }
+
+        function generateCustomReport() {
+            const source = document.getElementById('report-source').value;
+            alert(`Custom report from ${source} data is being generated. You will be notified when it's ready.`);
+        }
+
+        function openAddContractModal() {
+            alert('Add Contract modal would open here. This would include fields for vendor selection, contract terms, value, dates, and document upload.');
+        }
+
+        function openAddIntegrationModal() {
+            alert('Add Integration modal would open here. This would show available connectors and API configurations.');
+        }
+
+        // Navigation
+        function switchView(viewName) {
+            // Hide all views
+            ['dashboard', 'vendors', 'projects', 'demos', 'governance', 'analytics', 'contracts', 'integrations', 'exports'].forEach(v => {
+                document.getElementById(`view-${v}`)?.classList.add('hidden');
+                document.getElementById(`nav-${v}`)?.classList.remove('active');
+                document.getElementById(`nav-${v}`)?.classList.add('text-databricks-muted');
+            });
+
+            // Show selected view
+            document.getElementById(`view-${viewName}`)?.classList.remove('hidden');
+            document.getElementById(`nav-${viewName}`)?.classList.add('active');
+            document.getElementById(`nav-${viewName}`)?.classList.remove('text-databricks-muted');
+
+            // Update breadcrumb
+            const names = {
+                dashboard: 'Executive Dashboard',
+                vendors: 'Vendor Catalog',
+                projects: 'Projects',
+                demos: 'Demos & POCs',
+                governance: 'Governance & Compliance'
+            };
+            document.getElementById('breadcrumb').textContent = names[viewName] || viewName;
+
+            // Close sidebar on mobile
+            if (window.innerWidth < 768) {
+                document.getElementById('sidebar').classList.add('-translate-x-full');
+                document.getElementById('overlay').classList.add('hidden');
+            }
+
+            // Initialize view-specific content
+            if (viewName === 'vendors') renderVendorsTable();
+            if (viewName === 'projects') renderProjects();
+            if (viewName === 'demos') renderDemos();
+            if (viewName === 'governance') renderGovernance();
+
+            lucide.createIcons();
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('overlay');
+            
+            if (sidebar.classList.contains('-translate-x-full')) {
+                sidebar.classList.remove('-translate-x-full');
+                overlay.classList.remove('hidden');
+            } else {
+                sidebar.classList.add('-translate-x-full');
+                overlay.classList.add('hidden');
+            }
+        }
+
+        function toggleProfileMenu() {
+            const menu = document.getElementById('profile-menu');
+            menu.classList.toggle('show');
+        }
+
+        function closeAllDrawers() {
+            document.getElementById('sidebar').classList.add('-translate-x-full');
+            document.getElementById('vendor-detail-panel').classList.remove('open');
+            document.getElementById('overlay').classList.add('hidden');
+        }
+
+        // Vendor Management
+        function renderVendorsTable() {
+            const tbody = document.getElementById('vendors-table-body');
+            const searchTerm = document.getElementById('vendor-search')?.value?.toLowerCase() || '';
+            const categoryFilter = document.getElementById('category-filter')?.value || '';
+            const statusFilter = document.getElementById('status-filter')?.value || '';
+
+            let filtered = vendors.filter(v => {
+                const matchesSearch = v.name.toLowerCase().includes(searchTerm);
+                const matchesCategory = !categoryFilter || v.categoryCode === categoryFilter;
+                const matchesStatus = !statusFilter || v.status === statusFilter;
+                return matchesSearch && matchesCategory && matchesStatus;
+            });
+
+            tbody.innerHTML = filtered.map(v => `
+                <tr class="hover:bg-databricks-bg/50 transition-all cursor-pointer" onclick="openVendorDetail(${v.id})">
+                    <td class="px-6 py-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-databricks-accent/20 flex items-center justify-center font-bold text-databricks-accent">
+                                ${v.logo}
+                            </div>
+                            <div>
+                                <p class="font-medium text-databricks-text">${v.name}</p>
+                                <p class="text-xs text-databricks-muted">${v.offerings.length} offerings</p>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 text-databricks-muted">${v.category}</td>
+                    <td class="px-6 py-4">
+                        <span class="status-badge ${getStatusColor(v.status)} capitalize">${v.status}</span>
+                    </td>
+                    <td class="px-6 py-4">
+                        <span class="status-badge ${getRiskColor(v.risk)} capitalize">${v.risk}</span>
+                    </td>
+                    <td class="px-6 py-4 font-mono">$${(v.spend / 1000).toFixed(0)}k</td>
+                    <td class="px-6 py-4 text-databricks-muted">${formatDate(v.contractEnd)}</td>
+                    <td class="px-6 py-4">
+                        <button onclick="event.stopPropagation(); openVendorDetail(${v.id})" class="text-databricks-accent hover:text-databricks-accentHover">
+                            <i data-lucide="external-link" class="w-4 h-4"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+
+            document.getElementById('showing-count').textContent = filtered.length;
+            lucide.createIcons();
+        }
+
+        function getStatusColor(status) {
+            const colors = {
+                active: 'bg-emerald-500/20 text-emerald-400',
+                pending: 'bg-yellow-500/20 text-yellow-400',
+                review: 'bg-orange-500/20 text-orange-400',
+                inactive: 'bg-gray-500/20 text-gray-400'
+            };
+            return colors[status] || colors.inactive;
+        }
+
+        function getRiskColor(risk) {
+            const colors = {
+                low: 'bg-emerald-500/20 text-emerald-400',
+                medium: 'bg-yellow-500/20 text-yellow-400',
+                high: 'bg-red-500/20 text-red-400'
+            };
+            return colors[risk] || colors.low;
+        }
+
+        function formatDate(dateStr) {
+            return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function resetFilters() {
+            document.getElementById('vendor-search').value = '';
+            document.getElementById('category-filter').value = '';
+            document.getElementById('status-filter').value = '';
+            renderVendorsTable();
+        }
+
+        // Vendor Detail Panel
+        function openVendorDetail(vendorId) {
+            currentVendor = vendors.find(v => v.id === vendorId);
+            if (!currentVendor) return;
+
+            document.getElementById('detail-name').textContent = currentVendor.name;
+            document.getElementById('detail-category').textContent = currentVendor.category;
+            document.getElementById('detail-logo').textContent = currentVendor.logo;
+            document.getElementById('detail-status').textContent = currentVendor.status;
+            document.getElementById('detail-status').className = `status-badge ${getStatusColor(currentVendor.status)} capitalize`;
+            document.getElementById('detail-risk').textContent = currentVendor.risk;
+            document.getElementById('detail-risk').className = `status-badge ${getRiskColor(currentVendor.risk)} capitalize`;
+            document.getElementById('detail-value').textContent = `$${(currentVendor.spend / 1000000).toFixed(2)}M`;
+            document.getElementById('detail-renewal').textContent = formatDate(currentVendor.contractEnd);
+            document.getElementById('detail-description').textContent = currentVendor.description;
+
+            // Contacts
+            document.getElementById('detail-contacts').innerHTML = currentVendor.contacts.map(c => `
+                <div class="flex items-center justify-between p-2 bg-databricks-bg rounded border border-databricks-border">
+                    <div>
+                        <p class="font-medium text-sm">${c.name}</p>
+                        <p class="text-xs text-databricks-muted">${c.role}</p>
+                    </div>
+                    <a href="mailto:${c.email}" class="text-databricks-accent hover:text-databricks-accentHover">
+                        <i data-lucide="mail" class="w-4 h-4"></i>
+                    </a>
+                </div>
+            `).join('');
+
+            // Offerings
+            document.getElementById('offerings-list').innerHTML = currentVendor.offerings.map

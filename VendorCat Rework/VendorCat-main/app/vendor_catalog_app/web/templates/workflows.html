@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Pending Approvals</h1>
+
+<section class="card section-divider">
+  <form method="get" action="/workflows" class="grid grid-5 form-grid">
+    <label>Queue
+      <select name="queue">
+        {% for value in queue_options %}
+        <option value="{{ value }}" {% if value == selected_queue %}selected{% endif %}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Status
+      <select name="status">
+        {% for value in status_options %}
+        <option value="{{ value }}" {% if value == selected_status %}selected{% endif %}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Business Unit
+      <select name="business_unit">
+        <option value="all" {% if selected_business_unit == 'all' %}selected{% endif %}>all</option>
+        {% for value in business_unit_options %}
+        <option value="{{ value }}" {% if value == selected_business_unit %}selected{% endif %}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Requester
+      <select name="requestor">
+        <option value="all" {% if selected_requestor == 'all' %}selected{% endif %}>all</option>
+        {% for value in requestor_options %}
+        <option value="{{ value }}" {% if value == selected_requestor %}selected{% endif %}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Assignee
+      <select name="assignee">
+        <option value="all" {% if selected_assignee == 'all' %}selected{% endif %}>all</option>
+        {% for value in assignee_options %}
+        <option value="{{ value }}" {% if value == selected_assignee %}selected{% endif %}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="full">People Search
+      <input type="text" name="people" value="{{ selected_people }}" placeholder="Filter by person, type, vendor, or notes">
+    </label>
+    <div class="form-actions"><button type="submit">Apply Filters</button></div>
+  </form>
+</section>
+
+<section class="card section-divider">
+  <div class="section-header">
+    <div>
+      <h2>Queue</h2>
+      <p>{{ rows|length }} request(s) in the current view.</p>
+    </div>
+    <div class="button-group">
+      {% if next_pending_url %}
+      <a class="button-link" href="{{ next_pending_url }}">Open Next Pending</a>
+      {% else %}
+      <span class="muted">No request available for current filters.</span>
+      {% endif %}
+    </div>
+  </div>
+  {% if not rows %}
+  <section class="card empty-state-card section-divider">
+    <h2>No Approval Requests</h2>
+    <p>No requests match the current queue filters. Reset filters or review your submitted requests.</p>
+    <div class="empty-state-actions">
+      <a class="button-link subtle" href="/workflows?status=pending&queue=my_approvals&business_unit=all&requestor=all&assignee=all">Reset Queue Filters</a>
+      <a class="button-link" href="/workflows?status=all&queue=my_submissions&business_unit=all&requestor=all&assignee=all">Open My Submissions</a>
+    </div>
+  </section>
+  {% endif %}
+  <table>
+    <thead>
+      <tr>
+        <th>Request ID</th>
+        <th>Vendor</th>
+        <th>Type</th>
+        <th>Requester</th>
+        <th>Status</th>
+        <th>Approval Level</th>
+        <th>Business Unit</th>
+        <th>Assignee</th>
+        <th>Summary</th>
+        <th>Submitted</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>
+          <a href="/workflows/{{ row.change_request_id }}?return_to={{ current_view_url_encoded }}">{{ row.change_request_id }}</a>
+        </td>
+        <td>{{ row._vendor_display }}</td>
+        <td>{{ row.change_type }}</td>
+        <td>{{ row.requestor_user_principal }}</td>
+        <td>{{ row.status }}</td>
+        <td>{{ row._approval_label }}</td>
+        <td>{{ row._business_unit_display }}</td>
+        <td>{{ row._assignee }}</td>
+        <td>{{ row._summary }}</td>
+        <td>{{ row.submitted_at }}</td>
+        <td>
+          <div class="queue-row-actions">
+            <a class="button-link subtle" href="/workflows/{{ row.change_request_id }}?return_to={{ current_view_url_encoded }}">Open</a>
+            {% if row._can_quick_decide and not locked_mode and quick_approve_enabled %}
+            <form method="post" action="/workflows/{{ row.change_request_id }}/decision" class="inline-form queue-inline-action">
+              <input type="hidden" name="return_to" value="{{ current_view_url }}">
+              <input type="hidden" name="decision" value="approved">
+              <input type="hidden" name="notes" value="Quick approve from pending approvals queue.">
+              <button type="submit">Quick Approve</button>
+            </form>
+            {% endif %}
+            {% if row._can_quick_decide and not locked_mode and quick_reject_enabled %}
+            <form method="post" action="/workflows/{{ row.change_request_id }}/decision" class="inline-form queue-inline-action">
+              <input type="hidden" name="return_to" value="{{ current_view_url }}">
+              <input type="hidden" name="decision" value="rejected">
+              <input type="hidden" name="notes" value="Quick reject from pending approvals queue.">
+              <button type="submit">Quick Reject</button>
+            </form>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="11">No approval requests.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}
+

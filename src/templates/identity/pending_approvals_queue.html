@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card">
+  <h1>Pending Approvals Queue</h1>
+  <p class="muted">Current user: {{ user_principal }}</p>
+
+  {% if not can_review %}
+    <p class="muted">You do not have permission to review pending approvals.</p>
+  {% else %}
+    <h2>Queue</h2>
+    <table class="table table-sm table-striped">
+      <thead>
+        <tr>
+          <th>Request ID</th>
+          <th>Requested By</th>
+          <th>Requested Role</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+          <tr>
+            <td>{{ item.access_request_id }}</td>
+            <td>{{ item.requested_by_principal }}</td>
+            <td>{{ item.requested_role }}</td>
+            <td>{{ item.status }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4">No pending approvals.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h2>Your Scope Grants</h2>
+    <ul>
+      {% for row in scope_grants %}
+        <li>{{ row.org_id }} ({{ row.scope_level }})</li>
+      {% empty %}
+        <li>No scope grants for current user.</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</section>
+{% endblock %}

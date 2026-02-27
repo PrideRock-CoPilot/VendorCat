@@ -76,3 +76,9 @@ CREATE INDEX IF NOT EXISTS idx_app_offering_invoice_offering ON app_offering_inv
 CREATE INDEX IF NOT EXISTS idx_app_offering_payment_invoice ON app_offering_payment(invoice_id, payment_date, active_flag);
 CREATE INDEX IF NOT EXISTS idx_app_offering_data_flow_offering ON app_offering_data_flow(offering_id, direction, active_flag);
 CREATE INDEX IF NOT EXISTS idx_app_import_mapping_profile_layout_active ON app_import_mapping_profile(layout_key, active_flag, updated_at);
+CREATE INDEX IF NOT EXISTS idx_app_import_job_status ON app_import_job(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_app_import_stage_row_job_area ON app_import_stage_row(import_job_id, area_key, row_index);
+CREATE INDEX IF NOT EXISTS idx_app_import_stage_row_job_decision ON app_import_stage_row(import_job_id, decision_action, decision_updated_at);
+CREATE INDEX IF NOT EXISTS idx_app_import_stage_vendor_identifier_job_row ON app_import_stage_vendor_identifier(import_job_id, row_index);
+CREATE INDEX IF NOT EXISTS idx_app_import_review_area_state_job_order ON app_import_review_area_state(import_job_id, area_order, status);
+CREATE INDEX IF NOT EXISTS idx_app_import_mapping_request_status ON app_import_mapping_profile_request(status, layout_key, created_at);

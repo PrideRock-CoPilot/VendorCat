@@ -1,0 +1,4 @@
+project_id,vendor_id,project_name,project_type,status,start_date,target_date,owner_principal,description
+,vnd-70231,Q3 Cost Rationalization,optimization,draft,2026-07-01,2026-10-15,maria.chen@example.com,Consolidate overlapping procurement capabilities and reduce duplicate invoices.
+prj-55019,vnd-88917,Infrastructure Data Retention,compliance,active,2026-05-10,2026-11-30,leo.ramirez@example.com,Implement retention controls and audit exports for downstream reporting.
+,vnd-90105,Clinical Vendor Onboarding,onboarding,draft,2026-08-05,2026-12-20,amanda.shah@example.com,Onboard new clinical data partner with secure exchange and governance checkpoints.

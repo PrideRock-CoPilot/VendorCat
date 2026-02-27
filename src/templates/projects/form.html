@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}{% if project %}Edit Project{% else %}New Project{% endif %} - VendorCatalog{% endblock %}
+
+{% block content %}
+  <h1>{% if project %}Edit Project{% else %}Create New Project{% endif %}</h1>
+  <p class="text-muted">{% if project %}Update project information{% else %}Set up a new project{% endif %}</p>
+
+  <div class="card" style="max-width: 600px;">
+    <form method="post">
+      {% csrf_token %}
+
+      {% if messages %}
+        {% for message in messages %}
+          <div class="alert alert-{% if message.tags %}{{ message.tags }}{% else %}info{% endif %}">
+            {{ message }}
+          </div>
+        {% endfor %}
+      {% endif %}
+
+      {% if form_errors %}
+        <div class="alert alert-danger">
+          <strong>Please fix the following errors:</strong>
+          <ul>
+            {% for field, errors in form_errors.items %}
+              {% for error in errors %}
+                <li>{{ field }}: {{ error }}</li>
+              {% endfor %}
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+
+      <div class="form-group">
+        <label for="project_id">Project ID</label>
+        <input 
+          type="text" 
+          id="project_id" 
+          name="project_id" 
+          value="{{ project.project_id|default:'' }}"
+          {% if project %}disabled{% endif %}
+          placeholder="e.g., PROJ-001"
+          required>
+        <small class="text-muted">{% if project %}Cannot be changed{% else %}Unique identifier for this project{% endif %}</small>
+      </div>
+
+      <div class="form-group">
+        <label for="project_name">Project Name</label>
+        <input 
+          type="text" 
+          id="project_name" 
+          name="project_name" 
+          value="{{ project.project_name|default:'' }}" 
+          placeholder="Project name"
+          required>
+      </div>
+
+      <div class="form-group">
+        <label for="owner_principal">Owner Principal</label>
+        <input 
+          type="text" 
+          id="owner_principal" 
+          name="owner_principal" 
+          value="{{ project.owner_principal|default:'' }}" 
+          placeholder="Project owner"
+          required>
+      </div>
+
+      <div class="form-group">
+        <label for="lifecycle_state">Status</label>
+        <select id="lifecycle_state" name="lifecycle_state" required>
+          <option value="">-- Select Status --</option>
+          <option value="planned" {% if project.lifecycle_state == 'planned' %}selected{% endif %}>Planned</option>
+          <option value="active" {% if project.lifecycle_state == 'active' %}selected{% endif %}>Active</option>
+          <option value="completed" {% if project.lifecycle_state == 'completed' %}selected{% endif %}>Completed</option>
+        </select>
+      </div>
+
+      <div style="display: flex; gap: 12px; margin-top: 30px;">
+        <button type="submit" class="btn btn-primary">
+          {% if project %}✓ Update Project{% else %}+ Create Project{% endif %}
+        </button>
+        <a href="{% if project %}/projects/{{ project.project_id }}{% else %}/projects{% endif %}" class="btn btn-secondary">
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+{% endblock %}

@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+
+{% block head %}
+  <link rel="stylesheet" href="/static/css/imports_wizard.css?v={{ static_asset_version }}">
+{% endblock %}
+
+{% block content %}
+<div class="section-header">
+  <div>
+    <h1>Map Columns</h1>
+    <p>Review discovered columns, sample rows, and mapping approval gate before staging.</p>
+  </div>
+  <div class="button-group">
+    <a class="button-link subtle" href="/imports">Start New Import</a>
+  </div>
+</div>
+
+<section class="card section-divider">
+  <div class="grid grid-3">
+    <div>
+      <div class="muted">Import Job</div>
+      <strong>{{ import_job_id }}</strong>
+    </div>
+    <div>
+      <div class="muted">Workflow State</div>
+      <strong>{{ workflow_state }}</strong>
+    </div>
+    <div>
+      <div class="muted">Source</div>
+      <strong>{{ selected_source_system }}</strong>
+      <div class="muted">{{ source_object or "-" }}</div>
+    </div>
+  </div>
+  <div class="guided-metrics" style="margin-top:12px;">
+    <span class="status-badge status-ready">Ready: {{ preview_summary.ready }}</span>
+    <span class="status-badge status-review">Review: {{ preview_summary.review }}</span>
+    <span class="status-badge status-blocked">Blocked: {{ preview_summary.blocked }}</span>
+    <span class="status-badge status-error">Error: {{ preview_summary.error }}</span>
+    <span class="status-badge status-ready">Total: {{ preview_summary.total }}</span>
+  </div>
+  <div style="margin-top:10px;">
+    <strong>Approval Gate:</strong> {{ mapping_approval_status }}
+    {% if mapping_request_status %}
+    <span class="muted">(request status: {{ mapping_request_status }})</span>
+    {% endif %}
+  </div>
+</section>
+
+<section class="card section-divider">
+  <h2>Column Mapping</h2>
+  <form method="post" action="/imports/jobs/{{ import_job_id }}/mapping/rebuild">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="grid grid-2">
+      <label>
+        Approved Mapping Profile
+        <select name="mapping_profile_id">
+          <option value="">No mapping profile selected</option>
+          {% for profile in mapping_profiles %}
+          {% set profile_id = profile.profile_id %}
+          <option value="{{ profile_id }}" {% if selected_mapping_profile_id == profile_id %}selected{% endif %}>
+            {{ profile.profile_name }}{% if profile.file_format %} ({{ profile.file_format|upper }}){% endif %}{% if profile_id not in compatible_profile_ids %} - signature differs{% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Search Target Field
+        <input type="search" id="mapping-target-filter" placeholder="Filter on destination labels">
+      </label>
+    </div>
+
+    <div class="table-wrap table-scroll" style="margin-top:12px;">
+      <table id="mapping-table">
+        <thead>
+          <tr>
+            <th>Source Column</th>
+            <th>Sample</th>
+            <th>Destination</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for source in source_fields %}
+          <tr>
+            <td><strong>{{ source.key }}</strong></td>
+            <td>
+              {% if source.sample_values %}
+                {% for sample in source.sample_values %}
+                <div class="muted">{{ sample }}</div>
+                {% endfor %}
+              {% else %}
+                <span class="muted">{{ source.sample_value or "-" }}</span>
+              {% endif %}
+            </td>
+            <td>
+              <input type="hidden" name="source_field_keys" value="{{ source.key }}">
+              <select name="source_target_keys" class="mapping-target-select">
+                <option value="">(unmapped)</option>
+                {% for group in target_field_groups %}
+                <optgroup label="{{ group.area_label }}">
+                  {% for option in group.options %}
+                  <option value="{{ option.key }}" {% if source_target_mapping.get(source.key, '') == option.key %}selected{% endif %}>
+                    {{ option.label }}
+                  </option>
+                  {% endfor %}
+                </optgroup>
+                {% endfor %}
+              </select>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:12px;">
+      <button type="submit">Rebuild Preview</button>
+    </div>
+  </form>
+</section>
+
+<section class="card section-divider">
+  <h2>Sample Rows (First 5)</h2>
+  {% if sample_rows %}
+  <div class="table-wrap table-scroll">
+    <table>
+      <thead>
+        <tr>
+          {% for key in sample_rows[0].keys() %}
+          <th>{{ key }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in sample_rows %}
+        <tr>
+          {% for key, value in row.items() %}
+          <td>{{ value }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No sample rows available.</p>
+  {% endif %}
+</section>
+
+<section class="card section-divider">
+  <h2>Approval + Stage</h2>
+  {% if mapping_approval_status == 'approved' %}
+  <form method="post" action="/imports/jobs/{{ import_job_id }}/stage">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Upload To Staging</button>
+  </form>
+  {% else %}
+  <form method="post" action="/imports/jobs/{{ import_job_id }}/mapping/submit" class="grid grid-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>
+      Mapping Name For Approval
+      <input type="text" name="proposed_profile_name" required placeholder="Unique mapping profile name">
+    </label>
+    <div style="align-self:end;">
+      <button type="submit">Submit Mapping For Approval</button>
+    </div>
+  </form>
+  <p class="muted" style="margin-top:8px;">Staging and apply are blocked until admin approval.</p>
+  {% endif %}
+</section>
+
+<section class="card section-divider">
+  <h2>Preview Rows</h2>
+  <p class="muted">Showing first {{ preview_rows|length }} row(s) of {{ preview_total_rows }}.</p>
+  <div class="table-wrap table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Line</th>
+          <th>Status</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in preview_rows %}
+        <tr>
+          <td>{{ row.line_number }}</td>
+          <td>{{ row.row_status }}</td>
+          <td>
+            {% for note in row.notes %}
+            <div>{{ note }}</div>
+            {% endfor %}
+            {% for err in row.errors %}
+            <div class="status-text error">{{ err }}</div>
+            {% endfor %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const filter = document.getElementById('mapping-target-filter');
+  const table = document.getElementById('mapping-table');
+  if (!filter || !table) return;
+  filter.addEventListener('input', () => {
+    const q = String(filter.value || '').toLowerCase().trim();
+    const rows = table.querySelectorAll('tbody tr');
+    rows.forEach((row) => {
+      if (!q) {
+        row.hidden = false;
+        return;
+      }
+      const source = String(row.children[0]?.innerText || '').toLowerCase();
+      const selected = String(row.querySelector('select')?.selectedOptions?.[0]?.textContent || '').toLowerCase();
+      row.hidden = !(source.includes(q) || selected.includes(q));
+    });
+  });
+})();
+</script>
+{% endblock %}

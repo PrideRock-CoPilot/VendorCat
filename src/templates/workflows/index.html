@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Workflow Decisions{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-lg-8">
+            <h1>Workflow Decisions</h1>
+            <p class="text-muted">Manage workflow decision approvals and reviews</p>
+        </div>
+        <div class="col-lg-4 text-end">
+            {% if can_create_workflow_decision %}
+            <a href="#" class="btn btn-primary">New Workflow</a>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if decisions %}
+    <div class="table-responsive">
+        <table class="table table-hover">
+            <thead class="table-light">
+                <tr>
+                    <th>Decision ID</th>
+                    <th>Workflow</th>
+                    <th>Action</th>
+                    <th>Status</th>
+                    <th>Submitted By</th>
+                    <th>Reviewed By</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for decision in decisions %}
+                <tr>
+                    <td><a href="{% url 'workflow-decision-detail' decision.decision_id %}">{{ decision.decision_id }}</a></td>
+                    <td>{{ decision.workflow_name }}</td>
+                    <td>{{ decision.action }}</td>
+                    <td>
+                        {% if decision.status == "approved" %}
+                            <span class="badge bg-success">{{ decision.status }}</span>
+                        {% elif decision.status == "rejected" %}
+                            <span class="badge bg-danger">{{ decision.status }}</span>
+                        {% elif decision.status == "pending" %}
+                            <span class="badge bg-warning">{{ decision.status }}</span>
+                        {% else %}
+                            <span class="badge bg-secondary">{{ decision.status }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ decision.submitted_by }}</td>
+                    <td>{{ decision.reviewed_by|default:"—" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="alert alert-info" role="alert">
+        <strong>No workflow decisions yet.</strong> Create your first workflow to get started.
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
