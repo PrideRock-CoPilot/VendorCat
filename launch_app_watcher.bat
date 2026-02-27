@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 setlocal
 set "VC_DEV_IDENTITY_ENABLED=true"
 set "VC_DEV_USER=watcher@example.com"
