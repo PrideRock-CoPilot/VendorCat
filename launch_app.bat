@@ -3,65 +3,69 @@ setlocal EnableDelayedExpansion
 
 cd /d "%~dp0"
 
-if "%TVENDOR_ENV_FILE%"=="" set "TVENDOR_ENV_FILE=setup\config\tvendor.env"
-if exist "%TVENDOR_ENV_FILE%" (
-  echo Loading environment from %TVENDOR_ENV_FILE%
-  for /f "usebackq tokens=1* delims==" %%A in (`findstr /R /V "^[ ]*# ^[ ]*$" "%TVENDOR_ENV_FILE%"`) do (
-    if /I "%TVENDOR_ENV_FORCE%"=="true" (
-      set "%%A=%%B"
-    ) else (
-      if not defined %%A set "%%A=%%B"
-    )
+if /I "%~1"=="-h" goto :usage
+if /I "%~1"=="--help" goto :usage
+
+set "HOST="
+set "PORT="
+set "CLEAN_DB=false"
+set "AUTO_MIGRATE=true"
+set "PORT_FALLBACK=true"
+set "PERSONA="
+set "PERSONA_PROMPT=true"
+
+:parse_args
+if "%~1"=="" goto :after_parse
+if /I "%~1"=="--clean-db" (
+  set "CLEAN_DB=true"
+  shift
+  goto :parse_args
+)
+if /I "%~1"=="--skip-migrate" (
+  set "AUTO_MIGRATE=false"
+  shift
+  goto :parse_args
+)
+if /I "%~1"=="--persona" (
+  if "%~2"=="" (
+    echo ERROR: --persona requires a value.
+    echo.
+    goto :usage_error
   )
+  set "PERSONA=%~2"
+  set "PERSONA_PROMPT=false"
+  shift
+  shift
+  goto :parse_args
+)
+if /I "%~1"=="--select-user" (
+  set "PERSONA_PROMPT=true"
+  shift
+  goto :parse_args
+)
+if /I "%~1"=="--no-persona-prompt" (
+  set "PERSONA_PROMPT=false"
+  shift
+  goto :parse_args
+)
+if "%HOST%"=="" (
+  set "HOST=%~1"
+  shift
+  goto :parse_args
+)
+if "%PORT%"=="" (
+  set "PORT=%~1"
+  shift
+  goto :parse_args
 )
 
-if "%TVENDOR_ENV%"=="" set "TVENDOR_ENV=dev"
-if "%TVENDOR_USE_LOCAL_DB%"=="" (
-  if /I "%TVENDOR_ENV%"=="dev" (
-    set "TVENDOR_USE_LOCAL_DB=true"
-  ) else if /I "%TVENDOR_ENV%"=="development" (
-    set "TVENDOR_USE_LOCAL_DB=true"
-  ) else if /I "%TVENDOR_ENV%"=="local" (
-    set "TVENDOR_USE_LOCAL_DB=true"
-  ) else (
-    set "TVENDOR_USE_LOCAL_DB=false"
-  )
-)
-if "%TVENDOR_LOCAL_DB_PATH%"=="" set "TVENDOR_LOCAL_DB_PATH=setup\local_db\twvendor_local.db"
-if "%TVENDOR_CATALOG%"=="" set "TVENDOR_CATALOG=vendor_dev"
-if "%TVENDOR_SCHEMA%"=="" set "TVENDOR_SCHEMA=twvendor"
-if "%TVENDOR_LOCKED_MODE%"=="" set "TVENDOR_LOCKED_MODE=false"
-if "%TVENDOR_OPEN_BROWSER%"=="" set "TVENDOR_OPEN_BROWSER=true"
-if "%TVENDOR_LOCAL_DB_AUTO_RESET%"=="" set "TVENDOR_LOCAL_DB_AUTO_RESET=true"
-if "%TVENDOR_LOCAL_DB_SEED%"=="" set "TVENDOR_LOCAL_DB_SEED=true"
-if "%TVENDOR_LOCAL_DB_SEED_PROFILE%"=="" set "TVENDOR_LOCAL_DB_SEED_PROFILE=baseline"
-if "%TVENDOR_LOCAL_DB_REBUILD_MODE%"=="" set "TVENDOR_LOCAL_DB_REBUILD_MODE=always"
-if "%PORT%"=="" set "PORT=8000"
-if "%TVENDOR_PORT_FALLBACK%"=="" set "TVENDOR_PORT_FALLBACK=true"
+echo Unknown argument: %~1
+echo.
+goto :usage_error
 
-call :is_port_free %PORT%
-if errorlevel 1 (
-  if /I "%TVENDOR_PORT_FALLBACK%"=="true" (
-    echo Port %PORT% is in use. Searching for a free port...
-    call :find_free_port %PORT% 20
-    if errorlevel 1 (
-      echo ERROR: No available port found near %PORT%.
-      exit /b 1
-    )
-  ) else (
-    echo ERROR: Port %PORT% is already in use.
-    echo Set TVENDOR_PORT_FALLBACK=true to auto-select a free port.
-    exit /b 1
-  )
-)
-
-if /I "%TVENDOR_USE_LOCAL_DB%"=="true" (
-  if /I not "%TVENDOR_ENV%"=="dev" if /I not "%TVENDOR_ENV%"=="development" if /I not "%TVENDOR_ENV%"=="local" (
-    echo ERROR: TVENDOR_USE_LOCAL_DB=true is only allowed for TVENDOR_ENV=dev/development/local.
-    echo Current TVENDOR_ENV=%TVENDOR_ENV%
-    exit /b 1
-  )
-)
+:after_parse
+if "%HOST%"=="" set "HOST=0.0.0.0"
+if "%PORT%"=="" set "PORT=8010"
 
 if exist ".venv\Scripts\python.exe" (
   set "PYTHON_EXE=.venv\Scripts\python.exe"
@@ -69,109 +73,225 @@ if exist ".venv\Scripts\python.exe" (
   set "PYTHON_EXE=python"
 )
 
-echo Launching Vendor Catalog app...
+if "%DJANGO_SETTINGS_MODULE%"=="" set "DJANGO_SETTINGS_MODULE=vendorcatalog_rebuild.settings"
+if "%VC_RUNTIME_PROFILE%"=="" set "VC_RUNTIME_PROFILE=local"
+if "%VC_LOCAL_DUCKDB_PATH%"=="" set "VC_LOCAL_DUCKDB_PATH=src\.local\vendorcatalog.duckdb"
+if "%VC_OPEN_BROWSER%"=="" set "VC_OPEN_BROWSER=true"
+if "%VC_PAUSE_ON_ERROR%"=="" set "VC_PAUSE_ON_ERROR=true"
+if /I "%VC_AUTO_MIGRATE%"=="false" set "AUTO_MIGRATE=false"
+if /I "%VC_PORT_FALLBACK%"=="false" set "PORT_FALLBACK=false"
+
+if "%PYTHONPATH%"=="" (
+  set "PYTHONPATH=src"
+) else (
+  set "PYTHONPATH=src;%PYTHONPATH%"
+)
+
+if "%PERSONA%"=="" (
+  if /I "%PERSONA_PROMPT%"=="true" (
+    call :select_persona
+    if errorlevel 1 goto :fail
+  )
+)
+
+if not "%PERSONA%"=="" (
+  call :apply_persona "%PERSONA%"
+  if errorlevel 1 goto :fail
+)
+
+call :is_port_free %PORT%
+if errorlevel 1 (
+  if /I "%PORT_FALLBACK%"=="true" (
+    echo Port %PORT% is in use. Searching for a free port...
+    call :find_free_port %PORT% 20
+    if errorlevel 1 (
+      echo ERROR: No available port found near %PORT%.
+      goto :fail
+    )
+    echo Selected fallback port !PORT!.
+  ) else (
+    echo ERROR: Port %PORT% is already in use.
+    goto :fail
+  )
+)
+
+if /I "%CLEAN_DB%"=="true" (
+  echo Running clean runtime migration...
+  %PYTHON_EXE% -m apps.core.migrations.run_clean_rebuild
+  if errorlevel 1 (
+    echo.
+    echo Failed to run clean rebuild migration.
+    goto :fail
+  )
+)
+
+if /I "%AUTO_MIGRATE%"=="true" (
+  echo Applying Django control migrations...
+  %PYTHON_EXE% src\manage.py migrate --noinput
+  if errorlevel 1 (
+    echo.
+    echo Failed to apply Django migrations.
+    goto :fail
+  )
+)
+
+set "BROWSER_HOST=%HOST%"
+if "%HOST%"=="0.0.0.0" set "BROWSER_HOST=localhost"
+
+echo Starting VendorCatalog app...
 echo Using Python: %PYTHON_EXE%
-echo TVENDOR_ENV=%TVENDOR_ENV%
-echo TVENDOR_USE_LOCAL_DB=%TVENDOR_USE_LOCAL_DB%
-echo TVENDOR_LOCAL_DB_PATH=%TVENDOR_LOCAL_DB_PATH%
-echo TVENDOR_LOCKED_MODE=%TVENDOR_LOCKED_MODE%
-echo TVENDOR_OPEN_BROWSER=%TVENDOR_OPEN_BROWSER%
-echo TVENDOR_LOCAL_DB_AUTO_RESET=%TVENDOR_LOCAL_DB_AUTO_RESET%
-echo TVENDOR_LOCAL_DB_SEED=%TVENDOR_LOCAL_DB_SEED%
-echo TVENDOR_LOCAL_DB_SEED_PROFILE=%TVENDOR_LOCAL_DB_SEED_PROFILE%
-echo TVENDOR_LOCAL_DB_REBUILD_MODE=%TVENDOR_LOCAL_DB_REBUILD_MODE%
-echo PORT=%PORT%
-echo URL=http://localhost:%PORT%/dashboard
+echo DJANGO_SETTINGS_MODULE=%DJANGO_SETTINGS_MODULE%
+echo VC_RUNTIME_PROFILE=%VC_RUNTIME_PROFILE%
+echo VC_LOCAL_DUCKDB_PATH=%VC_LOCAL_DUCKDB_PATH%
+echo VC_AUTO_MIGRATE=%AUTO_MIGRATE%
+if /I "%VC_DEV_IDENTITY_ENABLED%"=="true" (
+  echo VC_DEV_IDENTITY_ENABLED=true
+  echo VC_DEV_USER=%VC_DEV_USER%
+  echo VC_DEV_GROUPS=%VC_DEV_GROUPS%
+) else (
+  echo VC_DEV_IDENTITY_ENABLED=false
+)
+echo URL=http://%BROWSER_HOST%:%PORT%/dashboard
 echo.
 
-if /I "%TVENDOR_USE_LOCAL_DB%"=="true" (
-  if /I not "%TVENDOR_LOCAL_DB_SEED_PROFILE%"=="baseline" if /I not "%TVENDOR_LOCAL_DB_SEED_PROFILE%"=="full" (
-    echo WARNING: Unknown TVENDOR_LOCAL_DB_SEED_PROFILE=%TVENDOR_LOCAL_DB_SEED_PROFILE%
-    echo Falling back to TVENDOR_LOCAL_DB_SEED_PROFILE=baseline
-    set "TVENDOR_LOCAL_DB_SEED_PROFILE=baseline"
-  )
-
-  set "LOCAL_DB_APPLY_ARGS=--skip-seed"
-  if /I "%TVENDOR_LOCAL_DB_SEED%"=="true" set "LOCAL_DB_APPLY_ARGS=--seed-profile %TVENDOR_LOCAL_DB_SEED_PROFILE%"
-  set "LOCAL_DB_RESET_ARGS=--reset !LOCAL_DB_APPLY_ARGS!"
-
-  set "LOCAL_DB_REBUILD_MODE=%TVENDOR_LOCAL_DB_REBUILD_MODE%"
-  if /I not "!LOCAL_DB_REBUILD_MODE!"=="always" if /I not "!LOCAL_DB_REBUILD_MODE!"=="prompt" if /I not "!LOCAL_DB_REBUILD_MODE!"=="keep" (
-    echo WARNING: Unknown TVENDOR_LOCAL_DB_REBUILD_MODE=!LOCAL_DB_REBUILD_MODE!
-    echo Falling back to TVENDOR_LOCAL_DB_REBUILD_MODE=always
-    set "LOCAL_DB_REBUILD_MODE=always"
-  )
-
-  set "LOCAL_DB_ACTION="
-  if /I "!LOCAL_DB_REBUILD_MODE!"=="always" (
-    set "LOCAL_DB_ACTION=clean"
-  ) else if /I "!LOCAL_DB_REBUILD_MODE!"=="keep" (
-    set "LOCAL_DB_ACTION=keep"
-  ) else if /I "!LOCAL_DB_REBUILD_MODE!"=="prompt" (
-    if not exist "%TVENDOR_LOCAL_DB_PATH%" (
-      set "LOCAL_DB_ACTION=clean"
-    ) else (
-      set "LOCAL_DB_ACTION_CHOICE=C"
-      set /p "LOCAL_DB_ACTION_CHOICE=Local DB action [C=clean rebuild, K=keep data + apply schema updates], default C: "
-      if /I not "!LOCAL_DB_ACTION_CHOICE!"=="" set "LOCAL_DB_ACTION_CHOICE=!LOCAL_DB_ACTION_CHOICE:~0,1!"
-      if /I "!LOCAL_DB_ACTION_CHOICE!"=="K" set "LOCAL_DB_ACTION=keep"
-      if /I not "!LOCAL_DB_ACTION!"=="keep" set "LOCAL_DB_ACTION=clean"
-    )
-  )
-  if "!LOCAL_DB_ACTION!"=="" set "LOCAL_DB_ACTION=clean"
-
-  if /I "!LOCAL_DB_ACTION!"=="clean" (
-    echo Rebuilding local DB - clean reset...
-    %PYTHON_EXE% setup\local_db\init_local_db.py --db-path "%TVENDOR_LOCAL_DB_PATH%" !LOCAL_DB_RESET_ARGS!
-    if errorlevel 1 (
-      echo.
-      echo Failed to rebuild local database.
-      pause
-      exit /b 1
-    )
-    echo.
-  ) else (
-    echo Applying local DB schema updates while keeping existing data...
-    %PYTHON_EXE% setup\local_db\init_local_db.py --db-path "%TVENDOR_LOCAL_DB_PATH%" !LOCAL_DB_APPLY_ARGS!
-    if errorlevel 1 (
-      if /I "%TVENDOR_LOCAL_DB_AUTO_RESET%"=="true" (
-        echo Local DB schema update failed. Rebuilding local DB from scratch...
-        %PYTHON_EXE% setup\local_db\init_local_db.py --db-path "%TVENDOR_LOCAL_DB_PATH%" !LOCAL_DB_RESET_ARGS!
-        if errorlevel 1 (
-          echo.
-          echo Failed to rebuild local database.
-          pause
-          exit /b 1
-        )
-      ) else (
-        echo.
-        echo Failed to apply local database schema updates.
-        echo Set TVENDOR_LOCAL_DB_AUTO_RESET=true to auto-rebuild local DB when schema updates fail.
-        pause
-        exit /b 1
-      )
-    )
-    echo.
-  )
+if /I "%VC_OPEN_BROWSER%"=="true" (
+  start "" "http://%BROWSER_HOST%:%PORT%/dashboard"
 )
 
-if /I "%TVENDOR_OPEN_BROWSER%"=="true" (
-  start "" powershell -NoProfile -ExecutionPolicy Bypass -Command "$url='http://localhost:%PORT%/dashboard'; for ($i=0; $i -lt 60; $i++) { try { Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 2 | Out-Null; Start-Process $url; exit 0 } catch { }; Start-Sleep -Milliseconds 500 }; Start-Process $url"
-)
-
-%PYTHON_EXE% -m uvicorn --app-dir app main:app --host 0.0.0.0 --port %PORT%
-
+%PYTHON_EXE% src\manage.py runserver %HOST%:%PORT%
 if errorlevel 1 (
   echo.
-  echo App failed to start. Make sure dependencies are installed:
-  echo   pip install -r app\requirements.txt
-  echo.
-  pause
+  echo VendorCatalog app failed to start.
+  echo Install dependencies with:
+  echo   pip install -r requirements-rebuild.txt
+  goto :fail
 )
 
 endlocal
+exit /b 0
 
-goto :eof
+:usage
+echo Usage:
+echo   launch_app.bat [host] [port] [--clean-db] [--skip-migrate] [--persona ^<name^>] [--select-user] [--no-persona-prompt]
+echo.
+echo Persona values:
+echo   admin ^| reviewer ^| editor ^| viewer ^| watcher ^| anonymous
+echo.
+echo Examples:
+echo   launch_app.bat
+  
+echo   launch_app.bat 127.0.0.1 8010
+  
+echo   launch_app.bat 0.0.0.0 8010 --clean-db
+  
+echo   launch_app.bat 0.0.0.0 8010 --skip-migrate
+  
+echo   launch_app.bat --persona admin
+  
+echo   launch_app.bat --select-user
+exit /b 0
+
+:usage_error
+echo Usage:
+echo   launch_app.bat [host] [port] [--clean-db] [--skip-migrate] [--persona ^<name^>] [--select-user] [--no-persona-prompt]
+exit /b 1
+
+:select_persona
+echo.
+echo Select launch persona:
+echo   [1] Admin (full access)
+echo   [2] Reviewer (workflow/access review)
+echo   [3] Editor (domain write)
+echo   [4] Viewer (read-only)
+echo   [5] Watcher (observability/report read)
+echo   [0] Anonymous/default
+choice /C 123450 /N /M "Choose 1/2/3/4/5/0: "
+if errorlevel 6 (
+  set "PERSONA=anonymous"
+  exit /b 0
+)
+if errorlevel 5 (
+  set "PERSONA=watcher"
+  exit /b 0
+)
+if errorlevel 4 (
+  set "PERSONA=viewer"
+  exit /b 0
+)
+if errorlevel 3 (
+  set "PERSONA=editor"
+  exit /b 0
+)
+if errorlevel 2 (
+  set "PERSONA=reviewer"
+  exit /b 0
+)
+if errorlevel 1 (
+  set "PERSONA=admin"
+  exit /b 0
+)
+exit /b 1
+
+:apply_persona
+set "TARGET_PERSONA=%~1"
+
+if /I "%TARGET_PERSONA%"=="anonymous" (
+  set "VC_DEV_IDENTITY_ENABLED=false"
+  set "VC_DEV_USER="
+  set "VC_DEV_NAME="
+  set "VC_DEV_GROUPS="
+  set "VC_DEV_EMAIL="
+  exit /b 0
+)
+
+if /I "%TARGET_PERSONA%"=="admin" (
+  set "VC_DEV_IDENTITY_ENABLED=true"
+  set "VC_DEV_USER=admin@example.com"
+  set "VC_DEV_EMAIL=admin@example.com"
+  set "VC_DEV_NAME=Admin User"
+  set "VC_DEV_GROUPS=vendor_admin,workflow_reviewer,ops_observer"
+  exit /b 0
+)
+
+if /I "%TARGET_PERSONA%"=="reviewer" (
+  set "VC_DEV_IDENTITY_ENABLED=true"
+  set "VC_DEV_USER=reviewer@example.com"
+  set "VC_DEV_EMAIL=reviewer@example.com"
+  set "VC_DEV_NAME=Workflow Reviewer"
+  set "VC_DEV_GROUPS=workflow_reviewer"
+  exit /b 0
+)
+
+if /I "%TARGET_PERSONA%"=="editor" (
+  set "VC_DEV_IDENTITY_ENABLED=true"
+  set "VC_DEV_USER=editor@example.com"
+  set "VC_DEV_EMAIL=editor@example.com"
+  set "VC_DEV_NAME=Vendor Editor"
+  set "VC_DEV_GROUPS=vendor_editor"
+  exit /b 0
+)
+
+if /I "%TARGET_PERSONA%"=="viewer" (
+  set "VC_DEV_IDENTITY_ENABLED=true"
+  set "VC_DEV_USER=viewer@example.com"
+  set "VC_DEV_EMAIL=viewer@example.com"
+  set "VC_DEV_NAME=Vendor Viewer"
+  set "VC_DEV_GROUPS=vendor_viewer"
+  exit /b 0
+)
+
+if /I "%TARGET_PERSONA%"=="watcher" (
+  set "VC_DEV_IDENTITY_ENABLED=true"
+  set "VC_DEV_USER=watcher@example.com"
+  set "VC_DEV_EMAIL=watcher@example.com"
+  set "VC_DEV_NAME=Ops Watcher"
+  set "VC_DEV_GROUPS=ops_observer"
+  exit /b 0
+)
+
+echo ERROR: Unknown persona "%TARGET_PERSONA%".
+echo Use one of: admin, reviewer, editor, viewer, watcher, anonymous.
+exit /b 1
 
 :is_port_free
 setlocal
@@ -199,3 +319,10 @@ for /l %%i in (0,1,!MAX_TRIES!) do (
   set /a PORT_CANDIDATE+=1
 )
 endlocal & exit /b 1
+
+:fail
+if /I "%VC_PAUSE_ON_ERROR%"=="true" (
+  echo.
+  pause
+)
+exit /b 1

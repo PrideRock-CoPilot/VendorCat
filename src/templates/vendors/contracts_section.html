@@ -1,0 +1,432 @@
+<!-- Enhanced Contracts Section with Status Detection -->
+<div class="card" id="contracts" style="margin-top: 24px;">
+  <div class="card-header">
+    <div>
+      <h3 class="card-title">📋 Contracts & Agreements</h3>
+      <p class="card-subtitle">Manage all contracts, SOWs, MSAs, and NDAs associated with this vendor</p>
+    </div>
+    {% if can_manage_vendor_contracts %}
+      <a class="btn btn-primary" href="/contracts/new?vendor={{ vendor.vendor_id }}">➕ New Contract</a>
+    {% endif %}
+  </div>
+
+  <!-- Alerts for Expiring Contracts -->
+  {% if expiring_contracts %}
+    <div style="padding: 16px; margin: 0 16px 16px 16px; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; border-left: 4px solid #f59e0b;">
+      <div style="display: flex; align-items: flex-start; gap: 12px;">
+        <div style="color: #d97706; font-size: 20px; flex-shrink: 0;">⚠️</div>
+        <div style="flex-grow: 1;">
+          <p style="margin: 0 0 8px 0; font-weight: 600; color: #d97706;">
+            {{expiring_contracts|length}} contract{% if expiring_contracts|length != 1 %}s{% endif %} expiring soon
+          </p>
+          <p class="text-muted" style="margin: 0; font-size: 13px;">
+            The following contracts expire within 60 days. Plan renewals or replacements now.
+          </p>
+          <ul style="margin: 8px 0 0 0; padding-left: 20px;">
+            {% for contract in expiring_contracts %}
+              <li style="font-size: 13px; color: #d97706; margin: 4px 0;">
+                <strong>{{ contract.contract_number }}</strong> expires in {{ contract.days_until_expiry }} days
+                ({{ contract.end_date|date:"M d, Y" }})
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <!-- Contracts Table -->
+  {% if vendor_contracts %}
+    <div style="overflow-x: auto;">
+      <table class="table" style="margin: 0;">
+        <thead>
+          <tr>
+            <th>Contract Details</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Term</th>
+            <th>Annual Value</th>
+            <th style="text-align: center;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for contract in vendor_contracts %}
+            <tr>
+              <!-- Contract Details Column -->
+              <td>
+                <div>
+                  <strong style="font-size: 14px;">{{ contract.contract_number|default:contract.contract_id }}</strong>
+                  <p class="text-muted" style="margin: 2px 0 0 0; font-size: 12px;">
+                    ID: <code>{{ contract.contract_id }}</code>
+                  </p>
+                  {% if contract.offering_id %}
+                    <p class="text-muted" style="margin: 2px 0 0 0; font-size: 12px;">
+                      Offering: {{ contract.offering_id }}
+                    </p>
+                  {% endif %}
+                </div>
+              </td>
+
+              <!-- Type Column -->
+              <td>
+                <span class="table-badge" style="background: #e8f4f8; color: #0f766e; font-size: 12px;">
+                  {% if contract.offering_id %}
+                    SOW
+                  {% else %}
+                    MSA
+                  {% endif %}
+                </span>
+              </td>
+
+              <!-- Status Column with Auto-Detection -->
+              <td>
+                {% if contract.cancelled_flag %}
+                  <span class="table-badge badge-danger">CANCELLED</span>
+                {% elif contract.days_until_expiry <= 0 %}
+                  <span class="table-badge badge-danger">EXPIRED</span>
+                {% elif contract.days_until_expiry <= 60 %}
+                  <span class="table-badge" style="background: rgba(245, 158, 11, 0.2); color: #d97706;">⚠️ EXPIRING SOON</span>
+                  <p class="text-muted" style="margin: 2px 0 0 0; font-size: 11px; color: #d97706; font-weight: 600;">
+                    {{ contract.days_until_expiry }} days remaining
+                  </p>
+                {% elif contract.contract_status == 'active' %}
+                  <span class="table-badge badge-success">ACTIVE</span>
+                  <p class="text-muted" style="margin: 2px 0 0 0; font-size: 11px;">
+                    {{ contract.days_until_expiry }} days remaining
+                  </p>
+                {% else %}
+                  <span class="table-badge badge-{{ contract.contract_status }}">{{ contract.contract_status|upper }}</span>
+                {% endif %}
+              </td>
+
+              <!-- Term Column -->
+              <td>
+                <div style="font-size: 13px;">
+                  <p style="margin: 0; font-weight: 500;">{{ contract.contract_months|default:0 }} month{{ contract.contract_months|default:0|pluralize }}</p>
+                  <p class="text-muted" style="margin: 2px 0 0 0; font-size: 11px;">
+                    {{ contract.start_date|date:"M d, Y"|default:"—" }} → 
+                    <span style="{% if contract.days_until_expiry <= 60 and contract.days_until_expiry > 0 %}color: #d97706; font-weight: 600;{% endif %}">
+                      {{ contract.end_date|date:"M d, Y"|default:"—" }}
+                    </span>
+                  </p>
+                </div>
+              </td>
+
+              <!-- Annual Value Column -->
+              <td style="font-weight: 600; font-size: 14px;">
+                ${{ contract.annual_value|floatformat:0|default:"0" }}
+              </td>
+
+              <!-- Actions Column -->
+              <td style="text-align: center;">
+                <div style="display: flex; gap: 8px; justify-content: center;">
+                  <a href="/contracts/{{ contract.contract_id }}" class="btn btn-secondary btn-small" title="View Details">
+                    👁️
+                  </a>
+                  {% if can_manage_vendor_contracts %}
+                    <a href="/contracts/{{ contract.contract_id }}/edit" class="btn btn-secondary btn-small" title="Edit">
+                      ✏️
+                    </a>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- View All Link -->
+    {% if all_contracts_count > 5 %}
+      <div style="padding: 16px; text-align: center; border-top: 1px solid var(--border);">
+        <p class="text-muted" style="margin: 0;">
+          Showing {{ vendor_contracts|length }} of {{ all_contracts_count }} contracts. 
+          <a href="/contracts?vendor={{ vendor.vendor_id }}" style="color: var(--primary); font-weight: 600;">View all →</a>
+        </p>
+      </div>
+    {% endif %}
+  {% else %}
+    <!-- Empty State -->
+    <div class="empty-state">
+      <div class="empty-icon">📄</div>
+      <h4 class="empty-title">No Contracts Yet</h4>
+      <p class="empty-text">This vendor has no contracts. Create your first contract to get started.</p>
+      {% if can_manage_vendor_contracts %}
+        <a class="btn btn-primary" href="/contracts/new?vendor={{ vendor.vendor_id }}">➕ Create First Contract</a>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+
+<!-- Contract Modal -->
+<div id="contractModal" class="modal" style="display: none;">
+  <div class="modal-backdrop"></div>
+  <div class="modal-content" style="max-width: 600px;">
+    <div class="modal-header">
+      <h2 id="modalTitle">New Contract</h2>
+      <button type="button" class="modal-close" onclick="closeContractModal()">×</button>
+    </div>
+
+    <form id="contractForm" method="POST" action="/contracts/create/" style="padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+      {% csrf_token %}
+      
+      <input type="hidden" id="vendorId" name="vendor_id" value="{{ vendor.vendor_id }}">
+      <input type="hidden" id="contractId" name="contract_id" value="">
+
+      <!-- Contract ID -->
+      <div>
+        <label class="form-label">Contract ID *</label>
+        <input
+          type="text"
+          name="contract_id"
+          id="contractIdInput"
+          placeholder="e.g., CNT-2024-001"
+          class="form-control"
+          required
+          style="width: 100%;"
+        >
+        <p class="form-help">Unique identifier for this contract</p>
+      </div>
+
+      <!-- Contract Type -->
+      <div>
+        <label class="form-label">Contract Type *</label>
+        <select name="contract_type" id="contractType" class="form-control" required style="width: 100%;">
+          <option value="">Select type...</option>
+          <option value="msa">Master Service Agreement (MSA)</option>
+          <option value="sow">Statement of Work (SOW)</option>
+          <option value="nda">Non-Disclosure Agreement (NDA)</option>
+          <option value="purchase">Purchase Agreement</option>
+          <option value="lease">Lease Agreement</option>
+          <option value="service">Service Agreement</option>
+        </select>
+      </div>
+
+      <!-- Contract Number -->
+      <div>
+        <label class="form-label">Contract Number</label>
+        <input
+          type="text"
+          name="contract_number"
+          id="contractNumber"
+          placeholder="e.g., CT-001"
+          class="form-control"
+          style="width: 100%;"
+        >
+        <p class="form-help">Optional external reference number</p>
+      </div>
+
+      <!-- Start Date --> <div>
+        <label class="form-label">Start Date *</label>
+        <input
+          type="date"
+          name="start_date"
+          id="startDate"
+          class="form-control"
+          required
+          style="width: 100%;"
+        >
+      </div>
+
+      <!-- End Date -->
+      <div>
+        <label class="form-label">End Date / Expiration *</label>
+        <input
+          type="date"
+          name="end_date"
+          id="endDate"
+          class="form-control"
+          required
+          style="width: 100%;"
+        >
+        <p class="form-help" id="daysRemaining" style="color: #059669;"></p>
+      </div>
+
+      <!-- Annual Value -->
+      <div>
+        <label class="form-label">Annual Value *</label>
+        <div style="display: flex; gap: 8px;">
+          <span style="padding: 8px 12px; background: var(--lighter); border-radius: 4px; display: flex; align-items: center;">$</span>
+          <input
+            type="number"
+            name="annual_value"
+            id="annualValue"
+            placeholder="0"
+            class="form-control"
+            min="0"
+            step="1000"
+            required
+            style="flex-grow: 1;"
+          >
+        </div>
+      </div>
+
+      <!-- Notes -->
+      <div>
+        <label class="form-label">Notes</label>
+        <textarea
+          name="notes"
+          id="notes"
+          placeholder="Add any important notes about this contract..."
+          class="form-control"
+          rows="3"
+          style="width: 100%; resize: vertical;"
+        ></textarea>
+      </div>
+
+      <!-- Form Actions -->
+      <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 8px;">
+        <button type="button" class="btn btn-secondary" onclick="closeContractModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Contract</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+  .modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+  }
+
+  .modal-content {
+    position: relative;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .modal-header h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+  }
+
+  .modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: var(--muted);
+    padding: 0;
+    width: 32px;
+    height: 32px;
+  }
+
+  .modal-close:hover {
+    color: var(--dark);
+  }
+
+  .form-label {
+    display: block;
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 8px;
+  }
+
+  .form-control {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+
+  .form-control:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(30, 64, 175, 0.1);
+  }
+
+  .form-help {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  .btn-small {
+    padding: 6px 12px !important;
+    font-size: 12px !important;
+  }
+</style>
+
+<script>
+  function openContractModal(contractId) {
+    const modal = document.getElementById('contractModal');
+    const form = document.getElementById('contractForm');
+    const title = document.getElementById('modalTitle');
+
+    if (contractId) {
+      title.textContent = 'Edit Contract';
+      // In a real implementation, fetch contract data via AJAX
+      // and populate the form
+    } else {
+      title.textContent = 'New Contract';
+      form.reset();
+      document.getElementById('contractIdInput').focus();
+    }
+
+    modal.style.display = 'flex';
+  }
+
+  function closeContractModal() {
+    const modal = document.getElementById('contractModal');
+    modal.style.display = 'none';
+  }
+
+  function deleteContract(contractId) {
+    if (confirm('Are you sure you want to delete this contract? This cannot be undone.')) {
+      // In a real implementation, send DELETE request via AJAX
+      console.log('Deleting contract:', contractId);
+    }
+  }
+
+  // Calculate days remaining when dates change
+  document.getElementById('endDate')?.addEventListener('change', function() {
+    const endDate = new Date(this.value);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const daysRemaining = Math.floor((endDate - today) / (1000 * 60 * 60 * 24));
+    const daysElement = document.getElementById('daysRemaining');
+    
+    if (daysRemaining > 60) {
+      daysElement.textContent = `✓ ${daysRemaining} days remaining`;
+      daysElement.style.color = '#059669';
+    } else if (daysRemaining > 0) {
+      daysElement.textContent = `⚠️ ${daysRemaining} days remaining - contract expiring soon`;
+      daysElement.style.color = '#d97706';
+    } else {
+      daysElement.textContent = `✗ Contract has expired`;
+      daysElement.style.color = '#dc2626';
+    }
+  });
+
+  // Close modal when clicking backdrop
+  document.addEventListener('click', function(e) {
+    const modal = document.getElementById('contractModal');
+    if (e.target === modal || e.target.classList.contains('modal-backdrop')) {
+      closeContractModal();
+    }
+  });
+</script>

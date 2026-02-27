@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ job.file_name }} - Import Job{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-lg-8">
+            <h1>{{ job.file_name }}</h1>
+            <p class="text-muted">Job ID: <code>{{ job.import_job_id }}</code></p>
+        </div>
+        <div class="col-lg-4 text-end">
+            <a href="{% url 'imports-index' %}" class="btn btn-secondary">Back to Import Jobs</a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">Details</h5>
+                    <table class="table table-bordered">
+                        <tr>
+                            <td class="fw-bold">Job ID</td>
+                            <td>{{ job.import_job_id }}</td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold">File Name</td>
+                            <td>{{ job.file_name }}</td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold">Source System</td>
+                            <td>{{ job.source_system }}</td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold">Source Object</td>
+                            <td>{{ job.source_object|default:"—" }}</td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold">File Format</td>
+                            <td>
+                                <span class="badge bg-info">{{ job.file_format|default:"auto" }}</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold">Status</td>
+                            <td>
+                                {% if job.status == "completed" %}
+                                    <span class="badge bg-success">{{ job.status }}</span>
+                                {% elif job.status == "processing" %}
+                                    <span class="badge bg-warning">{{ job.status }}</span>
+                                {% elif job.status == "failed" %}
+                                    <span class="badge bg-danger">{{ job.status }}</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ job.status }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold">Submitted By</td>
+                            <td>{{ job.submitted_by }}</td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold">Row Count</td>
+                            <td>{{ job.row_count }}</td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold">Staged Count</td>
+                            <td>{{ job.staged_count }}</td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold">Error Count</td>
+                            <td>{{ job.error_count }}</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

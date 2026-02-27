@@ -1,0 +1,2143 @@
+{% extends "base.html" %}
+
+{% block title %}Vendors - VendorCatalog{% endblock %}
+
+{% block content %}
+<style>
+  /* Remove default main padding for this page */
+  main {
+    padding: 0 !important;
+  }
+
+  /* Vendor Split View Layout */
+  .vendor-split-container {
+    position: fixed;
+    top: 60px;
+    left: 280px;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    background: #f5f7fa;
+  }
+
+  body.sidebar-collapsed .vendor-split-container {
+    left: 80px;
+  }
+
+  /* Vendor List Sidebar */
+  .vendor-list-sidebar {
+    width: 320px;
+    background: white;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    transition: width 0.3s ease, margin-left 0.3s ease;
+    position: relative;
+    z-index: 10;
+  }
+
+  .vendor-list-sidebar.collapsed {
+    width: 0;
+    margin-left: -320px;
+  }
+
+  .vendor-list-header {
+    padding: 20px;
+    border-bottom: 1px solid var(--border);
+    background: white;
+    flex-shrink: 0;
+    position: relative;
+  }
+
+  .vendor-list-header h2 {
+    margin: 0 0 4px 0;
+    font-size: 18px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .vendor-sidebar-toggle {
+    background: transparent;
+    border: 1px solid var(--border);
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.2s;
+    color: var(--muted);
+  }
+
+  .vendor-sidebar-toggle:hover {
+    background: var(--lighter);
+    color: var(--dark);
+  }
+
+  .vendor-list-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .vendor-search {
+    margin-top: 12px;
+  }
+
+  .vendor-search input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 13px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  }
+
+  .vendor-search input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.15);
+  }
+
+  .vendor-list-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 0;
+  }
+
+  /* Category Level (Top Level) */
+  .vendor-category {
+    margin-bottom: 12px;
+  }
+
+  .vendor-category-header {
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--dark);
+    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    user-select: none;
+    border-left: 4px solid var(--primary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .vendor-category-header:hover {
+    background: linear-gradient(135deg, #e0f2fe 0%, #bae6fd 100%);
+  }
+
+  .vendor-category-toggle {
+    transition: transform 0.2s;
+    font-size: 14px;
+  }
+
+  .vendor-category.collapsed .vendor-category-toggle {
+    transform: rotate(-90deg);
+  }
+
+  .vendor-category.collapsed .vendor-category-items {
+    display: none;
+  }
+
+  .vendor-category-items {
+    padding: 4px 0;
+  }
+
+  /* Vendor Level (Second Level) */
+  .vendor-group {
+    margin-bottom: 2px;
+  }
+
+  .vendor-group.active-vendor {
+    border-left: 3px solid var(--primary);
+    background: rgba(15, 118, 110, 0.03);
+  }
+
+  .vendor-group-header {
+    padding: 8px 20px 8px 32px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--dark);
+    background: white;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    user-select: none;
+    border-left: 2px solid transparent;
+    transition: all 0.15s ease;
+  }
+
+  .vendor-group.active-vendor .vendor-group-header {
+    background: rgba(15, 118, 110, 0.05);
+    border-left-color: transparent;
+  }
+
+  .vendor-group-header:hover {
+    background: var(--lighter);
+  }
+
+  .vendor-group-info {
+    flex: 1;
+    min-width: 0;
+    cursor: pointer;
+    padding: 4px 0;
+  }
+
+  .vendor-group-info:hover .vendor-group-name {
+    color: var(--primary);
+  }
+
+  .vendor-group-toggle {
+    transition: transform 0.2s;
+    font-size: 12px;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 4px 8px;
+    margin: -4px -8px;
+    border-radius: 4px;
+  }
+
+  .vendor-group-toggle:hover {
+    background: var(--lighter);
+    color: var(--primary);
+  }
+
+  .vendor-group.collapsed .vendor-group-toggle {
+    transform: rotate(-90deg);
+  }
+
+  .vendor-group.collapsed .vendor-group-items {
+    display: none;
+  }
+
+  .vendor-group-items {
+    padding: 0;
+    background: #fafbfc;
+  }
+
+  .vendor-group-name {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--dark);
+    transition: color 0.15s ease;
+  }
+
+  .vendor-group-id {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: 'Courier New', monospace;
+  }
+
+  .vendor-offering-count {
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--lighter);
+    padding: 2px 8px;
+    border-radius: 10px;
+  }
+
+  .vendor-mini-badge {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+
+  .vendor-mini-badge.risk-high { background: #dc2626; }
+  .vendor-mini-badge.risk-medium { background: #f59e0b; }
+  .vendor-mini-badge.risk-low { background: #059669; }
+
+  /* Offering Level (Third Level) */
+  .offering-item {
+    padding: 8px 20px 8px 52px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+    border-left: 3px solid transparent;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: white;
+  }
+
+  .offering-item:hover {
+    background: rgba(15, 118, 110, 0.04);
+    border-left-color: var(--primary);
+  }
+
+  .offering-item.active {
+    background: rgba(15, 118, 110, 0.08);
+    border-left-color: var(--primary);
+  }
+
+  .offering-item-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .offering-item-name {
+    font-weight: 500;
+    font-size: 13px;
+    color: var(--dark);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .offering-item-id {
+    font-size: 10px;
+    color: var(--muted);
+    font-family: 'Courier New', monospace;
+  }
+
+  .offering-item-badges {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+    margin-left: 8px;
+  }
+
+  .offering-type-badge {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: var(--lighter);
+    color: var(--muted);
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+
+  /* Detail Panel */
+  .vendor-detail-panel {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    position: relative;
+  }
+
+  .vendor-list-sidebar.collapsed + .vendor-detail-panel {
+    margin-left: 0;
+  }
+
+  /* Collapsed sidebar toggle button */
+  .vendor-collapsed-toggle {
+    position: fixed;
+    top: 80px;
+    left: 280px;
+    z-index: 200;
+    background: white;
+    border: 1px solid var(--border);
+    border-left: none;
+    padding: 12px 8px;
+    border-radius: 0 6px 6px 0;
+    cursor: pointer;
+    box-shadow: 2px 2px 8px rgba(0, 0, 0, 0.1);
+    font-size: 16px;
+    transition: all 0.2s;
+    display: none;
+    color: var(--muted);
+  }
+
+  body.sidebar-collapsed .vendor-collapsed-toggle {
+    left: 80px;
+  }
+
+  .vendor-list-sidebar.collapsed + .vendor-collapsed-toggle {
+    display: block;
+  }
+
+  .vendor-collapsed-toggle:hover {
+    background: var(--light);
+    box-shadow: 2px 2px 12px rgba(0, 0, 0, 0.15);
+    color: var(--primary);
+  }
+
+  .detail-placeholder {
+    text-align: center;
+    padding: 100px 40px;
+    color: var(--muted);
+  }
+
+  .detail-placeholder-icon {
+    font-size: 64px;
+    margin-bottom: 24px;
+    opacity: 0.5;
+  }
+
+  .detail-placeholder h3 {
+    font-size: 20px;
+    margin-bottom: 8px;
+    color: var(--dark);
+  }
+
+  .detail-loading {
+    text-align: center;
+    padding: 60px 20px;
+  }
+
+  .detail-loading .spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Detail Content Styles */
+  #vendor-detail-content .page-header {
+    margin-bottom: 24px;
+  }
+
+  #vendor-detail-content .stat-card {
+    margin-bottom: 0;
+  }
+
+  .side-drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 1500;
+    display: none;
+  }
+
+  .side-drawer-backdrop.open {
+    display: block;
+  }
+
+  .side-drawer {
+    position: fixed;
+    top: 0;
+    right: -420px;
+    width: 420px;
+    max-width: calc(100vw - 20px);
+    height: 100vh;
+    background: white;
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.15);
+    z-index: 1600;
+    transition: right 0.25s ease;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .side-drawer.open {
+    right: 0;
+  }
+
+  .side-drawer-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: start;
+    gap: 12px;
+  }
+
+  .side-drawer-body {
+    padding: 16px 20px;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .side-drawer-close {
+    border: 1px solid var(--border);
+    background: white;
+    border-radius: 6px;
+    padding: 6px 10px;
+    cursor: pointer;
+  }
+
+  .side-drawer-close:hover {
+    background: var(--lighter);
+  }
+
+  .vc-toast {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 2100;
+    background: #111827;
+    color: #ffffff;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    pointer-events: none;
+  }
+
+  .vc-toast.show {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .split-detail-tabs {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 20px;
+    margin-bottom: 12px;
+  }
+
+  .split-detail-tab-button {
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--dark);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .split-detail-tab-button.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+  }
+
+  .split-detail-tab-panel {
+    display: none;
+  }
+
+  .split-detail-tab-panel.active {
+    display: block;
+  }
+</style>
+
+<div class="vendor-split-container">
+  <!-- Left Sidebar: Vendor List -->
+  <div class="vendor-list-sidebar" id="vendorListSidebar">
+    <div class="vendor-list-header">
+      <h2>
+        <span>Vendors</span>
+        <button class="vendor-sidebar-toggle" onclick="toggleVendorListSidebar()" title="Collapse vendor list">
+          ◀
+        </button>
+      </h2>
+      <p class="text-muted" style="margin: 0; font-size: 13px;">{{ items|length }} vendors</p>
+      
+      <div class="vendor-list-actions">
+        {% if can_create_vendor %}
+          <a href="/vendor-360/new" class="btn btn-primary btn-small" style="flex: 1;">➕ Add Vendor</a>
+        {% endif %}
+        <button type="button" class="btn btn-secondary btn-small" onclick="resetDrawerPreferences()" title="Reset saved quick-form preferences" style="opacity: 0.75;">Reset Prefs</button>
+      </div>
+
+      <div class="vendor-search">
+        <input type="text" id="vendorSearchInput" placeholder="Search vendors & offerings..." autocomplete="off">
+      </div>
+    </div>
+
+    <div class="vendor-list-content">
+      {% regroup items by category as category_groups %}
+      {% for category_group in category_groups %}
+        <div class="vendor-category" data-category="{{ category_group.grouper }}">
+          <div class="vendor-category-header" onclick="toggleVendorCategory(this)">
+            <span>{{ category_group.grouper }}</span>
+            <span class="vendor-category-toggle">▼</span>
+          </div>
+          <div class="vendor-category-items">
+            {% for vendor in category_group.list %}
+              <div class="vendor-group" data-vendor-id="{{ vendor.vendor_id }}">
+                <div class="vendor-group-header">
+                  <div class="vendor-group-info" onclick="loadVendorDetail('{{ vendor.vendor_id }}')">
+                    <div class="vendor-group-name">{{ vendor.display_name }}</div>
+                    <div class="vendor-group-id">{{ vendor.vendor_id }}</div>
+                  </div>
+                  <div class="vendor-group-meta">
+                    <span class="vendor-offering-count">{{ vendor.offerings.count }} offering{{ vendor.offerings.count|pluralize }}</span>
+                    <div class="vendor-mini-badge risk-{{ vendor.risk_tier }}" title="{{ vendor.risk_tier|upper }} risk"></div>
+                    <span class="vendor-group-toggle" onclick="toggleVendorGroup(event, this)">▼</span>
+                  </div>
+                </div>
+                <div class="vendor-group-items">
+                  {% for offering in vendor.offerings.all %}
+                    <div class="offering-item" 
+                         data-offering-id="{{ offering.offering_id }}"
+                         data-vendor-id="{{ vendor.vendor_id }}"
+                         data-offering-name="{{ offering.offering_name }}"
+                         data-category="{{ vendor.category }}"
+                         onclick="loadOfferingDetail('{{ offering.offering_id }}', '{{ vendor.vendor_id }}')">
+                      <div class="offering-item-info">
+                        <div class="offering-item-name">{{ offering.offering_name }}</div>
+                        <div class="offering-item-id">{{ offering.offering_id }}</div>
+                      </div>
+                      <div class="offering-item-badges">
+                        {% if offering.offering_type %}
+                          <span class="offering-type-badge">{{ offering.offering_type }}</span>
+                        {% endif %}
+                      </div>
+                    </div>
+                  {% empty %}
+                    <div style="padding: 12px 52px; color: var(--muted); font-size: 12px; font-style: italic;">
+                      No offerings yet
+                    </div>
+                  {% endfor %}
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Collapsed sidebar reopen button -->
+  <button class="vendor-collapsed-toggle" onclick="toggleVendorListSidebar()" title="Show vendor list">
+    ▶
+  </button>
+
+  <!-- Right Panel: Vendor Details -->
+  <div class="vendor-detail-panel">
+    <div id="vendor-detail-content">
+      <div class="detail-placeholder">
+        <div class="detail-placeholder-icon">📋</div>
+        <h3>Select an Offering</h3>
+        <p>Choose a vendor and offering from the catalog to view detailed information</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="contactDrawerBackdrop" class="side-drawer-backdrop" onclick="closeContactDrawer()"></div>
+<aside id="contactDrawer" class="side-drawer" aria-hidden="true">
+  <div class="side-drawer-header">
+    <div>
+      <h3 style="margin: 0;">Add Contact</h3>
+      <p id="contactDrawerVendorLabel" class="text-muted" style="margin: 4px 0 0 0; font-size: 12px;">Vendor</p>
+    </div>
+    <button class="side-drawer-close" type="button" onclick="closeContactDrawer()">✕</button>
+  </div>
+  <div class="side-drawer-body">
+    <div id="contactDrawerError" class="alert alert-danger" style="display: none;"></div>
+    <form id="contactQuickForm">
+      <input type="hidden" id="contactDrawerVendorId" name="vendor_id">
+
+      <div class="form-group">
+        <label for="contact_source">Contact Source *</label>
+        <select id="contact_source" name="contact_source">
+          <option value="internal">Internal (Active Org User)</option>
+          <option value="external">External (Vendor Contact)</option>
+        </select>
+      </div>
+
+      <div id="contact_internal_section" style="margin-top: 8px;">
+        <div class="form-group">
+          <label for="contact_internal_user_lookup">Internal User *</label>
+          <input id="contact_internal_user_lookup" type="text" placeholder="Search active user by name or email" autocomplete="off">
+          <input id="contact_internal_user_principal" name="internal_user_principal" type="hidden">
+          <div id="contact_internal_user_results" class="typeahead-results hidden"></div>
+        </div>
+        <div class="form-group">
+          <label for="contact_internal_role">Org Role *</label>
+          <select id="contact_internal_role" name="internal_contact_role">
+            <option value="Business Owner">Business Owner</option>
+            <option value="SME">SME</option>
+            <option value="Technical Lead">Technical Lead</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="contact_external_section" style="display: none; margin-top: 8px;">
+        <div class="form-group">
+          <label for="contact_external_lookup">External Contact (optional)</label>
+          <input id="contact_external_lookup" type="text" placeholder="Search existing contact by name or email" autocomplete="off">
+          <input id="contact_external_contact_id" name="external_contact_id" type="hidden">
+          <div id="contact_external_results" class="typeahead-results hidden"></div>
+          <p class="form-help">Pick an existing contact to autofill, or type manual details below.</p>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="contact_full_name">Full Name *</label>
+        <input id="contact_full_name" name="full_name" type="text" placeholder="Contact full name">
+      </div>
+
+      <div class="form-group">
+        <label for="contact_email">Email</label>
+        <input id="contact_email" name="email" type="email" placeholder="name@company.com">
+      </div>
+
+      <div class="form-group">
+        <label for="contact_contact_type">Contact Type *</label>
+        <select id="contact_contact_type" name="contact_type" required>
+          <option value="primary">Primary Contact</option>
+          <option value="sales">Sales Representative</option>
+          <option value="support">Support Contact</option>
+          <option value="billing">Billing Contact</option>
+          <option value="technical">Technical Contact</option>
+          <option value="executive">Executive</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="contact_title_select">Role / Title</label>
+        <select id="contact_title_select" name="title">
+          <option value="">-- Select Role --</option>
+          <option value="Account Manager">Account Manager</option>
+          <option value="Sales Manager">Sales Manager</option>
+          <option value="Support Lead">Support Lead</option>
+          <option value="Technical Lead">Technical Lead</option>
+          <option value="Finance Manager">Finance Manager</option>
+          <option value="VP">VP</option>
+          <option value="Director">Director</option>
+        </select>
+      </div>
+
+      <button type="button" class="btn btn-secondary btn-small" style="margin-top: 4px;" onclick="toggleDrawerAdvanced('contactDrawerAdvanced', this)">Show Advanced Options</button>
+
+      <div id="contactDrawerAdvanced" style="display: none; margin-top: 10px;">
+
+        <div class="form-group">
+          <label for="contact_is_primary">Primary Contact</label>
+          <select id="contact_is_primary" name="is_primary">
+            <option value="false" selected>No</option>
+            <option value="true">Yes</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-top: 16px;">
+        <button id="contactQuickSubmit" type="submit" class="btn btn-primary">Save Contact</button>
+        <button type="button" class="btn btn-secondary" onclick="closeContactDrawer()">Cancel</button>
+      </div>
+    </form>
+  </div>
+</aside>
+
+<div id="identifierDrawerBackdrop" class="side-drawer-backdrop" onclick="closeIdentifierDrawer()"></div>
+<aside id="identifierDrawer" class="side-drawer" aria-hidden="true">
+  <div class="side-drawer-header">
+    <div>
+      <h3 style="margin: 0;">Add Identifier</h3>
+      <p id="identifierDrawerVendorLabel" class="text-muted" style="margin: 4px 0 0 0; font-size: 12px;">Vendor</p>
+    </div>
+    <button class="side-drawer-close" type="button" onclick="closeIdentifierDrawer()">✕</button>
+  </div>
+  <div class="side-drawer-body">
+    <div id="identifierDrawerError" class="alert alert-danger" style="display: none;"></div>
+    <form id="identifierQuickForm">
+      <input type="hidden" id="identifierDrawerVendorId" name="vendor_id">
+
+      <div class="form-group">
+        <label for="identifier_type_select">Identifier Type *</label>
+        <select id="identifier_type_select" name="identifier_type" required>
+          <option value="duns">DUNS Number</option>
+          <option value="tax_id">Tax ID / EIN</option>
+          <option value="vat_id">VAT ID</option>
+          <option value="gln">GLN</option>
+          <option value="erp_id">ERP Vendor ID</option>
+          <option value="sap_id">SAP Vendor Code</option>
+          <option value="internal_id">Internal ID</option>
+          <option value="cage_code">CAGE Code</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="identifier_value_input">Identifier Value *</label>
+        <input id="identifier_value_input" name="identifier_value" type="text" required placeholder="Identifier value">
+      </div>
+
+      <button type="button" class="btn btn-secondary btn-small" style="margin-top: 4px;" onclick="toggleDrawerAdvanced('identifierDrawerAdvanced', this)">Show Advanced Options</button>
+
+      <div id="identifierDrawerAdvanced" style="display: none; margin-top: 10px;">
+
+        <div class="form-group">
+          <label for="identifier_country_select">Country</label>
+          <select id="identifier_country_select" name="country_code">
+            <option value="">-- Select Country --</option>
+            <option value="US">United States</option>
+            <option value="CA">Canada</option>
+            <option value="GB">United Kingdom</option>
+            <option value="DE">Germany</option>
+            <option value="FR">France</option>
+            <option value="JP">Japan</option>
+            <option value="AU">Australia</option>
+            <option value="IN">India</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="identifier_primary_select">Primary Identifier</label>
+          <select id="identifier_primary_select" name="is_primary">
+            <option value="false" selected>No</option>
+            <option value="true">Yes</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-top: 16px;">
+        <button id="identifierQuickSubmit" type="submit" class="btn btn-primary">Save Identifier</button>
+        <button type="button" class="btn btn-secondary" onclick="closeIdentifierDrawer()">Cancel</button>
+      </div>
+    </form>
+  </div>
+</aside>
+
+<div id="offeringDrawerBackdrop" class="side-drawer-backdrop" onclick="closeOfferingDrawer()"></div>
+<aside id="offeringDrawer" class="side-drawer" aria-hidden="true">
+  <div class="side-drawer-header">
+    <div>
+      <h3 style="margin: 0;">Add Offering</h3>
+      <p id="offeringDrawerVendorLabel" class="text-muted" style="margin: 4px 0 0 0; font-size: 12px;">Vendor</p>
+    </div>
+    <button class="side-drawer-close" type="button" onclick="closeOfferingDrawer()">✕</button>
+  </div>
+  <div class="side-drawer-body">
+    <div id="offeringDrawerError" class="alert alert-danger" style="display: none;"></div>
+    <form id="offeringQuickForm">
+      <input type="hidden" id="offeringDrawerVendorId" name="vendor_id">
+
+      <div class="form-group">
+        <label for="offering_name_input">Offering Name *</label>
+        <input id="offering_name_input" name="offering_name" type="text" required placeholder="Offering name">
+      </div>
+
+      <div class="form-group">
+        <label for="offering_type_select">Offering Type *</label>
+        <select id="offering_type_select" name="offering_type" required>
+          <option value="SaaS">SaaS</option>
+          <option value="Cloud">Cloud</option>
+          <option value="PaaS">PaaS</option>
+          <option value="Security">Security</option>
+          <option value="Data">Data</option>
+          <option value="Integration">Integration</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="offering_lob_select">Line of Business *</label>
+        <select id="offering_lob_select" name="lob" required>
+          <option value="Enterprise">Enterprise</option>
+          <option value="Finance">Finance</option>
+          <option value="HR">HR</option>
+          <option value="IT">IT</option>
+          <option value="Operations">Operations</option>
+          <option value="Sales">Sales</option>
+          <option value="Security">Security</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="offering_service_type_select">Service Type *</label>
+        <select id="offering_service_type_select" name="service_type" required>
+          <option value="Application">Application</option>
+          <option value="Infrastructure">Infrastructure</option>
+          <option value="Integration">Integration</option>
+          <option value="Managed Service">Managed Service</option>
+          <option value="Platform">Platform</option>
+          <option value="Security">Security</option>
+          <option value="Support">Support</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+
+      <button type="button" class="btn btn-secondary btn-small" style="margin-top: 4px;" onclick="toggleDrawerAdvanced('offeringDrawerAdvanced', this)">Show Advanced Options</button>
+
+      <div id="offeringDrawerAdvanced" style="display: none; margin-top: 10px;">
+
+        <div class="form-group">
+          <label for="offering_lifecycle_select">Lifecycle State</label>
+          <select id="offering_lifecycle_select" name="lifecycle_state">
+            <option value="draft">Draft</option>
+            <option value="active">Active</option>
+            <option value="retired">Retired</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="offering_criticality_select">Criticality Tier</label>
+          <select id="offering_criticality_select" name="criticality_tier">
+            <option value="tier_1">Tier 1</option>
+            <option value="tier_2">Tier 2</option>
+            <option value="tier_3" selected>Tier 3</option>
+            <option value="tier_4">Tier 4</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-top: 16px;">
+        <button id="offeringQuickSubmit" type="submit" class="btn btn-primary">Save Offering</button>
+        <button type="button" class="btn btn-secondary" onclick="closeOfferingDrawer()">Cancel</button>
+      </div>
+    </form>
+  </div>
+</aside>
+
+<div id="contractDrawerBackdrop" class="side-drawer-backdrop" onclick="closeContractDrawer()"></div>
+<aside id="contractDrawer" class="side-drawer" aria-hidden="true">
+  <div class="side-drawer-header">
+    <div>
+      <h3 style="margin: 0;">Add Contract</h3>
+      <p id="contractDrawerVendorLabel" class="text-muted" style="margin: 4px 0 0 0; font-size: 12px;">Vendor</p>
+    </div>
+    <button class="side-drawer-close" type="button" onclick="closeContractDrawer()">✕</button>
+  </div>
+  <div class="side-drawer-body">
+    <div id="contractDrawerError" class="alert alert-danger" style="display: none;"></div>
+    <form id="contractQuickForm">
+      <input type="hidden" id="contractDrawerVendorId" name="vendor_id">
+
+      <div class="form-group">
+        <label for="contract_number_input">Contract Number</label>
+        <input id="contract_number_input" name="contract_number" type="text" placeholder="Optional contract number">
+      </div>
+
+      <div class="form-group">
+        <label for="contract_status_select">Status</label>
+        <select id="contract_status_select" name="contract_status">
+          <option value="draft" selected>Draft</option>
+          <option value="active">Active</option>
+          <option value="expired">Expired</option>
+        </select>
+      </div>
+
+      <button type="button" class="btn btn-secondary btn-small" style="margin-top: 4px;" onclick="toggleDrawerAdvanced('contractDrawerAdvanced', this)">Show Advanced Options</button>
+
+      <div id="contractDrawerAdvanced" style="display: none; margin-top: 10px;">
+
+        <div class="form-group">
+          <label for="contract_offering_select">Offering</label>
+          <select id="contract_offering_select" name="offering_id">
+            <option value="">-- None --</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="contract_start_date">Start Date</label>
+            <input id="contract_start_date" type="date">
+          </div>
+          <div class="form-group">
+            <label for="contract_end_date">End Date</label>
+            <input id="contract_end_date" type="date">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="contract_annual_value">Annual Value</label>
+          <input id="contract_annual_value" type="number" min="0" step="0.01" placeholder="0.00">
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-top: 16px;">
+        <button id="contractQuickSubmit" type="submit" class="btn btn-primary">Save Contract</button>
+        <button type="button" class="btn btn-secondary" onclick="closeContractDrawer()">Cancel</button>
+      </div>
+    </form>
+  </div>
+</aside>
+
+<script>
+// Vendor list sidebar toggle
+function toggleVendorListSidebar() {
+  const sidebar = document.getElementById('vendorListSidebar');
+  sidebar.classList.toggle('collapsed');
+}
+
+// Category toggle (top level)
+function toggleVendorCategory(header) {
+  header.parentElement.classList.toggle('collapsed');
+}
+
+// Vendor toggle (second level) - only toggles expansion
+function toggleVendorGroup(event, element) {
+  // Prevent click from bubbling to other handlers
+  event.stopPropagation();
+  element.closest('.vendor-group').classList.toggle('collapsed');
+}
+
+// Load vendor detail via AJAX (when clicking vendor name)
+function loadVendorDetail(vendorId) {
+  const detailContent = document.getElementById('vendor-detail-content');
+  
+  // Update active state on vendor groups
+  document.querySelectorAll('.vendor-group').forEach(group => {
+    group.classList.remove('active-vendor');
+  });
+  document.querySelector(`[data-vendor-id="${vendorId}"]`).classList.add('active-vendor');
+  
+  // Clear active state from offerings
+  document.querySelectorAll('.offering-item').forEach(item => {
+    item.classList.remove('active');
+  });
+  
+  // Show loading state
+  detailContent.innerHTML = `
+    <div class="detail-loading">
+      <div class="spinner"></div>
+      <p style="margin-top: 16px; color: var(--muted);">Loading vendor details...</p>
+    </div>
+  `;
+  
+  // Fetch vendor details
+  fetch(`/vendor-360/api/${vendorId}/details`)
+    .then(response => response.json())
+    .then(data => {
+      renderVendorDetail(data);
+    })
+    .catch(error => {
+      console.error('Error loading vendor:', error);
+      detailContent.innerHTML = `
+        <div class="detail-placeholder">
+          <div class="detail-placeholder-icon">⚠️</div>
+          <h3>Error Loading Vendor</h3>
+          <p>Could not load vendor details. Please try again.</p>
+        </div>
+      `;
+    });
+}
+
+// Load offering detail via AJAX (third level)
+function loadOfferingDetail(offeringId, vendorId) {
+  const detailContent = document.getElementById('vendor-detail-content');
+  
+  // Update active state
+  document.querySelectorAll('.offering-item').forEach(item => {
+    item.classList.remove('active');
+  });
+  event.currentTarget.classList.add('active');
+  
+  // Show loading state
+  detailContent.innerHTML = `
+    <div class="detail-loading">
+      <div class="spinner"></div>
+      <p style="margin-top: 16px; color: var(--muted);">Loading offering details...</p>
+    </div>
+  `;
+  
+  // Fetch offering details (using vendor API for now, will show offering-specific view later)
+  fetch(`/vendor-360/api/${vendorId}/details`)
+    .then(response => response.json())
+    .then(data => {
+      // Add offering context
+      data.selected_offering_id = offeringId;
+      renderOfferingDetail(data, offeringId);
+    })
+    .catch(error => {
+      console.error('Error loading offering:', error);
+      detailContent.innerHTML = `
+        <div class="card">
+          <div style="text-align: center; padding: 40px;">
+            <p style="color: var(--danger); font-weight: 600;">Error loading vendor details</p>
+            <p class="text-muted">Please try again or contact support</p>
+          </div>
+        </div>
+      `;
+    });
+}
+
+function formatContactType(value) {
+  return (value || 'contact').replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
+}
+
+const DRAWER_ADVANCED_PREF_PREFIX = 'vendorDrawerAdvanced:';
+
+function getDrawerAdvancedPref(sectionId) {
+  try {
+    return localStorage.getItem(`${DRAWER_ADVANCED_PREF_PREFIX}${sectionId}`) === 'open';
+  } catch (error) {
+    return false;
+  }
+}
+
+function setDrawerAdvancedPref(sectionId, isOpen) {
+  try {
+    localStorage.setItem(`${DRAWER_ADVANCED_PREF_PREFIX}${sectionId}`, isOpen ? 'open' : 'closed');
+  } catch (error) {
+    // ignore storage failures
+  }
+}
+
+function setDrawerAdvancedState(sectionId, isOpen) {
+  const section = document.getElementById(sectionId);
+  if (!section) {
+    return;
+  }
+  section.style.display = isOpen ? 'block' : 'none';
+
+  const triggerButton = document.querySelector(`button[onclick*="'${sectionId}'"]`);
+  if (triggerButton) {
+    triggerButton.textContent = isOpen ? 'Hide Advanced Options' : 'Show Advanced Options';
+  }
+}
+
+function applyDrawerAdvancedState(sectionId) {
+  setDrawerAdvancedState(sectionId, getDrawerAdvancedPref(sectionId));
+}
+
+function showToast(message) {
+  const toast = document.createElement('div');
+  toast.className = 'vc-toast';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('show'));
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 220);
+  }, 2200);
+}
+
+function resetDrawerPreferences() {
+  const keys = [
+    'contactDrawerAdvanced',
+    'identifierDrawerAdvanced',
+    'offeringDrawerAdvanced',
+    'contractDrawerAdvanced',
+    'detailContactAdvanced',
+    'detailIdentifierAdvanced',
+    'detailOfferingAdvanced',
+    'detailContractAdvanced'
+  ];
+  try {
+    keys.forEach((sectionId) => {
+      localStorage.removeItem(`${DRAWER_ADVANCED_PREF_PREFIX}${sectionId}`);
+      localStorage.removeItem(`vendorDetailDrawerAdvanced:${sectionId}`);
+    });
+  } catch (error) {
+    // ignore storage failures
+  }
+  keys.forEach((sectionId) => setDrawerAdvancedState(sectionId, false));
+  showToast('Quick-form preferences reset. Advanced sections are now collapsed by default.');
+}
+
+function openContactDrawer(vendorId, vendorName) {
+  const drawer = document.getElementById('contactDrawer');
+  const backdrop = document.getElementById('contactDrawerBackdrop');
+  const vendorLabel = document.getElementById('contactDrawerVendorLabel');
+  const vendorInput = document.getElementById('contactDrawerVendorId');
+  const form = document.getElementById('contactQuickForm');
+  const errorBox = document.getElementById('contactDrawerError');
+
+  vendorInput.value = vendorId;
+  vendorLabel.textContent = `${vendorName} • ${vendorId}`;
+  form.reset();
+  vendorInput.value = vendorId;
+  errorBox.style.display = 'none';
+  errorBox.textContent = '';
+
+  drawer.classList.add('open');
+  backdrop.classList.add('open');
+  drawer.setAttribute('aria-hidden', 'false');
+  applyDrawerAdvancedState('contactDrawerAdvanced');
+  document.getElementById('contact_full_name').focus();
+}
+
+function closeContactDrawer() {
+  const drawer = document.getElementById('contactDrawer');
+  const backdrop = document.getElementById('contactDrawerBackdrop');
+  drawer.classList.remove('open');
+  backdrop.classList.remove('open');
+  drawer.setAttribute('aria-hidden', 'true');
+}
+
+function openIdentifierDrawer(vendorId, vendorName) {
+  const drawer = document.getElementById('identifierDrawer');
+  const backdrop = document.getElementById('identifierDrawerBackdrop');
+  document.getElementById('identifierDrawerVendorLabel').textContent = `${vendorName} • ${vendorId}`;
+  document.getElementById('identifierDrawerVendorId').value = vendorId;
+  document.getElementById('identifierQuickForm').reset();
+  document.getElementById('identifierDrawerVendorId').value = vendorId;
+  document.getElementById('identifierDrawerError').style.display = 'none';
+  drawer.classList.add('open');
+  backdrop.classList.add('open');
+  drawer.setAttribute('aria-hidden', 'false');
+  applyDrawerAdvancedState('identifierDrawerAdvanced');
+  document.getElementById('identifier_value_input').focus();
+}
+
+function closeIdentifierDrawer() {
+  document.getElementById('identifierDrawer').classList.remove('open');
+  document.getElementById('identifierDrawerBackdrop').classList.remove('open');
+  document.getElementById('identifierDrawer').setAttribute('aria-hidden', 'true');
+}
+
+function openOfferingDrawer(vendorId, vendorName) {
+  const drawer = document.getElementById('offeringDrawer');
+  const backdrop = document.getElementById('offeringDrawerBackdrop');
+  document.getElementById('offeringDrawerVendorLabel').textContent = `${vendorName} • ${vendorId}`;
+  document.getElementById('offeringDrawerVendorId').value = vendorId;
+  document.getElementById('offeringQuickForm').reset();
+  document.getElementById('offeringDrawerVendorId').value = vendorId;
+  document.getElementById('offeringDrawerError').style.display = 'none';
+  drawer.classList.add('open');
+  backdrop.classList.add('open');
+  drawer.setAttribute('aria-hidden', 'false');
+  applyDrawerAdvancedState('offeringDrawerAdvanced');
+  document.getElementById('offering_name_input').focus();
+}
+
+function closeOfferingDrawer() {
+  document.getElementById('offeringDrawer').classList.remove('open');
+  document.getElementById('offeringDrawerBackdrop').classList.remove('open');
+  document.getElementById('offeringDrawer').setAttribute('aria-hidden', 'true');
+}
+
+function buildAutoId(prefix) {
+  const stamp = Date.now().toString();
+  return `${prefix}-${stamp.slice(-10)}`;
+}
+
+function toggleDrawerAdvanced(sectionId, triggerButton) {
+  const section = document.getElementById(sectionId);
+  if (!section) {
+    return;
+  }
+  const isHidden = section.style.display === 'none' || !section.style.display;
+  const nextOpen = isHidden;
+  setDrawerAdvancedState(sectionId, nextOpen);
+  setDrawerAdvancedPref(sectionId, nextOpen);
+
+  if (triggerButton) {
+    triggerButton.textContent = nextOpen ? 'Hide Advanced Options' : 'Show Advanced Options';
+  }
+}
+
+function populateContractOfferings(vendorId) {
+  const select = document.getElementById('contract_offering_select');
+  select.innerHTML = '<option value="">-- None --</option>';
+  fetch(`/api/v1/vendors/${vendorId}/offerings`)
+    .then((response) => response.json())
+    .then((payload) => {
+      const items = payload.items || [];
+      items.forEach((offering) => {
+        const option = document.createElement('option');
+        option.value = offering.offering_id;
+        option.textContent = `${offering.offering_name} (${offering.offering_id})`;
+        select.appendChild(option);
+      });
+    })
+    .catch(() => {
+      // keep empty select on failure
+    });
+}
+
+function openContractDrawer(vendorId, vendorName) {
+  const drawer = document.getElementById('contractDrawer');
+  const backdrop = document.getElementById('contractDrawerBackdrop');
+  document.getElementById('contractDrawerVendorLabel').textContent = `${vendorName} • ${vendorId}`;
+  document.getElementById('contractDrawerVendorId').value = vendorId;
+  document.getElementById('contractQuickForm').reset();
+  document.getElementById('contractDrawerVendorId').value = vendorId;
+  document.getElementById('contractDrawerError').style.display = 'none';
+  populateContractOfferings(vendorId);
+  drawer.classList.add('open');
+  backdrop.classList.add('open');
+  drawer.setAttribute('aria-hidden', 'false');
+  applyDrawerAdvancedState('contractDrawerAdvanced');
+  document.getElementById('contract_number_input').focus();
+}
+
+function closeContractDrawer() {
+  document.getElementById('contractDrawer').classList.remove('open');
+  document.getElementById('contractDrawerBackdrop').classList.remove('open');
+  document.getElementById('contractDrawer').setAttribute('aria-hidden', 'true');
+}
+
+function selectSplitDetailTab(tabKey) {
+  const root = document.getElementById('vendor-detail-content');
+  if (!root) {
+    return;
+  }
+
+  const tabButtons = root.querySelectorAll('.split-detail-tab-button');
+  const tabPanels = root.querySelectorAll('.split-detail-tab-panel');
+
+  tabButtons.forEach((button) => {
+    if (button.dataset.splitTab === tabKey) {
+      button.classList.add('active');
+    } else {
+      button.classList.remove('active');
+    }
+  });
+
+  tabPanels.forEach((panel) => {
+    if (panel.dataset.splitTab === tabKey) {
+      panel.classList.add('active');
+    } else {
+      panel.classList.remove('active');
+    }
+  });
+}
+
+function renderParitySections(data, vendor) {
+  const permissions = data.permissions || {};
+  const expiringContracts = data.expiring_contracts || [];
+  const keyContacts = data.key_contacts || [];
+  const identifiers = data.identifiers || [];
+  const contactSummary = data.contact_summary || { total: 0, active: 0 };
+  const identifierSummary = data.identifier_summary || { total: 0, verified: 0 };
+  const workflow = data.workflow || { current_state: 'draft', days_in_state: 0 };
+  const warnings = data.warnings || { active_count: 0 };
+
+  return `
+    <div class="split-detail-tabs" role="tablist" aria-label="Vendor detail data sections">
+      <button type="button" class="split-detail-tab-button active" data-split-tab="contacts" onclick="selectSplitDetailTab('contacts')">Contacts</button>
+      <button type="button" class="split-detail-tab-button" data-split-tab="identifiers" onclick="selectSplitDetailTab('identifiers')">Identifiers</button>
+      <button type="button" class="split-detail-tab-button" data-split-tab="workflow" onclick="selectSplitDetailTab('workflow')">Workflow</button>
+    </div>
+
+    <div class="split-detail-tab-panel active" data-split-tab="contacts">
+      ${expiringContracts.length > 0 ? `
+        <div class="card" style="margin-bottom: 12px; border-left: 4px solid #f59e0b; background: rgba(245, 158, 11, 0.08);">
+          <h3 style="margin-bottom: 8px; color: #b45309;">⚠️ Expiring Contracts</h3>
+          <p class="text-muted" style="margin-bottom: 8px;">${expiringContracts.length} contract(s) expire within 60 days.</p>
+          <ul style="margin: 0; padding-left: 18px;">
+            ${expiringContracts.map(item => `<li style="font-size: 13px; margin: 4px 0;">${item.contract_number || item.contract_id} (${item.days_until_expiry} days)</li>`).join('')}
+          </ul>
+        </div>
+      ` : ''}
+
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">👥 Key Contacts</h3>
+            <p class="card-subtitle">${contactSummary.active} active of ${contactSummary.total} total</p>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            ${permissions.can_manage_vendor_contacts ? `<button type="button" class="btn btn-primary btn-small js-open-contact-drawer" data-vendor-id="${vendor.vendor_id}" data-vendor-name="${vendor.display_name}">+ Quick Add</button>` : ''}
+            <a href="/vendor-360/${vendor.vendor_id}/contacts" class="btn btn-secondary btn-small" style="opacity: 0.7;">More</a>
+          </div>
+        </div>
+        ${keyContacts.length > 0 ? `
+          <div style="display: grid; gap: 10px;">
+            ${keyContacts.map(contact => `
+              <div style="padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--lighter);">
+                <p style="margin: 0; font-weight: 600;">${contact.full_name}</p>
+                <p class="text-muted" style="margin: 2px 0 0 0; font-size: 12px;">${formatContactType(contact.contact_type)}${contact.title ? ` • ${contact.title}` : ''}</p>
+                <p style="margin: 6px 0 0 0; font-size: 12px;">${contact.email || 'No email'}${contact.phone ? ` • ${contact.phone}` : ''}</p>
+              </div>
+            `).join('')}
+          </div>
+        ` : `<p class="text-muted" style="margin: 0;">No active contacts yet.</p>`}
+      </div>
+    </div>
+
+    <div class="split-detail-tab-panel" data-split-tab="identifiers">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">🏷️ Identifiers</h3>
+            <p class="card-subtitle">${identifierSummary.verified} verified of ${identifierSummary.total}</p>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            ${permissions.can_manage_vendor_identifiers ? `<button type="button" class="btn btn-primary btn-small js-open-identifier-drawer" data-vendor-id="${vendor.vendor_id}" data-vendor-name="${vendor.display_name}">+ Quick Add</button>` : ''}
+            <a href="/vendor-360/${vendor.vendor_id}/identifiers" class="btn btn-secondary btn-small" style="opacity: 0.7;">More</a>
+          </div>
+        </div>
+        ${identifiers.length > 0 ? `
+          <div style="display: grid; gap: 8px;">
+            ${identifiers.map(item => `
+              <div style="padding: 10px; border: 1px solid var(--border); border-radius: 8px;">
+                <p style="margin: 0; font-weight: 600; font-size: 13px;">${formatContactType(item.identifier_type)}</p>
+                <p style="margin: 2px 0 0 0; font-family: 'Courier New', monospace; font-size: 12px;">${item.identifier_value}</p>
+              </div>
+            `).join('')}
+          </div>
+        ` : `<p class="text-muted" style="margin: 0;">No identifiers configured.</p>`}
+      </div>
+    </div>
+
+    <div class="split-detail-tab-panel" data-split-tab="workflow">
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+        <div>
+          <p style="margin: 0; font-weight: 600;">Workflow & Governance</p>
+          <p class="text-muted" style="margin: 2px 0 0 0; font-size: 13px;">State: <strong>${formatContactType(workflow.current_state)}</strong> • ${workflow.days_in_state} day(s) in state • Active warnings: <strong>${warnings.active_count}</strong></p>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <a href="/vendor-360/${vendor.vendor_id}" class="btn btn-secondary btn-small">Full Vendor Page</a>
+          <a href="/workflows" class="btn btn-secondary btn-small">Workflow Queue</a>
+        </div>
+      </div>
+    </div>
+    </div>
+  `;
+}
+
+// Render vendor detail HTML (without offering context)
+function renderVendorDetail(data) {
+  const vendor = data.vendor;
+  const stats = data.stats;
+  const contracts = data.contracts;
+  const permissions = data.permissions || {};
+  
+  const statusBadgeClass = vendor.lifecycle_state === 'active' ? 'success' : 
+                           vendor.lifecycle_state === 'inactive' ? 'danger' : 'warning';
+  const riskBadgeClass = vendor.risk_tier === 'high' ? 'danger' :
+                        vendor.risk_tier === 'medium' ? 'warning' : 'success';
+  
+  const html = `
+    <div class="page-header">
+      <div>
+        <h1>${vendor.display_name}</h1>
+        <p class="text-muted">${vendor.legal_name} • ${vendor.vendor_id}</p>
+      </div>
+      <div>
+        ${permissions.can_manage_vendor_offerings ? `<button type="button" class="btn btn-primary js-open-offering-drawer" data-vendor-id="${vendor.vendor_id}" data-vendor-name="${vendor.display_name}">+ Quick Offering</button>` : ''}
+        ${permissions.can_manage_vendor_contracts ? `<button type="button" class="btn btn-primary js-open-contract-drawer" data-vendor-id="${vendor.vendor_id}" data-vendor-name="${vendor.display_name}">+ Quick Contract</button>` : ''}
+        ${permissions.can_edit_vendor ? `<a href="/vendor-360/${vendor.vendor_id}/edit" class="btn btn-primary">✏️ Edit</a>` : ''}
+        <a href="/vendor-360/${vendor.vendor_id}" class="btn btn-secondary">Open Full Page</a>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom: 20px; background: linear-gradient(135deg, rgba(15, 118, 110, 0.05) 0%, rgba(30, 64, 175, 0.05) 100%);">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+        <div style="display: flex; gap: 32px; align-items: center; flex-wrap: wrap;">
+          <div>
+            <p class="text-muted" style="margin-bottom: 4px; font-size: 12px;">Status</p>
+            <span class="table-badge badge-${statusBadgeClass}" style="font-size: 13px; padding: 4px 10px;">
+              ${vendor.lifecycle_state.toUpperCase()}
+            </span>
+          </div>
+          <div>
+            <p class="text-muted" style="margin-bottom: 4px; font-size: 12px;">Risk Tier</p>
+            <span class="table-badge badge-${riskBadgeClass}" style="font-size: 13px; padding: 4px 10px;">
+              ${vendor.risk_tier.toUpperCase()}
+            </span>
+          </div>
+          <div>
+            <p class="text-muted" style="margin-bottom: 4px; font-size: 12px;">LOB</p>
+            <p style="font-size: 14px; font-weight: 600; margin: 0;">${vendor.owner_org_id}</p>
+          </div>
+        </div>
+        <div style="text-align: right;">
+          <p class="text-muted" style="margin-bottom: 4px; font-size: 12px;">Last Updated</p>
+          <p style="font-size: 13px; font-weight: 600; margin: 0;">${new Date(vendor.updated_at).toLocaleDateString()}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-4" style="margin-bottom: 24px;">
+      <div class="stat-card">
+        <div class="stat-label">Total Contracts</div>
+        <div class="stat-value">${stats.total_contracts}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Active Contracts</div>
+        <div class="stat-value" style="color: var(--success);">${stats.active_contracts}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Cancelled</div>
+        <div class="stat-value" style="color: var(--danger);">${stats.cancelled_contracts}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Contract Value</div>
+        <div class="stat-value">$${stats.total_contract_value.toLocaleString()}</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3 class="card-title">Recent Contracts</h3>
+          <p class="card-subtitle">Latest contracts for this vendor</p>
+        </div>
+        ${permissions.can_manage_vendor_contracts ? `<button type="button" class="btn btn-primary btn-small js-open-contract-drawer" data-vendor-id="${vendor.vendor_id}" data-vendor-name="${vendor.display_name}">+ Quick Add</button>` : ''}
+      </div>
+      ${permissions.contracts_visible ? (contracts.length > 0 ? `
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Contract ID</th>
+              <th>Contract Number</th>
+              <th>Status</th>
+              <th>Start Date</th>
+              <th>Annual Value</th>
+              <th style="text-align: right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${contracts.map(contract => {
+              const statusClass = contract.contract_status === 'active' ? 'success' : 
+                                 contract.contract_status === 'expired' ? 'danger' : 'warning';
+              return `
+                <tr>
+                  <td><strong>${contract.contract_id}</strong></td>
+                  <td>${contract.contract_number || '—'}</td>
+                  <td>
+                    <span class="table-badge badge-${statusClass}">${contract.contract_status}</span>
+                    ${contract.cancelled_flag ? '<span class="table-badge badge-danger" style="margin-left: 4px;">CANCELLED</span>' : ''}
+                  </td>
+                  <td>${contract.start_date ? new Date(contract.start_date).toLocaleDateString() : '—'}</td>
+                  <td style="font-weight: 600;">$${contract.annual_value.toLocaleString()}</td>
+                  <td style="text-align: right;">
+                    <a href="/contracts/${contract.contract_id}" class="btn btn-secondary btn-small">View</a>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+        ${data.all_contracts_count > 5 ? `
+          <div style="padding: 16px; text-align: center; border-top: 1px solid var(--border);">
+            <p class="text-muted">Showing 5 of ${data.all_contracts_count} contracts. <a href="/contracts?vendor=${vendor.vendor_id}" style="color: var(--primary); font-weight: 600;">View all →</a></p>
+          </div>
+        ` : ''}
+      ` : `
+        <div class="empty-state">
+          <div class="empty-icon">📄</div>
+          <h4 class="empty-title">No Contracts</h4>
+          <p class="empty-text">This vendor has no contracts yet.</p>
+          ${permissions.can_manage_vendor_contracts ? `<a href="/contracts/new?vendor=${vendor.vendor_id}" class="btn btn-primary">Create First Contract</a>` : ''}
+        </div>
+      `) : `<p class="text-muted" style="margin: 0;">Contracts are restricted for your current role/scope.</p>`}
+    </div>
+
+    ${renderParitySections(data, vendor)}
+  `;
+  
+  document.getElementById('vendor-detail-content').innerHTML = html;
+  selectSplitDetailTab('contacts');
+}
+
+// Render offering detail HTML
+function renderOfferingDetail(data, offeringId) {
+  const vendor = data.vendor;
+  const stats = data.stats;
+  const contracts = data.contracts;
+  const permissions = data.permissions || {};
+  
+  const statusBadgeClass = vendor.lifecycle_state === 'active' ? 'success' : 
+                           vendor.lifecycle_state === 'inactive' ? 'danger' : 'warning';
+  const riskBadgeClass = vendor.risk_tier === 'high' ? 'danger' :
+                        vendor.risk_tier === 'medium' ? 'warning' : 'success';
+  
+  const html = `
+    <div class="page-header">
+      <div>
+        <h1>${vendor.display_name}</h1>
+        <p class="text-muted">${vendor.legal_name} • ${vendor.vendor_id}</p>
+        ${offeringId ? `<p style="margin-top: 8px; color: var(--primary); font-weight: 600; font-size: 14px;">📦 Viewing Offering: ${offeringId}</p>` : ''}
+      </div>
+      <div>
+        ${permissions.can_manage_vendor_offerings ? `<button type="button" class="btn btn-primary js-open-offering-drawer" data-vendor-id="${vendor.vendor_id}" data-vendor-name="${vendor.display_name}">+ Quick Offering</button>` : ''}
+        ${permissions.can_manage_vendor_contracts ? `<button type="button" class="btn btn-primary js-open-contract-drawer" data-vendor-id="${vendor.vendor_id}" data-vendor-name="${vendor.display_name}">+ Quick Contract</button>` : ''}
+        ${permissions.can_edit_vendor ? `<a href="/vendor-360/${vendor.vendor_id}/edit" class="btn btn-primary">✏️ Edit</a>` : ''}
+        <a href="/vendor-360/${vendor.vendor_id}" class="btn btn-secondary">Open Full Page</a>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom: 20px; background: linear-gradient(135deg, rgba(15, 118, 110, 0.05) 0%, rgba(30, 64, 175, 0.05) 100%);">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+        <div style="display: flex; gap: 32px; align-items: center; flex-wrap: wrap;">
+          <div>
+            <p class="text-muted" style="margin-bottom: 4px; font-size: 12px;">Status</p>
+            <span class="table-badge badge-${statusBadgeClass}" style="font-size: 13px; padding: 4px 10px;">
+              ${vendor.lifecycle_state.toUpperCase()}
+            </span>
+          </div>
+          <div>
+            <p class="text-muted" style="margin-bottom: 4px; font-size: 12px;">Risk Tier</p>
+            <span class="table-badge badge-${riskBadgeClass}" style="font-size: 13px; padding: 4px 10px;">
+              ${vendor.risk_tier.toUpperCase()}
+            </span>
+          </div>
+          <div>
+            <p class="text-muted" style="margin-bottom: 4px; font-size: 12px;">LOB</p>
+            <p style="font-size: 14px; font-weight: 600; margin: 0;">${vendor.owner_org_id}</p>
+          </div>
+        </div>
+        <div style="text-align: right;">
+          <p class="text-muted" style="margin-bottom: 4px; font-size: 12px;">Last Updated</p>
+          <p style="font-size: 13px; font-weight: 600; margin: 0;">${new Date(vendor.updated_at).toLocaleDateString()}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-4" style="margin-bottom: 24px;">
+      <div class="stat-card">
+        <div class="stat-label">Total Contracts</div>
+        <div class="stat-value">${stats.total_contracts}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Active Contracts</div>
+        <div class="stat-value" style="color: #059669;">${stats.active_contracts}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Cancelled</div>
+        <div class="stat-value" style="color: #dc2626;">${stats.cancelled_contracts}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Contract Value</div>
+        <div class="stat-value" style="font-size: 22px;">$${stats.total_contract_value.toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
+      </div>
+    </div>
+
+    <div class="grid grid-2" style="margin-bottom: 24px;">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Vendor Information</h3>
+        </div>
+        <div style="display: grid; gap: 12px;">
+          <div>
+            <p class="text-muted" style="font-size: 12px; margin-bottom: 4px;">Vendor ID</p>
+            <p style="font-size: 14px; font-weight: 600; margin: 0; font-family: 'Courier New', monospace;">${vendor.vendor_id}</p>
+          </div>
+          <div>
+            <p class="text-muted" style="font-size: 12px; margin-bottom: 4px;">Legal Name</p>
+            <p style="font-size: 14px; margin: 0;">${vendor.legal_name}</p>
+          </div>
+          <div>
+            <p class="text-muted" style="font-size: 12px; margin-bottom: 4px;">Display Name</p>
+            <p style="font-size: 14px; margin: 0;">${vendor.display_name}</p>
+          </div>
+          <div>
+            <p class="text-muted" style="font-size: 12px; margin-bottom: 4px;">Owner Organization</p>
+            <p style="font-size: 14px; margin: 0;">${vendor.owner_org_id}</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Risk Assessment</h3>
+        </div>
+        <div style="padding: 16px; background: ${vendor.risk_tier === 'high' ? 'rgba(220, 38, 38, 0.1)' : vendor.risk_tier === 'medium' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(5, 150, 105, 0.1)'}; border-radius: 8px; border-left: 4px solid ${vendor.risk_tier === 'high' ? '#dc2626' : vendor.risk_tier === 'medium' ? '#f59e0b' : '#059669'};">
+          <p style="margin: 0 0 8px 0; font-weight: 600; font-size: 15px; color: ${vendor.risk_tier === 'high' ? '#dc2626' : vendor.risk_tier === 'medium' ? '#f59e0b' : '#059669'};">
+            ${vendor.risk_tier.toUpperCase()} RISK TIER
+          </p>
+          <p class="text-muted" style="margin: 0; font-size: 13px;">
+            ${vendor.risk_tier === 'high' ? 'This vendor requires enhanced monitoring and frequent reviews.' : vendor.risk_tier === 'medium' ? 'This vendor requires standard monitoring per company policy.' : 'This vendor is classified as low risk with minimal monitoring.'}
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3 class="card-title">Recent Contracts</h3>
+          <p class="card-subtitle">Latest contracts for this vendor</p>
+        </div>
+        ${permissions.can_manage_vendor_contracts ? `<button type="button" class="btn btn-primary btn-small js-open-contract-drawer" data-vendor-id="${vendor.vendor_id}" data-vendor-name="${vendor.display_name}">+ Quick Add</button>` : ''}
+      </div>
+      ${permissions.contracts_visible ? (contracts.length > 0 ? `
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Contract ID</th>
+              <th>Number</th>
+              <th>Status</th>
+              <th>Start Date</th>
+              <th>Annual Value</th>
+              <th style="text-align: right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${contracts.map(contract => {
+              const statusClass = contract.contract_status === 'active' ? 'success' : 
+                                 contract.contract_status === 'expired' ? 'danger' : 'warning';
+              return `
+                <tr>
+                  <td><strong>${contract.contract_id}</strong></td>
+                  <td>${contract.contract_number || '—'}</td>
+                  <td>
+                    <span class="table-badge badge-${statusClass}">${contract.contract_status}</span>
+                    ${contract.cancelled_flag ? '<span class="table-badge badge-danger" style="margin-left: 4px;">CANCELLED</span>' : ''}
+                  </td>
+                  <td>${contract.start_date ? new Date(contract.start_date).toLocaleDateString() : '—'}</td>
+                  <td style="font-weight: 600;">$${contract.annual_value.toLocaleString()}</td>
+                  <td style="text-align: right;">
+                    <a href="/contracts/${contract.contract_id}" class="btn btn-secondary btn-small">View</a>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+        ${data.all_contracts_count > 5 ? `
+          <div style="padding: 16px; text-align: center; border-top: 1px solid var(--border);">
+            <p class="text-muted">Showing 5 of ${data.all_contracts_count} contracts. <a href="/contracts?vendor=${vendor.vendor_id}" style="color: var(--primary); font-weight: 600;">View all →</a></p>
+          </div>
+        ` : ''}
+      ` : `
+        <div class="empty-state">
+          <div class="empty-icon">📄</div>
+          <h4 class="empty-title">No Contracts</h4>
+          <p class="empty-text">This vendor has no contracts yet.</p>
+          ${permissions.can_manage_vendor_contracts ? `<a href="/contracts/new?vendor=${vendor.vendor_id}" class="btn btn-primary">Create First Contract</a>` : ''}
+        </div>
+      `) : `<p class="text-muted" style="margin: 0;">Contracts are restricted for your current role/scope.</p>`}
+    </div>
+
+    ${renderParitySections(data, vendor)}
+  `;
+  
+  document.getElementById('vendor-detail-content').innerHTML = html;
+  selectSplitDetailTab('contacts');
+}
+
+// Search functionality
+document.addEventListener('DOMContentLoaded', function() {
+  const searchInput = document.getElementById('vendorSearchInput');
+
+  document.addEventListener('click', function(event) {
+    const trigger = event.target.closest('.js-open-contact-drawer');
+    if (trigger) {
+      const vendorId = trigger.dataset.vendorId;
+      const vendorName = trigger.dataset.vendorName || vendorId;
+      openContactDrawer(vendorId, vendorName);
+      return;
+    }
+
+    const identifierTrigger = event.target.closest('.js-open-identifier-drawer');
+    if (identifierTrigger) {
+      const vendorId = identifierTrigger.dataset.vendorId;
+      const vendorName = identifierTrigger.dataset.vendorName || vendorId;
+      openIdentifierDrawer(vendorId, vendorName);
+      return;
+    }
+
+    const offeringTrigger = event.target.closest('.js-open-offering-drawer');
+    if (offeringTrigger) {
+      const vendorId = offeringTrigger.dataset.vendorId;
+      const vendorName = offeringTrigger.dataset.vendorName || vendorId;
+      openOfferingDrawer(vendorId, vendorName);
+      return;
+    }
+
+    const contractTrigger = event.target.closest('.js-open-contract-drawer');
+    if (contractTrigger) {
+      const vendorId = contractTrigger.dataset.vendorId;
+      const vendorName = contractTrigger.dataset.vendorName || vendorId;
+      openContractDrawer(vendorId, vendorName);
+    }
+  });
+
+  const contactQuickForm = document.getElementById('contactQuickForm');
+  const contactSourceSelect = document.getElementById('contact_source');
+  const internalSection = document.getElementById('contact_internal_section');
+  const externalSection = document.getElementById('contact_external_section');
+  const internalLookup = document.getElementById('contact_internal_user_lookup');
+  const internalPrincipalInput = document.getElementById('contact_internal_user_principal');
+  const internalResults = document.getElementById('contact_internal_user_results');
+  const externalLookup = document.getElementById('contact_external_lookup');
+  const externalContactIdInput = document.getElementById('contact_external_contact_id');
+  const externalResults = document.getElementById('contact_external_results');
+
+  function renderSimpleTypeahead(container, items, onSelect) {
+    if (!container) {
+      return;
+    }
+    container.innerHTML = '';
+    if (!items.length) {
+      container.classList.add('hidden');
+      return;
+    }
+    items.forEach((item) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.style.display = 'block';
+      button.style.width = '100%';
+      button.style.textAlign = 'left';
+      button.style.padding = '8px 10px';
+      button.style.border = 'none';
+      button.style.background = 'transparent';
+      button.style.cursor = 'pointer';
+      button.innerHTML = `<strong>${item.label || item.id}</strong><br><small class="text-muted">${item.subtitle || ''}</small>`;
+      button.addEventListener('click', () => {
+        onSelect(item);
+        container.classList.add('hidden');
+        container.innerHTML = '';
+      });
+      container.appendChild(button);
+    });
+    container.classList.remove('hidden');
+  }
+
+  function updateContactSourceState() {
+    const source = (contactSourceSelect && contactSourceSelect.value) || 'internal';
+    if (internalSection && externalSection) {
+      internalSection.style.display = source === 'internal' ? 'block' : 'none';
+      externalSection.style.display = source === 'external' ? 'block' : 'none';
+    }
+    if (source === 'internal') {
+      if (externalContactIdInput) {
+        externalContactIdInput.value = '';
+      }
+    } else {
+      if (internalPrincipalInput) {
+        internalPrincipalInput.value = '';
+      }
+    }
+  }
+
+  if (contactSourceSelect) {
+    contactSourceSelect.addEventListener('change', updateContactSourceState);
+  }
+
+  if (internalLookup) {
+    internalLookup.addEventListener('input', function() {
+      const query = this.value.trim();
+      if (!query || query.length < 2) {
+        if (internalResults) {
+          internalResults.classList.add('hidden');
+          internalResults.innerHTML = '';
+        }
+        return;
+      }
+      fetch(`/api/v1/search/users?q=${encodeURIComponent(query)}&limit=8`)
+        .then((response) => response.json())
+        .then((payload) => {
+          const items = Array.isArray(payload.items) ? payload.items : [];
+          renderSimpleTypeahead(internalResults, items, (item) => {
+            internalLookup.value = item.label || item.id;
+            if (internalPrincipalInput) {
+              internalPrincipalInput.value = item.id || '';
+            }
+            const fullNameField = document.getElementById('contact_full_name');
+            const emailField = document.getElementById('contact_email');
+            if (fullNameField && !fullNameField.value) {
+              fullNameField.value = item.label || '';
+            }
+            if (emailField && !emailField.value) {
+              emailField.value = item.subtitle || item.id || '';
+            }
+          });
+        })
+        .catch(() => {
+          if (internalResults) {
+            internalResults.classList.add('hidden');
+            internalResults.innerHTML = '';
+          }
+        });
+    });
+  }
+
+  if (externalLookup) {
+    externalLookup.addEventListener('input', function() {
+      const query = this.value.trim();
+      if (!query || query.length < 2) {
+        if (externalResults) {
+          externalResults.classList.add('hidden');
+          externalResults.innerHTML = '';
+        }
+        return;
+      }
+      fetch(`/api/v1/search/contacts?q=${encodeURIComponent(query)}&limit=8`)
+        .then((response) => response.json())
+        .then((payload) => {
+          const items = Array.isArray(payload.items) ? payload.items : [];
+          renderSimpleTypeahead(externalResults, items, (item) => {
+            externalLookup.value = item.label || item.id;
+            if (externalContactIdInput) {
+              externalContactIdInput.value = item.id || '';
+            }
+            const fullNameField = document.getElementById('contact_full_name');
+            const emailField = document.getElementById('contact_email');
+            if (fullNameField && !fullNameField.value) {
+              fullNameField.value = item.label || '';
+            }
+            if (emailField && !emailField.value) {
+              emailField.value = item.email || '';
+            }
+          });
+        })
+        .catch(() => {
+          if (externalResults) {
+            externalResults.classList.add('hidden');
+            externalResults.innerHTML = '';
+          }
+        });
+    });
+  }
+
+  updateContactSourceState();
+
+  contactQuickForm.addEventListener('submit', function(event) {
+    event.preventDefault();
+
+    const vendorId = document.getElementById('contactDrawerVendorId').value;
+    const fullName = document.getElementById('contact_full_name').value.trim();
+    const contactType = document.getElementById('contact_contact_type').value;
+    const title = document.getElementById('contact_title_select').value;
+    const email = document.getElementById('contact_email').value.trim();
+    const isPrimary = document.getElementById('contact_is_primary').value === 'true';
+    const contactSource = (contactSourceSelect && contactSourceSelect.value) || 'internal';
+    const internalUserPrincipal = internalPrincipalInput ? internalPrincipalInput.value.trim() : '';
+    const externalContactId = externalContactIdInput ? externalContactIdInput.value.trim() : '';
+    const internalRole = document.getElementById('contact_internal_role').value;
+    const errorBox = document.getElementById('contactDrawerError');
+    const submitButton = document.getElementById('contactQuickSubmit');
+
+    errorBox.style.display = 'none';
+    errorBox.textContent = '';
+
+    if (contactSource === 'internal' && !internalUserPrincipal) {
+      errorBox.textContent = 'Select an active internal user.';
+      errorBox.style.display = 'block';
+      return;
+    }
+
+    if (contactSource === 'external' && !fullName && !externalContactId) {
+      errorBox.textContent = 'Provide a name or choose an existing external contact.';
+      errorBox.style.display = 'block';
+      return;
+    }
+
+    submitButton.disabled = true;
+    submitButton.textContent = 'Saving...';
+
+    fetch(`/vendor-360/api/${vendorId}/contacts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        full_name: fullName,
+        contact_type: contactType,
+        title: title,
+        email: email,
+        contact_source: contactSource,
+        internal_user_principal: internalUserPrincipal,
+        internal_contact_role: internalRole,
+        external_contact_id: externalContactId,
+        is_primary: isPrimary,
+        is_active: true
+      })
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const message = payload.reason || payload.error || 'Failed to create contact.';
+          throw new Error(message);
+        }
+        return payload;
+      })
+      .then(() => {
+        closeContactDrawer();
+        loadVendorDetail(vendorId);
+      })
+      .catch((error) => {
+        errorBox.textContent = error.message;
+        errorBox.style.display = 'block';
+      })
+      .finally(() => {
+        submitButton.disabled = false;
+        submitButton.textContent = 'Save Contact';
+      });
+  });
+
+  document.getElementById('identifierQuickForm').addEventListener('submit', function(event) {
+    event.preventDefault();
+    const vendorId = document.getElementById('identifierDrawerVendorId').value;
+    const identifierType = document.getElementById('identifier_type_select').value;
+    const identifierValue = document.getElementById('identifier_value_input').value.trim();
+    const countryCode = document.getElementById('identifier_country_select').value;
+    const isPrimary = document.getElementById('identifier_primary_select').value === 'true';
+    const errorBox = document.getElementById('identifierDrawerError');
+    const submitButton = document.getElementById('identifierQuickSubmit');
+
+    errorBox.style.display = 'none';
+    if (!identifierValue) {
+      errorBox.textContent = 'Identifier value is required.';
+      errorBox.style.display = 'block';
+      return;
+    }
+
+    submitButton.disabled = true;
+    submitButton.textContent = 'Saving...';
+    fetch(`/vendor-360/api/${vendorId}/identifiers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        identifier_type: identifierType,
+        identifier_value: identifierValue,
+        country_code: countryCode,
+        is_primary: isPrimary,
+        is_verified: false
+      })
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.reason || payload.error || 'Failed to create identifier.');
+        }
+      })
+      .then(() => {
+        closeIdentifierDrawer();
+        loadVendorDetail(vendorId);
+      })
+      .catch((error) => {
+        errorBox.textContent = error.message;
+        errorBox.style.display = 'block';
+      })
+      .finally(() => {
+        submitButton.disabled = false;
+        submitButton.textContent = 'Save Identifier';
+      });
+  });
+
+  document.getElementById('offeringQuickForm').addEventListener('submit', function(event) {
+    event.preventDefault();
+    const vendorId = document.getElementById('offeringDrawerVendorId').value;
+    const offeringName = document.getElementById('offering_name_input').value.trim();
+    const offeringType = document.getElementById('offering_type_select').value;
+    const lob = document.getElementById('offering_lob_select').value;
+    const serviceType = document.getElementById('offering_service_type_select').value;
+    const lifecycleState = document.getElementById('offering_lifecycle_select').value;
+    const criticalityTier = document.getElementById('offering_criticality_select').value;
+    const errorBox = document.getElementById('offeringDrawerError');
+    const submitButton = document.getElementById('offeringQuickSubmit');
+
+    errorBox.style.display = 'none';
+    if (!offeringName) {
+      errorBox.textContent = 'Offering name is required.';
+      errorBox.style.display = 'block';
+      return;
+    }
+
+    submitButton.disabled = true;
+    submitButton.textContent = 'Saving...';
+    fetch(`/api/v1/vendors/${vendorId}/offerings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        offering_id: buildAutoId('offering'),
+        offering_name: offeringName,
+        offering_type: offeringType,
+        lob: lob,
+        service_type: serviceType,
+        lifecycle_state: lifecycleState,
+        criticality_tier: criticalityTier
+      })
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.reason || payload.error || 'Failed to create offering.');
+        }
+      })
+      .then(() => {
+        closeOfferingDrawer();
+        loadVendorDetail(vendorId);
+      })
+      .catch((error) => {
+        errorBox.textContent = error.message;
+        errorBox.style.display = 'block';
+      })
+      .finally(() => {
+        submitButton.disabled = false;
+        submitButton.textContent = 'Save Offering';
+      });
+  });
+
+  document.getElementById('contractQuickForm').addEventListener('submit', function(event) {
+    event.preventDefault();
+    const vendorId = document.getElementById('contractDrawerVendorId').value;
+    const contractNumber = document.getElementById('contract_number_input').value.trim();
+    const contractStatus = document.getElementById('contract_status_select').value;
+    const offeringId = document.getElementById('contract_offering_select').value;
+    const startDate = document.getElementById('contract_start_date').value;
+    const endDate = document.getElementById('contract_end_date').value;
+    const annualValue = document.getElementById('contract_annual_value').value;
+    const errorBox = document.getElementById('contractDrawerError');
+    const submitButton = document.getElementById('contractQuickSubmit');
+
+    errorBox.style.display = 'none';
+    submitButton.disabled = true;
+    submitButton.textContent = 'Saving...';
+
+    fetch(`/api/v1/vendors/${vendorId}/contracts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contract_id: buildAutoId('cont'),
+        contract_number: contractNumber,
+        contract_status: contractStatus,
+        offering_id: offeringId,
+        start_date: startDate,
+        end_date: endDate,
+        annual_value: annualValue,
+        cancelled_flag: false
+      })
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.reason || payload.error || 'Failed to create contract.');
+        }
+      })
+      .then(() => {
+        closeContractDrawer();
+        loadVendorDetail(vendorId);
+      })
+      .catch((error) => {
+        errorBox.textContent = error.message;
+        errorBox.style.display = 'block';
+      })
+      .finally(() => {
+        submitButton.disabled = false;
+        submitButton.textContent = 'Save Contract';
+      });
+  });
+  
+  searchInput.addEventListener('input', function(e) {
+    const searchTerm = e.target.value.toLowerCase();
+    const offeringItems = document.querySelectorAll('.offering-item');
+    const vendorGroups = document.querySelectorAll('.vendor-group');
+    const categories = document.querySelectorAll('.vendor-category');
+    
+    // Filter offering items
+    offeringItems.forEach(item => {
+      const offeringName = item.dataset.offeringName ? item.dataset.offeringName.toLowerCase() : '';
+      const offeringId = item.dataset.offeringId ? item.dataset.offeringId.toLowerCase() : '';
+      const vendorId = item.dataset.vendorId ? item.dataset.vendorId.toLowerCase() : '';
+      
+      if (offeringName.includes(searchTerm) || offeringId.includes(searchTerm) || vendorId.includes(searchTerm)) {
+        item.style.display = 'flex';
+      } else {
+        item.style.display = 'none';
+      }
+    });
+    
+    // Show/hide vendor groups based on visible offerings
+    vendorGroups.forEach(group => {
+      const vendorName = group.querySelector('.vendor-group-name')?.textContent.toLowerCase() || '';
+      const vendorId = group.dataset.vendorId ? group.dataset.vendorId.toLowerCase() : '';
+      const visibleOfferings = group.querySelectorAll('.offering-item:not([style*="display: none"])').length;
+      
+      // Show group if vendor name/ID matches OR if it has visible offerings
+      if (searchTerm && (vendorName.includes(searchTerm) || vendorId.includes(searchTerm) || visibleOfferings > 0)) {
+        group.style.display = 'block';
+        // Expand if searching
+        if (searchTerm) {
+          group.classList.remove('collapsed');
+        }
+      } else if (searchTerm && visibleOfferings === 0) {
+        group.style.display = 'none';
+      } else {
+        group.style.display = 'block';
+      }
+    });
+    
+    // Show/hide categories based on visible vendor groups
+    categories.forEach(category => {
+      const visibleGroups = category.querySelectorAll('.vendor-group:not([style*="display: none"])').length;
+      if (searchTerm && visibleGroups === 0) {
+        category.style.display = 'none';
+      } else {
+        category.style.display = 'block';
+        // Expand if searching
+        if (searchTerm) {
+          category.classList.remove('collapsed');
+        }
+      }
+    });
+  });
+});
+</script>
+{% endblock %}

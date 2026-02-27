@@ -1,0 +1,63 @@
+-- Phase 6 rendered schema for DuckDB
+
+CREATE TABLE IF NOT EXISTS vc_report_run (
+  run_id VARCHAR PRIMARY KEY,
+  report_code VARCHAR NOT NULL,
+  filters_json TEXT NOT NULL,
+  output_format VARCHAR NOT NULL,
+  requested_by VARCHAR NOT NULL,
+  status VARCHAR NOT NULL,
+  row_count INTEGER NOT NULL DEFAULT 0,
+  download_url VARCHAR,
+  warnings_json TEXT NOT NULL DEFAULT '[]',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS vc_report_email_request (
+  email_request_id VARCHAR PRIMARY KEY,
+  run_id VARCHAR NOT NULL,
+  email_to_csv TEXT NOT NULL,
+  requested_by VARCHAR NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS vc_help_article (
+  article_id VARCHAR PRIMARY KEY,
+  slug VARCHAR NOT NULL UNIQUE,
+  title VARCHAR NOT NULL,
+  markdown_body TEXT NOT NULL,
+  rendered_html TEXT NOT NULL,
+  published BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS vc_help_feedback (
+  feedback_id VARCHAR PRIMARY KEY,
+  slug VARCHAR NOT NULL,
+  rating VARCHAR NOT NULL,
+  comment TEXT,
+  submitted_by VARCHAR NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS vc_help_issue (
+  issue_id VARCHAR PRIMARY KEY,
+  slug VARCHAR NOT NULL,
+  issue_text TEXT NOT NULL,
+  screenshot_path VARCHAR,
+  submitted_by VARCHAR NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS vc_perf_baseline (
+  baseline_id VARCHAR PRIMARY KEY,
+  scenario_key VARCHAR NOT NULL,
+  runtime_profile VARCHAR NOT NULL,
+  p50_ms DOUBLE NOT NULL,
+  p95_ms DOUBLE NOT NULL,
+  sample_size INTEGER NOT NULL,
+  run_id VARCHAR NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

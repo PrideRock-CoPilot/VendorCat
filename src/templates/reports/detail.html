@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card">
+  {% if can_read_reports and item %}
+    <h1>Report Run Detail</h1>
+    <p><strong>Run:</strong> <code>{{ item.run_id }}</code></p>
+    <p><strong>Code:</strong> {{ item.report_code }}</p>
+    <p><strong>Status:</strong> {{ item.status }}</p>
+    <p><strong>Rows:</strong> {{ item.row_count }}</p>
+    <p><strong>Requested By:</strong> {{ item.requested_by }}</p>
+    {% if item.download_url %}
+    <p><a href="{{ item.download_url }}">Download CSV</a></p>
+    {% endif %}
+  {% else %}
+    <h1>Report Run Detail</h1>
+    <p class="text-muted">Report details are restricted for your current role.</p>
+  {% endif %}
+  <p><a href="/reports">Back to reports</a></p>
+</section>
+{% endblock %}

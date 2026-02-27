@@ -1,0 +1,1205 @@
+{% extends "base.html" %}
+
+{% block title %}{{ vendor.display_name }} - VendorCatalog{% endblock %}
+
+{% block content %}
+  <style>
+    .vc-toast {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      z-index: 2100;
+      background: #111827;
+      color: #ffffff;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      pointer-events: none;
+    }
+
+    .vc-toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .vendor-tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .vendor-tab-button {
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--dark);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .vendor-tab-button.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+
+    .vendor-tab-panel {
+      display: none;
+    }
+
+    .vendor-tab-panel.active {
+      display: block;
+    }
+  </style>
+
+  <div class="page-header">
+    <div>
+      <h1>{{ vendor.display_name }}</h1>
+      <p class="text-muted">{{ vendor.legal_name }} • {{ vendor.vendor_id }}</p>
+    </div>
+    <div>
+      {% if can_edit_vendor %}
+        <a href="/vendor-360/{{ vendor.vendor_id }}/edit" class="btn btn-primary">
+          ✏️ Edit
+        </a>
+      {% endif %}
+      <a href="/vendor-360" class="btn btn-secondary">
+        ← Back to List
+      </a>
+    </div>
+  </div>
+
+  <!-- Status Banner -->
+  <div class="card" style="margin-bottom: 20px; background: linear-gradient(135deg, rgba(15, 118, 110, 0.05) 0%, rgba(30, 64, 175, 0.05) 100%);">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <div style="display: flex; gap: 32px; align-items: center;">
+        <div>
+          <p class="text-muted" style="margin-bottom: 4px;">Status</p>
+          <span class="table-badge badge-{% if vendor.lifecycle_state == 'active' %}success{% elif vendor.lifecycle_state == 'inactive' %}danger{% else %}warning{% endif %}" style="font-size: 14px; padding: 6px 12px;">
+            {{ vendor.lifecycle_state|upper }}
+          </span>
+        </div>
+        <div>
+          <p class="text-muted" style="margin-bottom: 4px;">Risk Tier</p>
+          <span class="table-badge badge-{% if vendor.risk_tier == 'high' %}danger{% elif vendor.risk_tier == 'medium' %}warning{% else %}success{% endif %}" style="font-size: 14px; padding: 6px 12px;">
+            {{ vendor.risk_tier|upper }}
+          </span>
+        </div>
+        <div>
+          <p class="text-muted" style="margin-bottom: 4px;">Line of Business</p>
+          <p style="font-size: 16px; font-weight: 600; margin: 0; color: var(--dark);">{{ vendor.owner_org_id }}</p>
+        </div>
+      </div>
+      <div style="text-align: right;">
+        <p class="text-muted" style="margin-bottom: 4px;">Last Updated</p>
+        <p style="font-size: 14px; font-weight: 600; margin: 0;">{{ vendor.updated_at|date:"M d, Y g:i A" }}</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Key Metrics -->
+  <div class="grid grid-4" style="margin-bottom: 24px;">
+    <div class="stat-card">
+      <div class="stat-label">Total Contracts</div>
+      <div class="stat-value">{{ total_contracts }}</div>
+      <button type="button" onclick="selectVendorTab('contracts')" style="color: var(--primary); text-decoration: none; font-size: 12px; background: none; border: none; padding: 0; cursor: pointer;">View details ↓</button>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-label">Active Contracts</div>
+      <div class="stat-value" style="color: #059669;">{{ active_contracts }}</div>
+      <p class="stat-label" style="margin-top: 4px;">Currently Active</p>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-label">Cancelled Contracts</div>
+      <div class="stat-value" style="color: #dc2626;">{{ cancelled_contracts }}</div>
+      <p class="stat-label" style="margin-top: 4px;">Terminated</p>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-label">Total Contract Value</div>
+      <div class="stat-value" style="font-size: 24px;">${{ total_contract_value|floatformat:0 }}</div>
+      <p class="stat-label" style="margin-top: 4px;">Annual Value</p>
+    </div>
+  </div>
+
+  <div class="vendor-tabs" role="tablist" aria-label="Vendor detail sections">
+    <button type="button" class="vendor-tab-button active" data-tab="overview" onclick="selectVendorTab('overview')">Overview</button>
+    <button type="button" class="vendor-tab-button" data-tab="contracts" onclick="selectVendorTab('contracts')">Contracts</button>
+    <button type="button" class="vendor-tab-button" data-tab="contacts" onclick="selectVendorTab('contacts')">Contacts</button>
+  </div>
+
+  <!-- Two Column Layout -->
+  <div class="vendor-tab-panel active" data-tab="overview">
+  <div class="grid grid-2" style="margin-bottom: 24px; align-items: start;">
+    <!-- Vendor Information -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Vendor Information</h3>
+      </div>
+      <div style="display: grid; gap: 16px;">
+        <div>
+          <p class="text-muted" style="font-size: 12px; margin-bottom: 4px;">Vendor ID</p>
+          <p style="font-size: 15px; font-weight: 600; margin: 0; font-family: 'Courier New', monospace;">{{ vendor.vendor_id }}</p>
+        </div>
+        <div>
+          <p class="text-muted" style="font-size: 12px; margin-bottom: 4px;">Legal Name</p>
+          <p style="font-size: 15px; font-weight: 500; margin: 0;">{{ vendor.legal_name }}</p>
+        </div>
+        <div>
+          <p class="text-muted" style="font-size: 12px; margin-bottom: 4px;">Display Name</p>
+          <p style="font-size: 15px; font-weight: 500; margin: 0;">{{ vendor.display_name }}</p>
+        </div>
+        <div>
+          <p class="text-muted" style="font-size: 12px; margin-bottom: 4px;">Owner Organization ID</p>
+          <p style="font-size: 15px; font-weight: 500; margin: 0;">{{ vendor.owner_org_id }}</p>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding-top: 8px; border-top: 1px solid var(--border);">
+          <div>
+            <p class="text-muted" style="font-size: 12px; margin-bottom: 4px;">Created</p>
+            <p style="font-size: 14px; margin: 0;">{{ vendor.created_at|date:"M d, Y" }}</p>
+          </div>
+          <div>
+            <p class="text-muted" style="font-size: 12px; margin-bottom: 4px;">Last Modified</p>
+            <p style="font-size: 14px; margin: 0;">{{ vendor.updated_at|date:"M d, Y" }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Risk Assessment -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Risk Assessment</h3>
+      </div>
+      <div style="display: grid; gap: 16px;">
+        <div style="padding: 16px; background: {% if vendor.risk_tier == 'high' %}rgba(220, 38, 38, 0.1){% elif vendor.risk_tier == 'medium' %}rgba(245, 158, 11, 0.1){% else %}rgba(5, 150, 105, 0.1){% endif %}; border-radius: 8px; border-left: 4px solid {% if vendor.risk_tier == 'high' %}#dc2626{% elif vendor.risk_tier == 'medium' %}#f59e0b{% else %}#059669{% endif %};">
+          <p style="margin: 0 0 8px 0; font-weight: 600; font-size: 16px; color: {% if vendor.risk_tier == 'high' %}#dc2626{% elif vendor.risk_tier == 'medium' %}#f59e0b{% else %}#059669{% endif %};">
+            {{ vendor.risk_tier|upper }} RISK TIER
+          </p>
+          <p class="text-muted" style="margin: 0; font-size: 13px;">
+            {% if vendor.risk_tier == 'high' %}
+              This vendor requires enhanced monitoring and frequent reviews due to high risk classification.
+            {% elif vendor.risk_tier == 'medium' %}
+              This vendor requires standard monitoring and periodic reviews per company policy.
+            {% else %}
+              This vendor is classified as low risk with minimal monitoring requirements.
+            {% endif %}
+          </p>
+        </div>
+        
+        <div style="padding: 16px; background: var(--lighter); border-radius: 8px;">
+          <p style="margin: 0 0 8px 0; font-weight: 600; font-size: 14px;">Lifecycle State</p>
+          <p class="text-muted" style="margin: 0; font-size: 13px;">
+            Current status: <strong>{{ vendor.lifecycle_state|title }}</strong>
+          </p>
+        </div>
+
+        <div style="padding: 16px; background: var(--lighter); border-radius: 8px;">
+          <p style="margin: 0 0 8px 0; font-weight: 600; font-size: 14px;">Contract Summary</p>
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px;">
+            <div style="text-align: center;">
+              <p style="font-size: 20px; font-weight: 700; margin: 0; color: var(--primary);">{{ total_contracts }}</p>
+              <p class="text-muted" style="font-size: 11px; margin: 0;">Total</p>
+            </div>
+            <div style="text-align: center;">
+              <p style="font-size: 20px; font-weight: 700; margin: 0; color: #059669;">{{ active_contracts }}</p>
+              <p class="text-muted" style="font-size: 11px; margin: 0;">Active</p>
+            </div>
+            <div style="text-align: center;">
+              <p style="font-size: 20px; font-weight: 700; margin: 0; color: #dc2626;">{{ cancelled_contracts }}</p>
+              <p class="text-muted" style="font-size: 11px; margin: 0;">Cancelled</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  </div>
+
+  <!-- Contracts Section (Enhanced) -->
+  <div class="vendor-tab-panel" data-tab="contracts">
+  {% if contracts_visible %}
+    {% include "vendors/contracts_section.html" %}
+  {% else %}
+    <div class="card" id="contracts" style="margin-top: 24px;">
+      <div class="card-header">
+        <h3 class="card-title">📋 Contracts & Agreements</h3>
+      </div>
+      <p class="text-muted" style="padding: 16px; margin: 0;">Contracts are restricted for your current role/scope.</p>
+    </div>
+  {% endif %}
+  </div>
+
+  <!-- Key Contacts Section -->
+  <div class="vendor-tab-panel" data-tab="contacts">
+  {% include "vendors/key_contacts_section.html" %}
+  </div>
+
+  <!-- Actions Footer -->
+  <div class="card" style="margin-top: 24px;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <div>
+        <p style="margin: 0; font-weight: 600; font-size: 14px;">Need to make changes?</p>
+        <p class="text-muted" style="margin: 4px 0 0 0; font-size: 13px;">Update vendor information, manage contracts, or modify risk settings.</p>
+      </div>
+      <div style="display: flex; gap: 12px;">
+        {% if can_edit_vendor %}
+          <a href="/vendor-360/{{ vendor.vendor_id }}/edit" class="btn btn-primary">Edit Vendor</a>
+        {% endif %}
+        <button type="button" class="btn btn-secondary" style="opacity: 0.75;" onclick="resetDetailDrawerPreferences()">Reset Prefs</button>
+        {% if can_manage_vendor_offerings %}
+          <button type="button" class="btn btn-primary" onclick="openDetailOfferingDrawer()">Quick Add Offering</button>
+        {% endif %}
+        {% if can_manage_vendor_contracts %}
+          <button type="button" class="btn btn-primary" onclick="openDetailContractDrawer()">Quick Add Contract</button>
+        {% endif %}
+        {% if can_manage_vendor_contacts %}
+          <button type="button" class="btn btn-primary" onclick="openDetailContactDrawer()">Quick Add Contact</button>
+        {% endif %}
+        {% if can_manage_vendor_identifiers %}
+          <button type="button" class="btn btn-primary" onclick="openDetailIdentifierDrawer()">Quick Add Identifier</button>
+        {% endif %}
+        {% if contracts_visible %}
+          <a href="/contracts/new?vendor={{ vendor.vendor_id }}" class="btn btn-secondary" style="opacity: 0.7;">More Contracts</a>
+        {% endif %}
+        <a href="/vendor-360/{{ vendor.vendor_id }}/contacts" class="btn btn-secondary" style="opacity: 0.7;">More Contacts</a>
+        <a href="/vendor-360/{{ vendor.vendor_id }}/identifiers" class="btn btn-secondary" style="opacity: 0.7;">More Identifiers</a>
+      </div>
+    </div>
+  </div>
+
+  {% if can_manage_vendor_contacts %}
+  <div id="detailContactDrawerBackdrop" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:1500;" onclick="closeDetailContactDrawer()"></div>
+  <aside id="detailContactDrawer" style="position:fixed; top:0; right:-420px; width:420px; max-width:calc(100vw - 20px); height:100vh; background:#fff; box-shadow:-8px 0 24px rgba(0,0,0,0.15); z-index:1600; transition:right .25s ease; display:flex; flex-direction:column;">
+    <div style="padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:12px; align-items:start;">
+      <div>
+        <h3 style="margin:0;">Add Contact</h3>
+        <p class="text-muted" style="margin:4px 0 0 0; font-size:12px;">{{ vendor.display_name }} • {{ vendor.vendor_id }}</p>
+      </div>
+      <button type="button" onclick="closeDetailContactDrawer()" style="border:1px solid var(--border); background:#fff; border-radius:6px; padding:6px 10px; cursor:pointer;">✕</button>
+    </div>
+    <div style="padding:16px 20px; overflow-y:auto; flex:1;">
+      <div id="detailContactDrawerError" class="alert alert-danger" style="display:none;"></div>
+      <form id="detailContactQuickForm">
+        <div class="form-group">
+          <label for="detail_contact_source">Contact Source *</label>
+          <select id="detail_contact_source">
+            <option value="internal">Internal (Active Org User)</option>
+            <option value="external">External (Vendor Contact)</option>
+          </select>
+        </div>
+
+        <div id="detailContactInternalSection" style="margin-top: 8px;">
+          <div class="form-group">
+            <label for="detail_contact_internal_lookup">Internal User *</label>
+            <input id="detail_contact_internal_lookup" type="text" placeholder="Search active user by name or email" autocomplete="off">
+            <input id="detail_contact_internal_principal" type="hidden">
+            <div id="detail_contact_internal_results" class="typeahead-results hidden"></div>
+          </div>
+          <div class="form-group">
+            <label for="detail_contact_internal_role">Org Role *</label>
+            <select id="detail_contact_internal_role">
+              <option value="Business Owner">Business Owner</option>
+              <option value="SME">SME</option>
+              <option value="Technical Lead">Technical Lead</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="detailContactExternalSection" style="display:none; margin-top: 8px;">
+          <div class="form-group">
+            <label for="detail_contact_external_lookup">External Contact (optional)</label>
+            <input id="detail_contact_external_lookup" type="text" placeholder="Search existing contact by name or email" autocomplete="off">
+            <input id="detail_contact_external_id" type="hidden">
+            <div id="detail_contact_external_results" class="typeahead-results hidden"></div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="detail_contact_full_name">Full Name *</label>
+          <input id="detail_contact_full_name" type="text" placeholder="Contact full name">
+        </div>
+
+        <div class="form-group">
+          <label for="detail_contact_type">Contact Type *</label>
+          <select id="detail_contact_type" required>
+            <option value="primary">Primary Contact</option>
+            <option value="sales">Sales Representative</option>
+            <option value="support">Support Contact</option>
+            <option value="billing">Billing Contact</option>
+            <option value="technical">Technical Contact</option>
+            <option value="executive">Executive</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="detail_contact_title">Role / Title</label>
+          <select id="detail_contact_title">
+            <option value="">-- Select Role --</option>
+            <option value="Account Manager">Account Manager</option>
+            <option value="Sales Manager">Sales Manager</option>
+            <option value="Support Lead">Support Lead</option>
+            <option value="Technical Lead">Technical Lead</option>
+            <option value="Finance Manager">Finance Manager</option>
+            <option value="VP">VP</option>
+            <option value="Director">Director</option>
+          </select>
+        </div>
+
+        <button type="button" class="btn btn-secondary btn-small" style="margin-top: 4px;" onclick="toggleDetailAdvanced('detailContactAdvanced', this)">Show Advanced Options</button>
+
+        <div id="detailContactAdvanced" style="display:none; margin-top: 10px;">
+
+          <div class="form-group">
+            <label for="detail_contact_email">Email</label>
+            <input id="detail_contact_email" type="email" placeholder="name@company.com">
+          </div>
+
+          <div class="form-group">
+            <label for="detail_contact_primary">Primary Contact</label>
+            <select id="detail_contact_primary">
+              <option value="false" selected>No</option>
+              <option value="true">Yes</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display:flex; gap:8px; margin-top:16px;">
+          <button id="detailContactSubmit" type="submit" class="btn btn-primary">Save Contact</button>
+          <button type="button" class="btn btn-secondary" onclick="closeDetailContactDrawer()">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </aside>
+  {% endif %}
+
+  {% if can_manage_vendor_identifiers %}
+  <div id="detailIdentifierDrawerBackdrop" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:1500;" onclick="closeDetailIdentifierDrawer()"></div>
+  <aside id="detailIdentifierDrawer" style="position:fixed; top:0; right:-420px; width:420px; max-width:calc(100vw - 20px); height:100vh; background:#fff; box-shadow:-8px 0 24px rgba(0,0,0,0.15); z-index:1600; transition:right .25s ease; display:flex; flex-direction:column;">
+    <div style="padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:12px; align-items:start;">
+      <div>
+        <h3 style="margin:0;">Add Identifier</h3>
+        <p class="text-muted" style="margin:4px 0 0 0; font-size:12px;">{{ vendor.display_name }} • {{ vendor.vendor_id }}</p>
+      </div>
+      <button type="button" onclick="closeDetailIdentifierDrawer()" style="border:1px solid var(--border); background:#fff; border-radius:6px; padding:6px 10px; cursor:pointer;">✕</button>
+    </div>
+    <div style="padding:16px 20px; overflow-y:auto; flex:1;">
+      <div id="detailIdentifierDrawerError" class="alert alert-danger" style="display:none;"></div>
+      <form id="detailIdentifierQuickForm">
+        <div class="form-group">
+          <label for="detail_identifier_type">Identifier Type *</label>
+          <select id="detail_identifier_type" required>
+            <option value="duns">DUNS Number</option>
+            <option value="tax_id">Tax ID / EIN</option>
+            <option value="vat_id">VAT ID</option>
+            <option value="gln">GLN</option>
+            <option value="erp_id">ERP Vendor ID</option>
+            <option value="sap_id">SAP Vendor Code</option>
+            <option value="internal_id">Internal ID</option>
+            <option value="cage_code">CAGE Code</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="detail_identifier_value">Identifier Value *</label>
+          <input id="detail_identifier_value" type="text" required placeholder="Identifier value">
+        </div>
+
+        <button type="button" class="btn btn-secondary btn-small" style="margin-top: 4px;" onclick="toggleDetailAdvanced('detailIdentifierAdvanced', this)">Show Advanced Options</button>
+
+        <div id="detailIdentifierAdvanced" style="display:none; margin-top: 10px;">
+        <div class="form-group">
+          <label for="detail_identifier_country">Country</label>
+          <select id="detail_identifier_country">
+            <option value="">-- Select Country --</option>
+            <option value="US">United States</option>
+            <option value="CA">Canada</option>
+            <option value="GB">United Kingdom</option>
+            <option value="DE">Germany</option>
+            <option value="FR">France</option>
+            <option value="JP">Japan</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="detail_identifier_primary">Primary Identifier</label>
+          <select id="detail_identifier_primary">
+            <option value="false" selected>No</option>
+            <option value="true">Yes</option>
+          </select>
+        </div>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:16px;">
+          <button id="detailIdentifierSubmit" type="submit" class="btn btn-primary">Save Identifier</button>
+          <button type="button" class="btn btn-secondary" onclick="closeDetailIdentifierDrawer()">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </aside>
+  {% endif %}
+
+  {% if can_manage_vendor_offerings %}
+  <div id="detailOfferingDrawerBackdrop" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:1500;" onclick="closeDetailOfferingDrawer()"></div>
+  <aside id="detailOfferingDrawer" style="position:fixed; top:0; right:-420px; width:420px; max-width:calc(100vw - 20px); height:100vh; background:#fff; box-shadow:-8px 0 24px rgba(0,0,0,0.15); z-index:1600; transition:right .25s ease; display:flex; flex-direction:column;">
+    <div style="padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:12px; align-items:start;">
+      <div>
+        <h3 style="margin:0;">Add Offering</h3>
+        <p class="text-muted" style="margin:4px 0 0 0; font-size:12px;">{{ vendor.display_name }} • {{ vendor.vendor_id }}</p>
+      </div>
+      <button type="button" onclick="closeDetailOfferingDrawer()" style="border:1px solid var(--border); background:#fff; border-radius:6px; padding:6px 10px; cursor:pointer;">✕</button>
+    </div>
+    <div style="padding:16px 20px; overflow-y:auto; flex:1;">
+      <div id="detailOfferingDrawerError" class="alert alert-danger" style="display:none;"></div>
+      <form id="detailOfferingQuickForm">
+        <div class="form-group">
+          <label for="detail_offering_name">Offering Name *</label>
+          <input id="detail_offering_name" type="text" required placeholder="Offering name">
+        </div>
+        <div class="form-group">
+          <label for="detail_offering_type">Offering Type *</label>
+          <select id="detail_offering_type" required>
+            <option value="SaaS">SaaS</option>
+            <option value="Cloud">Cloud</option>
+            <option value="PaaS">PaaS</option>
+            <option value="Security">Security</option>
+            <option value="Data">Data</option>
+            <option value="Integration">Integration</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="detail_offering_lob">Line of Business *</label>
+          <select id="detail_offering_lob" required>
+            <option value="Enterprise">Enterprise</option>
+            <option value="Finance">Finance</option>
+            <option value="HR">HR</option>
+            <option value="IT">IT</option>
+            <option value="Operations">Operations</option>
+            <option value="Sales">Sales</option>
+            <option value="Security">Security</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="detail_offering_service">Service Type *</label>
+          <select id="detail_offering_service" required>
+            <option value="Application">Application</option>
+            <option value="Infrastructure">Infrastructure</option>
+            <option value="Integration">Integration</option>
+            <option value="Managed Service">Managed Service</option>
+            <option value="Platform">Platform</option>
+            <option value="Security">Security</option>
+            <option value="Support">Support</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+
+        <button type="button" class="btn btn-secondary btn-small" style="margin-top: 4px;" onclick="toggleDetailAdvanced('detailOfferingAdvanced', this)">Show Advanced Options</button>
+
+        <div id="detailOfferingAdvanced" style="display:none; margin-top: 10px;">
+        <div class="form-group">
+          <label for="detail_offering_lifecycle">Lifecycle</label>
+          <select id="detail_offering_lifecycle">
+            <option value="draft">Draft</option>
+            <option value="active">Active</option>
+            <option value="retired">Retired</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="detail_offering_criticality">Criticality</label>
+          <select id="detail_offering_criticality">
+            <option value="tier_1">Tier 1</option>
+            <option value="tier_2">Tier 2</option>
+            <option value="tier_3" selected>Tier 3</option>
+            <option value="tier_4">Tier 4</option>
+          </select>
+        </div>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:16px;">
+          <button id="detailOfferingSubmit" type="submit" class="btn btn-primary">Save Offering</button>
+          <button type="button" class="btn btn-secondary" onclick="closeDetailOfferingDrawer()">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </aside>
+  {% endif %}
+
+  {% if can_manage_vendor_contracts %}
+  <div id="detailContractDrawerBackdrop" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:1500;" onclick="closeDetailContractDrawer()"></div>
+  <aside id="detailContractDrawer" style="position:fixed; top:0; right:-420px; width:420px; max-width:calc(100vw - 20px); height:100vh; background:#fff; box-shadow:-8px 0 24px rgba(0,0,0,0.15); z-index:1600; transition:right .25s ease; display:flex; flex-direction:column;">
+    <div style="padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; gap:12px; align-items:start;">
+      <div>
+        <h3 style="margin:0;">Add Contract</h3>
+        <p class="text-muted" style="margin:4px 0 0 0; font-size:12px;">{{ vendor.display_name }} • {{ vendor.vendor_id }}</p>
+      </div>
+      <button type="button" onclick="closeDetailContractDrawer()" style="border:1px solid var(--border); background:#fff; border-radius:6px; padding:6px 10px; cursor:pointer;">✕</button>
+    </div>
+    <div style="padding:16px 20px; overflow-y:auto; flex:1;">
+      <div id="detailContractDrawerError" class="alert alert-danger" style="display:none;"></div>
+      <form id="detailContractQuickForm">
+        <div class="form-group">
+          <label for="detail_contract_number">Contract Number</label>
+          <input id="detail_contract_number" type="text" placeholder="Optional contract number">
+        </div>
+        <div class="form-group">
+          <label for="detail_contract_status">Status</label>
+          <select id="detail_contract_status">
+            <option value="draft" selected>Draft</option>
+            <option value="active">Active</option>
+            <option value="expired">Expired</option>
+          </select>
+        </div>
+
+        <button type="button" class="btn btn-secondary btn-small" style="margin-top: 4px;" onclick="toggleDetailAdvanced('detailContractAdvanced', this)">Show Advanced Options</button>
+
+        <div id="detailContractAdvanced" style="display:none; margin-top: 10px;">
+        <div class="form-group">
+          <label for="detail_contract_offering">Offering</label>
+          <select id="detail_contract_offering">
+            <option value="">-- None --</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="detail_contract_start">Start Date</label>
+            <input id="detail_contract_start" type="date">
+          </div>
+          <div class="form-group">
+            <label for="detail_contract_end">End Date</label>
+            <input id="detail_contract_end" type="date">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="detail_contract_value">Annual Value</label>
+          <input id="detail_contract_value" type="number" min="0" step="0.01" placeholder="0.00">
+        </div>
+        </div>
+        <div style="display:flex; gap:8px; margin-top:16px;">
+          <button id="detailContractSubmit" type="submit" class="btn btn-primary">Save Contract</button>
+          <button type="button" class="btn btn-secondary" onclick="closeDetailContractDrawer()">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </aside>
+  {% endif %}
+
+  <script>
+    function selectVendorTab(tabKey) {
+      const tabButtons = document.querySelectorAll('.vendor-tab-button');
+      const tabPanels = document.querySelectorAll('.vendor-tab-panel');
+
+      tabButtons.forEach((button) => {
+        if (button.dataset.tab === tabKey) {
+          button.classList.add('active');
+        } else {
+          button.classList.remove('active');
+        }
+      });
+
+      tabPanels.forEach((panel) => {
+        if (panel.dataset.tab === tabKey) {
+          panel.classList.add('active');
+        } else {
+          panel.classList.remove('active');
+        }
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      selectVendorTab('overview');
+    });
+
+    function buildAutoId(prefix) {
+      const stamp = Date.now().toString();
+      return `${prefix}-${stamp.slice(-10)}`;
+    }
+
+    const DETAIL_ADVANCED_PREF_PREFIX = 'vendorDetailDrawerAdvanced:';
+
+    function getDetailAdvancedPref(sectionId) {
+      try {
+        return localStorage.getItem(`${DETAIL_ADVANCED_PREF_PREFIX}${sectionId}`) === 'open';
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function setDetailAdvancedPref(sectionId, isOpen) {
+      try {
+        localStorage.setItem(`${DETAIL_ADVANCED_PREF_PREFIX}${sectionId}`, isOpen ? 'open' : 'closed');
+      } catch (error) {
+        // ignore storage failures
+      }
+    }
+
+    function setDetailAdvancedState(sectionId, isOpen) {
+      const section = document.getElementById(sectionId);
+      if (!section) {
+        return;
+      }
+      section.style.display = isOpen ? 'block' : 'none';
+
+      const triggerButton = document.querySelector(`button[onclick*="'${sectionId}'"]`);
+      if (triggerButton) {
+        triggerButton.textContent = isOpen ? 'Hide Advanced Options' : 'Show Advanced Options';
+      }
+    }
+
+    function showToast(message) {
+      const toast = document.createElement('div');
+      toast.className = 'vc-toast';
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      requestAnimationFrame(() => toast.classList.add('show'));
+      setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 220);
+      }, 2200);
+    }
+
+    function applyDetailAdvancedState(sectionId) {
+      setDetailAdvancedState(sectionId, getDetailAdvancedPref(sectionId));
+    }
+
+    function resetDetailDrawerPreferences() {
+      const keys = [
+        'detailContactAdvanced',
+        'detailIdentifierAdvanced',
+        'detailOfferingAdvanced',
+        'detailContractAdvanced',
+        'contactDrawerAdvanced',
+        'identifierDrawerAdvanced',
+        'offeringDrawerAdvanced',
+        'contractDrawerAdvanced'
+      ];
+      try {
+        keys.forEach((sectionId) => {
+          localStorage.removeItem(`${DETAIL_ADVANCED_PREF_PREFIX}${sectionId}`);
+          localStorage.removeItem(`vendorDrawerAdvanced:${sectionId}`);
+        });
+      } catch (error) {
+        // ignore storage failures
+      }
+      keys.forEach((sectionId) => setDetailAdvancedState(sectionId, false));
+      showToast('Quick-form preferences reset. Advanced sections are now collapsed by default.');
+    }
+
+    function toggleDetailAdvanced(sectionId, triggerButton) {
+      const section = document.getElementById(sectionId);
+      if (!section) {
+        return;
+      }
+      const isHidden = section.style.display === 'none' || !section.style.display;
+      const nextOpen = isHidden;
+      setDetailAdvancedState(sectionId, nextOpen);
+      setDetailAdvancedPref(sectionId, nextOpen);
+      if (triggerButton) {
+        triggerButton.textContent = nextOpen ? 'Hide Advanced Options' : 'Show Advanced Options';
+      }
+    }
+
+    function populateDetailContractOfferings() {
+      const select = document.getElementById('detail_contract_offering');
+      select.innerHTML = '<option value="">-- None --</option>';
+      fetch('/api/v1/vendors/{{ vendor.vendor_id }}/offerings')
+        .then((response) => response.json())
+        .then((payload) => {
+          const items = payload.items || [];
+          items.forEach((offering) => {
+            const option = document.createElement('option');
+            option.value = offering.offering_id;
+            option.textContent = `${offering.offering_name} (${offering.offering_id})`;
+            select.appendChild(option);
+          });
+        })
+        .catch(() => {
+          // keep fallback option only
+        });
+    }
+
+    function openDetailContactDrawer() {
+      const drawer = document.getElementById('detailContactDrawer');
+      const backdrop = document.getElementById('detailContactDrawerBackdrop');
+      const errorBox = document.getElementById('detailContactDrawerError');
+      const form = document.getElementById('detailContactQuickForm');
+      if (!drawer || !backdrop || !errorBox || !form) {
+        return;
+      }
+      drawer.style.right = '0';
+      backdrop.style.display = 'block';
+      errorBox.style.display = 'none';
+      form.reset();
+      applyDetailAdvancedState('detailContactAdvanced');
+      const nameInput = document.getElementById('detail_contact_full_name');
+      if (nameInput) {
+        nameInput.focus();
+      }
+    }
+
+    function closeDetailContactDrawer() {
+      const drawer = document.getElementById('detailContactDrawer');
+      const backdrop = document.getElementById('detailContactDrawerBackdrop');
+      if (!drawer || !backdrop) {
+        return;
+      }
+      drawer.style.right = '-420px';
+      backdrop.style.display = 'none';
+    }
+
+    function openDetailIdentifierDrawer() {
+      const drawer = document.getElementById('detailIdentifierDrawer');
+      const backdrop = document.getElementById('detailIdentifierDrawerBackdrop');
+      const errorBox = document.getElementById('detailIdentifierDrawerError');
+      const form = document.getElementById('detailIdentifierQuickForm');
+      if (!drawer || !backdrop || !errorBox || !form) {
+        return;
+      }
+      drawer.style.right = '0';
+      backdrop.style.display = 'block';
+      errorBox.style.display = 'none';
+      form.reset();
+      applyDetailAdvancedState('detailIdentifierAdvanced');
+      const valueInput = document.getElementById('detail_identifier_value');
+      if (valueInput) {
+        valueInput.focus();
+      }
+    }
+
+    function closeDetailIdentifierDrawer() {
+      const drawer = document.getElementById('detailIdentifierDrawer');
+      const backdrop = document.getElementById('detailIdentifierDrawerBackdrop');
+      if (!drawer || !backdrop) {
+        return;
+      }
+      drawer.style.right = '-420px';
+      backdrop.style.display = 'none';
+    }
+
+    function openDetailOfferingDrawer() {
+      const drawer = document.getElementById('detailOfferingDrawer');
+      const backdrop = document.getElementById('detailOfferingDrawerBackdrop');
+      const errorBox = document.getElementById('detailOfferingDrawerError');
+      const form = document.getElementById('detailOfferingQuickForm');
+      if (!drawer || !backdrop || !errorBox || !form) {
+        return;
+      }
+      drawer.style.right = '0';
+      backdrop.style.display = 'block';
+      errorBox.style.display = 'none';
+      form.reset();
+      applyDetailAdvancedState('detailOfferingAdvanced');
+      const offeringNameInput = document.getElementById('detail_offering_name');
+      if (offeringNameInput) {
+        offeringNameInput.focus();
+      }
+    }
+
+    function closeDetailOfferingDrawer() {
+      const drawer = document.getElementById('detailOfferingDrawer');
+      const backdrop = document.getElementById('detailOfferingDrawerBackdrop');
+      if (!drawer || !backdrop) {
+        return;
+      }
+      drawer.style.right = '-420px';
+      backdrop.style.display = 'none';
+    }
+
+    function openDetailContractDrawer() {
+      const drawer = document.getElementById('detailContractDrawer');
+      const backdrop = document.getElementById('detailContractDrawerBackdrop');
+      const errorBox = document.getElementById('detailContractDrawerError');
+      const form = document.getElementById('detailContractQuickForm');
+      if (!drawer || !backdrop || !errorBox || !form) {
+        return;
+      }
+      drawer.style.right = '0';
+      backdrop.style.display = 'block';
+      errorBox.style.display = 'none';
+      form.reset();
+      populateDetailContractOfferings();
+      applyDetailAdvancedState('detailContractAdvanced');
+      const contractNumberInput = document.getElementById('detail_contract_number');
+      if (contractNumberInput) {
+        contractNumberInput.focus();
+      }
+    }
+
+    function closeDetailContractDrawer() {
+      const drawer = document.getElementById('detailContractDrawer');
+      const backdrop = document.getElementById('detailContractDrawerBackdrop');
+      if (!drawer || !backdrop) {
+        return;
+      }
+      drawer.style.right = '-420px';
+      backdrop.style.display = 'none';
+    }
+
+    const detailContactForm = document.getElementById('detailContactQuickForm');
+    if (detailContactForm) {
+      detailContactForm.addEventListener('submit', function(event) {
+      event.preventDefault();
+
+      const errorBox = document.getElementById('detailContactDrawerError');
+      const submitButton = document.getElementById('detailContactSubmit');
+      const fullName = document.getElementById('detail_contact_full_name').value.trim();
+      const contactType = document.getElementById('detail_contact_type').value;
+      const title = document.getElementById('detail_contact_title').value;
+      const email = document.getElementById('detail_contact_email').value.trim();
+      const isPrimary = document.getElementById('detail_contact_primary').value === 'true';
+      const contactSource = document.getElementById('detail_contact_source').value;
+      const internalPrincipal = document.getElementById('detail_contact_internal_principal').value.trim();
+      const externalContactId = document.getElementById('detail_contact_external_id').value.trim();
+      const internalRole = document.getElementById('detail_contact_internal_role').value;
+
+      if (contactSource === 'internal' && !internalPrincipal) {
+        errorBox.textContent = 'Select an active internal user.';
+        errorBox.style.display = 'block';
+        return;
+      }
+
+      if (contactSource === 'external' && !fullName && !externalContactId) {
+        errorBox.textContent = 'Provide a name or choose an existing external contact.';
+        errorBox.style.display = 'block';
+        return;
+      }
+
+      errorBox.style.display = 'none';
+      submitButton.disabled = true;
+      submitButton.textContent = 'Saving...';
+
+      fetch('/vendor-360/api/{{ vendor.vendor_id }}/contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          full_name: fullName,
+          contact_type: contactType,
+          title: title,
+          email: email,
+          contact_source: contactSource,
+          internal_user_principal: internalPrincipal,
+          internal_contact_role: internalRole,
+          external_contact_id: externalContactId,
+          is_primary: isPrimary,
+          is_active: true
+        })
+      })
+        .then(async (response) => {
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(payload.reason || payload.error || 'Failed to create contact.');
+          }
+        })
+        .then(() => {
+          window.location.reload();
+        })
+        .catch((error) => {
+          errorBox.textContent = error.message;
+          errorBox.style.display = 'block';
+        })
+        .finally(() => {
+          submitButton.disabled = false;
+          submitButton.textContent = 'Save Contact';
+        });
+      });
+    }
+
+    function renderDetailContactResults(container, items, onSelect) {
+      if (!container) {
+        return;
+      }
+      container.innerHTML = '';
+      if (!items.length) {
+        container.classList.add('hidden');
+        return;
+      }
+      items.forEach((item) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.style.display = 'block';
+        button.style.width = '100%';
+        button.style.textAlign = 'left';
+        button.style.padding = '8px 10px';
+        button.style.border = 'none';
+        button.style.background = 'transparent';
+        button.style.cursor = 'pointer';
+        button.innerHTML = `<strong>${item.label || item.id}</strong><br><small class="text-muted">${item.subtitle || ''}</small>`;
+        button.addEventListener('click', () => {
+          onSelect(item);
+          container.classList.add('hidden');
+          container.innerHTML = '';
+        });
+        container.appendChild(button);
+      });
+      container.classList.remove('hidden');
+    }
+
+    function toggleDetailContactSource() {
+      const sourceSelect = document.getElementById('detail_contact_source');
+      const internalSection = document.getElementById('detailContactInternalSection');
+      const externalSection = document.getElementById('detailContactExternalSection');
+      const source = (sourceSelect && sourceSelect.value) || 'internal';
+      if (internalSection && externalSection) {
+        internalSection.style.display = source === 'internal' ? 'block' : 'none';
+        externalSection.style.display = source === 'external' ? 'block' : 'none';
+      }
+    }
+
+    const detailSourceSelect = document.getElementById('detail_contact_source');
+    if (detailSourceSelect) {
+      detailSourceSelect.addEventListener('change', toggleDetailContactSource);
+      toggleDetailContactSource();
+    }
+
+    const detailInternalLookup = document.getElementById('detail_contact_internal_lookup');
+    if (detailInternalLookup) {
+      detailInternalLookup.addEventListener('input', function() {
+        const query = this.value.trim();
+        const results = document.getElementById('detail_contact_internal_results');
+        if (!query || query.length < 2) {
+          if (results) {
+            results.classList.add('hidden');
+            results.innerHTML = '';
+          }
+          return;
+        }
+        fetch(`/api/v1/search/users?q=${encodeURIComponent(query)}&limit=8`)
+          .then((response) => response.json())
+          .then((payload) => {
+            const items = Array.isArray(payload.items) ? payload.items : [];
+            renderDetailContactResults(results, items, (item) => {
+              detailInternalLookup.value = item.label || item.id;
+              const principalInput = document.getElementById('detail_contact_internal_principal');
+              if (principalInput) {
+                principalInput.value = item.id || '';
+              }
+              const fullNameInput = document.getElementById('detail_contact_full_name');
+              const emailInput = document.getElementById('detail_contact_email');
+              if (fullNameInput && !fullNameInput.value) {
+                fullNameInput.value = item.label || '';
+              }
+              if (emailInput && !emailInput.value) {
+                emailInput.value = item.subtitle || item.id || '';
+              }
+            });
+          })
+          .catch(() => {
+            if (results) {
+              results.classList.add('hidden');
+              results.innerHTML = '';
+            }
+          });
+      });
+    }
+
+    const detailExternalLookup = document.getElementById('detail_contact_external_lookup');
+    if (detailExternalLookup) {
+      detailExternalLookup.addEventListener('input', function() {
+        const query = this.value.trim();
+        const results = document.getElementById('detail_contact_external_results');
+        if (!query || query.length < 2) {
+          if (results) {
+            results.classList.add('hidden');
+            results.innerHTML = '';
+          }
+          return;
+        }
+        fetch(`/api/v1/search/contacts?q=${encodeURIComponent(query)}&limit=8`)
+          .then((response) => response.json())
+          .then((payload) => {
+            const items = Array.isArray(payload.items) ? payload.items : [];
+            renderDetailContactResults(results, items, (item) => {
+              detailExternalLookup.value = item.label || item.id;
+              const externalIdInput = document.getElementById('detail_contact_external_id');
+              if (externalIdInput) {
+                externalIdInput.value = item.id || '';
+              }
+              const fullNameInput = document.getElementById('detail_contact_full_name');
+              const emailInput = document.getElementById('detail_contact_email');
+              if (fullNameInput && !fullNameInput.value) {
+                fullNameInput.value = item.label || '';
+              }
+              if (emailInput && !emailInput.value) {
+                emailInput.value = item.email || '';
+              }
+            });
+          })
+          .catch(() => {
+            if (results) {
+              results.classList.add('hidden');
+              results.innerHTML = '';
+            }
+          });
+      });
+    }
+
+    const detailIdentifierForm = document.getElementById('detailIdentifierQuickForm');
+    if (detailIdentifierForm) {
+      detailIdentifierForm.addEventListener('submit', function(event) {
+      event.preventDefault();
+
+      const errorBox = document.getElementById('detailIdentifierDrawerError');
+      const submitButton = document.getElementById('detailIdentifierSubmit');
+      const identifierType = document.getElementById('detail_identifier_type').value;
+      const identifierValue = document.getElementById('detail_identifier_value').value.trim();
+      const countryCode = document.getElementById('detail_identifier_country').value;
+      const isPrimary = document.getElementById('detail_identifier_primary').value === 'true';
+
+      if (!identifierValue) {
+        errorBox.textContent = 'Identifier value is required.';
+        errorBox.style.display = 'block';
+        return;
+      }
+
+      errorBox.style.display = 'none';
+      submitButton.disabled = true;
+      submitButton.textContent = 'Saving...';
+
+      fetch('/vendor-360/api/{{ vendor.vendor_id }}/identifiers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier_type: identifierType,
+          identifier_value: identifierValue,
+          country_code: countryCode,
+          is_primary: isPrimary,
+          is_verified: false
+        })
+      })
+        .then(async (response) => {
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(payload.reason || payload.error || 'Failed to create identifier.');
+          }
+        })
+        .then(() => {
+          window.location.reload();
+        })
+        .catch((error) => {
+          errorBox.textContent = error.message;
+          errorBox.style.display = 'block';
+        })
+        .finally(() => {
+          submitButton.disabled = false;
+          submitButton.textContent = 'Save Identifier';
+        });
+      });
+    }
+
+    const detailOfferingForm = document.getElementById('detailOfferingQuickForm');
+    if (detailOfferingForm) {
+      detailOfferingForm.addEventListener('submit', function(event) {
+      event.preventDefault();
+
+      const errorBox = document.getElementById('detailOfferingDrawerError');
+      const submitButton = document.getElementById('detailOfferingSubmit');
+      const offeringName = document.getElementById('detail_offering_name').value.trim();
+      const offeringType = document.getElementById('detail_offering_type').value;
+      const lob = document.getElementById('detail_offering_lob').value;
+      const serviceType = document.getElementById('detail_offering_service').value;
+      const lifecycleState = document.getElementById('detail_offering_lifecycle').value;
+      const criticalityTier = document.getElementById('detail_offering_criticality').value;
+
+      if (!offeringName) {
+        errorBox.textContent = 'Offering name is required.';
+        errorBox.style.display = 'block';
+        return;
+      }
+
+      errorBox.style.display = 'none';
+      submitButton.disabled = true;
+      submitButton.textContent = 'Saving...';
+
+      fetch('/api/v1/vendors/{{ vendor.vendor_id }}/offerings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          offering_id: buildAutoId('offering'),
+          offering_name: offeringName,
+          offering_type: offeringType,
+          lob: lob,
+          service_type: serviceType,
+          lifecycle_state: lifecycleState,
+          criticality_tier: criticalityTier
+        })
+      })
+        .then(async (response) => {
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(payload.reason || payload.error || 'Failed to create offering.');
+          }
+        })
+        .then(() => {
+          window.location.reload();
+        })
+        .catch((error) => {
+          errorBox.textContent = error.message;
+          errorBox.style.display = 'block';
+        })
+        .finally(() => {
+          submitButton.disabled = false;
+          submitButton.textContent = 'Save Offering';
+        });
+      });
+    }
+
+    const detailContractForm = document.getElementById('detailContractQuickForm');
+    if (detailContractForm) {
+      detailContractForm.addEventListener('submit', function(event) {
+      event.preventDefault();
+
+      const errorBox = document.getElementById('detailContractDrawerError');
+      const submitButton = document.getElementById('detailContractSubmit');
+      const contractNumber = document.getElementById('detail_contract_number').value.trim();
+      const contractStatus = document.getElementById('detail_contract_status').value;
+      const offeringId = document.getElementById('detail_contract_offering').value;
+      const startDate = document.getElementById('detail_contract_start').value;
+      const endDate = document.getElementById('detail_contract_end').value;
+      const annualValue = document.getElementById('detail_contract_value').value;
+
+      errorBox.style.display = 'none';
+      submitButton.disabled = true;
+      submitButton.textContent = 'Saving...';
+
+      fetch('/api/v1/vendors/{{ vendor.vendor_id }}/contracts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contract_id: buildAutoId('cont'),
+          contract_number: contractNumber,
+          contract_status: contractStatus,
+          offering_id: offeringId,
+          start_date: startDate,
+          end_date: endDate,
+          annual_value: annualValue,
+          cancelled_flag: false
+        })
+      })
+        .then(async (response) => {
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(payload.reason || payload.error || 'Failed to create contract.');
+          }
+        })
+        .then(() => {
+          window.location.reload();
+        })
+        .catch((error) => {
+          errorBox.textContent = error.message;
+          errorBox.style.display = 'block';
+        })
+        .finally(() => {
+          submitButton.disabled = false;
+          submitButton.textContent = 'Save Contract';
+        });
+      });
+    }
+  </script>
+{% endblock %}

@@ -103,6 +103,20 @@ Run rendered SQL manually (or via an approved deployment pipeline):
 
 The app validates required objects at startup and fails fast if required runtime objects are missing/inaccessible.
 
+## POC Notebook Runbook
+
+Use these notebooks for demo readiness when schema/test artifacts drift:
+
+1. `setup/databricks/notebooks/v1_apply_database_changes.ipynb`
+2. `setup/databricks/notebooks/v1_seed_critical_data.ipynb`
+
+Optional (testing only):
+
+1. `setup/databricks/notebooks/v1_seed_data.ipynb` for full synthetic functional dataset.
+
+`v1_apply_database_changes.ipynb` includes runtime deltas not present in the legacy `v1_create_schema.ipynb` path (for example:
+`app_vendor_warning`, `app_offering_payment`, and the `app_import_*` staging tables).
+
 ## Runtime Troubleshooting
 
 If the app shows `Schema Bootstrap Required`, call:

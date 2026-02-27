@@ -1,0 +1,733 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  .offering-tabs {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+  }
+
+  .offering-tab-button {
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--dark);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .offering-tab-button.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+  }
+
+  .offering-tab-panel {
+    display: none;
+    margin-top: 16px;
+  }
+
+  .offering-tab-panel.active {
+    display: block;
+  }
+</style>
+
+<section class="card">
+  <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+    <div>
+      <h1>{{ offering.offering_name }}</h1>
+      <p class="muted">Offering ID: {{ offering.offering_id }}</p>
+    </div>
+    {% if can_manage_program_profile %}
+      <button type="button" class="btn btn-primary" onclick="openOfferingDrawer('drawerProgramProfile')">Update Program Profile</button>
+    {% endif %}
+  </div>
+  <ul>
+    <li>Vendor: {{ offering.vendor_id }}</li>
+    <li>Lifecycle: {{ offering.lifecycle_state }}</li>
+    <li>Type: {{ offering.offering_type|default:"-" }}</li>
+    <li>LOB: {{ offering.lob|default:"-" }}</li>
+    <li>Service Type: {{ offering.service_type|default:"-" }}</li>
+    <li>Criticality: {{ offering.criticality_tier|default:"-" }}</li>
+  </ul>
+
+  <div class="offering-tabs" role="tablist" aria-label="Offering detail sections">
+    <button type="button" class="offering-tab-button active" data-tab="overview" onclick="selectOfferingTab('overview')">Overview</button>
+    <button type="button" class="offering-tab-button" data-tab="program" onclick="selectOfferingTab('program')">Governance</button>
+    <button type="button" class="offering-tab-button" data-tab="entitlements" onclick="selectOfferingTab('entitlements')">Entitlements</button>
+    <button type="button" class="offering-tab-button" data-tab="contacts" onclick="selectOfferingTab('contacts')">Contacts</button>
+    <button type="button" class="offering-tab-button" data-tab="contracts" onclick="selectOfferingTab('contracts')">Contracts</button>
+    <button type="button" class="offering-tab-button" data-tab="data-flows" onclick="selectOfferingTab('data-flows')">Data Flows</button>
+    <button type="button" class="offering-tab-button" data-tab="tickets" onclick="selectOfferingTab('tickets')">Service Tickets</button>
+    <button type="button" class="offering-tab-button" data-tab="documents" onclick="selectOfferingTab('documents')">Documents</button>
+  </div>
+</section>
+
+<section class="card offering-tab-panel active" data-tab="overview">
+  <h2 style="margin-top: 0;">Program Health</h2>
+  <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px;">
+    <div>
+      <div class="text-muted" style="font-size: 12px;">Health Score</div>
+      <div style="font-size: 22px; font-weight: 700;">{{ portfolio.health_score|default:"0" }}</div>
+    </div>
+    <div>
+      <div class="text-muted" style="font-size: 12px;">Open Tickets</div>
+      <div style="font-size: 22px; font-weight: 700;">{{ portfolio.open_ticket_count|default:"0" }}</div>
+    </div>
+    <div>
+      <div class="text-muted" style="font-size: 12px;">Annual Spend</div>
+      <div style="font-size: 22px; font-weight: 700;">${{ portfolio.annual_spend_total|default:"0" }}</div>
+    </div>
+    <div>
+      <div class="text-muted" style="font-size: 12px;">Next Renewal</div>
+      <div style="font-size: 18px; font-weight: 700;">{{ portfolio.next_renewal_date|default:"-" }}</div>
+    </div>
+    <div>
+      <div class="text-muted" style="font-size: 12px;">Renewal Countdown</div>
+      <div style="font-size: 22px; font-weight: 700;">{{ portfolio.renewal_days|default:"-" }}</div>
+    </div>
+  </div>
+</section>
+
+<section class="card offering-tab-panel" data-tab="program">
+  <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+    <h2 style="margin-top: 0; margin-bottom: 0;">Governance & Compliance</h2>
+    {% if can_manage_program_profile %}
+      <button type="button" class="btn btn-primary" onclick="openOfferingDrawer('drawerProgramProfile')">Edit in Drawer</button>
+    {% endif %}
+  </div>
+  <ul style="margin-top: 12px;">
+    <li>Internal Owner: {{ program_profile.internal_owner|default:"-" }}</li>
+    <li>Vendor Success Manager: {{ program_profile.vendor_success_manager|default:"-" }}</li>
+    <li>SLA Target: {{ program_profile.sla_target_pct|default:"-" }}%</li>
+    <li>RTO (hours): {{ program_profile.rto_hours|default:"-" }}</li>
+    <li>Data Residency: {{ program_profile.data_residency|default:"-" }}</li>
+    <li>Compliance Tags: {{ program_profile.compliance_tags|default:"-" }}</li>
+    <li>Budget Annual: ${{ program_profile.budget_annual|default:"-" }}</li>
+  </ul>
+  {% if program_profile.roadmap_notes %}
+    <p><strong>Roadmap Notes:</strong> {{ program_profile.roadmap_notes }}</p>
+  {% endif %}
+</section>
+
+<section class="card offering-tab-panel" data-tab="entitlements">
+  <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+    <h2 style="margin-top: 0; margin-bottom: 0;">Licenses & Entitlements</h2>
+    {% if can_manage_entitlements %}
+      <button type="button" class="btn btn-primary" onclick="openOfferingDrawer('drawerEntitlements')">Add in Drawer</button>
+    {% endif %}
+  </div>
+  {% if entitlements %}
+    <table class="table" style="margin-top: 12px;">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>License Type</th>
+          <th>Purchased</th>
+          <th>Assigned</th>
+          <th>Renewal Date</th>
+          <th>True-Up Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in entitlements %}
+          <tr>
+            <td>{{ row.entitlement_name }}</td>
+            <td>{{ row.license_type|default:"-" }}</td>
+            <td>{{ row.purchased_units }}</td>
+            <td>{{ row.assigned_units }}</td>
+            <td>{{ row.renewal_date|date:"Y-m-d"|default:"-" }}</td>
+            <td>{{ row.true_up_date|date:"Y-m-d"|default:"-" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-muted" style="margin-top: 12px;">No entitlements recorded.</p>
+  {% endif %}
+</section>
+
+<section class="card offering-tab-panel" data-tab="contacts">
+  <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+    <h2 style="margin-top: 0; margin-bottom: 0;">Contacts</h2>
+    {% if can_manage_contacts %}
+      <button type="button" class="btn btn-primary" onclick="openOfferingDrawer('drawerContacts')">Add in Drawer</button>
+    {% endif %}
+  </div>
+  {% if contacts %}
+    <table class="table" style="margin-top: 12px;">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Role</th>
+          <th>Email</th>
+          <th>Phone</th>
+          <th>Primary</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in contacts %}
+          <tr>
+            <td>{{ row.full_name }}</td>
+            <td>{{ row.role|default:"-" }}</td>
+            <td>{{ row.email|default:"-" }}</td>
+            <td>{{ row.phone|default:"-" }}</td>
+            <td>{% if row.is_primary %}Yes{% else %}No{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-muted" style="margin-top: 12px;">No contacts recorded.</p>
+  {% endif %}
+</section>
+
+<section class="card offering-tab-panel" data-tab="contracts">
+  <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+    <h2 style="margin-top: 0; margin-bottom: 0;">Contracts</h2>
+    {% if contracts_visible and can_manage_contracts %}
+      <button type="button" class="btn btn-primary" onclick="openOfferingDrawer('drawerContracts')">Add in Drawer</button>
+    {% endif %}
+  </div>
+  {% if contracts_visible %}
+    {% if contracts %}
+      <table class="table" style="margin-top: 12px;">
+        <thead>
+          <tr>
+            <th>Contract ID</th>
+            <th>Number</th>
+            <th>Status</th>
+            <th>Annual Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in contracts %}
+            <tr>
+              <td>{{ row.contract_id }}</td>
+              <td>{{ row.contract_number|default:"-" }}</td>
+              <td>{{ row.contract_status }}</td>
+              <td>{{ row.annual_value_display|default:"-" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="text-muted" style="margin-top: 12px;">No contracts linked to this offering.</p>
+    {% endif %}
+  {% else %}
+    <p class="text-muted" style="margin-top: 12px;">Contracts are restricted for your current role/scope.</p>
+  {% endif %}
+</section>
+
+<section class="card offering-tab-panel" data-tab="data-flows">
+  <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+    <h2 style="margin-top: 0; margin-bottom: 0;">Data Flows</h2>
+    {% if can_manage_data_flows %}
+      <button type="button" class="btn btn-primary" onclick="openOfferingDrawer('drawerDataFlows')">Add in Drawer</button>
+    {% endif %}
+  </div>
+  {% if data_flows %}
+    <table class="table" style="margin-top: 12px;">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Source</th>
+          <th>Target</th>
+          <th>Direction</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in data_flows %}
+          <tr>
+            <td>{{ row.flow_name }}</td>
+            <td>{{ row.source_system }}</td>
+            <td>{{ row.target_system }}</td>
+            <td>{{ row.direction }}</td>
+            <td>{{ row.status }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-muted" style="margin-top: 12px;">No data flows defined.</p>
+  {% endif %}
+</section>
+
+<section class="card offering-tab-panel" data-tab="tickets">
+  <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+    <h2 style="margin-top: 0; margin-bottom: 0;">Service Tickets</h2>
+    {% if can_manage_service_tickets %}
+      <button type="button" class="btn btn-primary" onclick="openOfferingDrawer('drawerServiceTickets')">Add in Drawer</button>
+    {% endif %}
+  </div>
+  {% if service_tickets %}
+    <table class="table" style="margin-top: 12px;">
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Status</th>
+          <th>Priority</th>
+          <th>System</th>
+          <th>External ID</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in service_tickets %}
+          <tr>
+            <td>{{ row.title }}</td>
+            <td>{{ row.status }}</td>
+            <td>{{ row.priority }}</td>
+            <td>{{ row.ticket_system|default:"-" }}</td>
+            <td>{{ row.external_ticket_id|default:"-" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-muted" style="margin-top: 12px;">No service tickets tracked.</p>
+  {% endif %}
+</section>
+
+<section class="card offering-tab-panel" data-tab="documents">
+  <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+    <h2 style="margin-top: 0; margin-bottom: 0;">Documents</h2>
+    {% if can_manage_documents %}
+      <button type="button" class="btn btn-primary" onclick="openOfferingDrawer('drawerDocuments')">Add in Drawer</button>
+    {% endif %}
+  </div>
+  {% if documents %}
+    <table class="table" style="margin-top: 12px;">
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Type</th>
+          <th>Owner</th>
+          <th>Link</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in documents %}
+          <tr>
+            <td>{{ row.doc_title }}</td>
+            <td>{{ row.doc_type|default:"-" }}</td>
+            <td>{{ row.owner_principal|default:"-" }}</td>
+            <td><a href="{{ row.doc_url }}" target="_blank" rel="noopener">Open</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-muted" style="margin-top: 12px;">No documents attached.</p>
+  {% endif %}
+</section>
+
+<div id="offeringDrawerBackdrop" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:1500;" onclick="closeOfferingDrawer()"></div>
+
+{% if can_manage_program_profile %}
+<aside id="drawerProgramProfile" class="offering-drawer" style="position:fixed; top:0; right:-460px; width:460px; max-width:calc(100vw - 20px); height:100vh; background:#fff; box-shadow:-8px 0 24px rgba(0,0,0,0.15); z-index:1600; transition:right .25s ease; display:flex; flex-direction:column;">
+  <div style="padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:start; gap:12px;">
+    <div>
+      <h3 style="margin:0;">Update Program Profile</h3>
+      <p class="text-muted" style="margin:4px 0 0 0; font-size:12px;">{{ offering.offering_name }} • {{ offering.offering_id }}</p>
+    </div>
+    <button type="button" onclick="closeOfferingDrawer()" style="border:1px solid var(--border); background:#fff; border-radius:6px; padding:6px 10px; cursor:pointer;">✕</button>
+  </div>
+  <form method="post" action="/offerings/{{ offering.offering_id }}/program-profile/update" style="padding:16px 20px; overflow-y:auto; flex:1;">
+    {% csrf_token %}
+    <div class="form-group"><label>Internal Owner</label><input type="text" name="internal_owner" value="{{ program_profile.internal_owner|default:'' }}"></div>
+    <div class="form-group"><label>Vendor Success Manager</label><input type="text" name="vendor_success_manager" value="{{ program_profile.vendor_success_manager|default:'' }}"></div>
+    <div class="form-group"><label>SLA Target %</label><input type="text" name="sla_target_pct" value="{{ program_profile.sla_target_pct|default:'' }}"></div>
+    <div class="form-group"><label>RTO Hours</label><input type="number" name="rto_hours" value="{{ program_profile.rto_hours|default:'' }}"></div>
+    <div class="form-group"><label>Data Residency</label><input type="text" name="data_residency" value="{{ program_profile.data_residency|default:'' }}"></div>
+    <div class="form-group"><label>Compliance Tags</label><input type="text" name="compliance_tags" value="{{ program_profile.compliance_tags|default:'' }}"></div>
+    <div class="form-group"><label>Budget Annual</label><input type="text" name="budget_annual" value="{{ program_profile.budget_annual|default:'' }}"></div>
+    <div class="form-group"><label>Roadmap Notes</label><input type="text" name="roadmap_notes" value="{{ program_profile.roadmap_notes|default:'' }}"></div>
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <button type="submit" class="btn btn-primary">Save</button>
+      <button type="button" class="btn btn-secondary" onclick="closeOfferingDrawer()">Cancel</button>
+    </div>
+  </form>
+</aside>
+{% endif %}
+
+{% if can_manage_entitlements %}
+<aside id="drawerEntitlements" class="offering-drawer" style="position:fixed; top:0; right:-460px; width:460px; max-width:calc(100vw - 20px); height:100vh; background:#fff; box-shadow:-8px 0 24px rgba(0,0,0,0.15); z-index:1600; transition:right .25s ease; display:flex; flex-direction:column;">
+  <div style="padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:start; gap:12px;">
+    <h3 style="margin:0;">Add Entitlement</h3>
+    <button type="button" onclick="closeOfferingDrawer()" style="border:1px solid var(--border); background:#fff; border-radius:6px; padding:6px 10px; cursor:pointer;">✕</button>
+  </div>
+  <form method="post" action="/offerings/{{ offering.offering_id }}/entitlements/new" style="padding:16px 20px; overflow-y:auto; flex:1;">
+    {% csrf_token %}
+    <div class="form-group"><label>Name</label><input type="text" name="entitlement_name" required></div>
+    <div class="form-group"><label>License Type</label><input type="text" name="license_type"></div>
+    <div class="form-group"><label>Purchased</label><input type="number" name="purchased_units" value="0" min="0"></div>
+    <div class="form-group"><label>Assigned</label><input type="number" name="assigned_units" value="0" min="0"></div>
+    <div class="form-group"><label>Renewal Date</label><input type="date" name="renewal_date"></div>
+    <div class="form-group"><label>True-Up Date</label><input type="date" name="true_up_date"></div>
+    <div class="form-group"><label>Notes</label><input type="text" name="notes"></div>
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <button type="submit" class="btn btn-primary">Save</button>
+      <button type="button" class="btn btn-secondary" onclick="closeOfferingDrawer()">Cancel</button>
+    </div>
+  </form>
+</aside>
+{% endif %}
+
+{% if can_manage_contacts %}
+<aside id="drawerContacts" class="offering-drawer" style="position:fixed; top:0; right:-460px; width:460px; max-width:calc(100vw - 20px); height:100vh; background:#fff; box-shadow:-8px 0 24px rgba(0,0,0,0.15); z-index:1600; transition:right .25s ease; display:flex; flex-direction:column;">
+  <div style="padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:start; gap:12px;">
+    <h3 style="margin:0;">Add Contact</h3>
+    <button type="button" onclick="closeOfferingDrawer()" style="border:1px solid var(--border); background:#fff; border-radius:6px; padding:6px 10px; cursor:pointer;">✕</button>
+  </div>
+  <form method="post" action="/offerings/{{ offering.offering_id }}/contacts/new" style="padding:16px 20px; overflow-y:auto; flex:1;">
+    {% csrf_token %}
+    <div class="form-group">
+      <label>Contact Source</label>
+      <select id="offering_contact_source" name="contact_source">
+        <option value="internal">Internal (Active Org User)</option>
+        <option value="external">External (Vendor Contact)</option>
+      </select>
+    </div>
+    <div id="offering_contact_internal_section" style="margin-top: 8px;">
+      <div class="form-group">
+        <label>Internal User</label>
+        <input id="offering_internal_user_lookup" type="text" placeholder="Search active user by name or email" autocomplete="off">
+        <input id="offering_internal_user_principal" type="hidden" name="internal_user_principal">
+        <div id="offering_internal_user_results" class="typeahead-results hidden"></div>
+      </div>
+      <div class="form-group">
+        <label>Org Role</label>
+        <select name="internal_contact_role">
+          <option value="Business Owner">Business Owner</option>
+          <option value="SME">SME</option>
+          <option value="Technical Lead">Technical Lead</option>
+        </select>
+      </div>
+    </div>
+    <div id="offering_contact_external_section" style="display:none; margin-top: 8px;">
+      <div class="form-group">
+        <label>Existing External Contact (optional)</label>
+        <input id="offering_external_contact_lookup" type="text" placeholder="Search existing contact by name or email" autocomplete="off">
+        <input id="offering_external_contact_id" type="hidden" name="external_contact_id">
+        <div id="offering_external_contact_results" class="typeahead-results hidden"></div>
+      </div>
+    </div>
+    <div class="form-group"><label>Name</label><input id="offering_contact_full_name" type="text" name="full_name"></div>
+    <div class="form-group"><label>Role</label><input type="text" name="role"></div>
+    <div class="form-group"><label>Email</label><input id="offering_contact_email" type="text" name="email"></div>
+    <div class="form-group"><label>Phone</label><input type="text" name="phone"></div>
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <button type="submit" class="btn btn-primary">Save</button>
+      <button type="button" class="btn btn-secondary" onclick="closeOfferingDrawer()">Cancel</button>
+    </div>
+  </form>
+</aside>
+{% endif %}
+
+{% if contracts_visible and can_manage_contracts %}
+<aside id="drawerContracts" class="offering-drawer" style="position:fixed; top:0; right:-460px; width:460px; max-width:calc(100vw - 20px); height:100vh; background:#fff; box-shadow:-8px 0 24px rgba(0,0,0,0.15); z-index:1600; transition:right .25s ease; display:flex; flex-direction:column;">
+  <div style="padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:start; gap:12px;">
+    <h3 style="margin:0;">Add Contract</h3>
+    <button type="button" onclick="closeOfferingDrawer()" style="border:1px solid var(--border); background:#fff; border-radius:6px; padding:6px 10px; cursor:pointer;">✕</button>
+  </div>
+  <form method="post" action="/offerings/{{ offering.offering_id }}/contracts/new" style="padding:16px 20px; overflow-y:auto; flex:1;">
+    {% csrf_token %}
+    <div class="form-group"><label>Contract ID</label><input type="text" name="contract_id" required></div>
+    <div class="form-group"><label>Number</label><input type="text" name="contract_number"></div>
+    <div class="form-group">
+      <label>Status</label>
+      <select name="contract_status">
+        <option value="draft">Draft</option>
+        <option value="active">Active</option>
+        <option value="pending">Pending</option>
+        <option value="expired">Expired</option>
+        <option value="terminated">Terminated</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Annual Value</label><input type="text" name="annual_value"></div>
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <button type="submit" class="btn btn-primary">Save</button>
+      <button type="button" class="btn btn-secondary" onclick="closeOfferingDrawer()">Cancel</button>
+    </div>
+  </form>
+</aside>
+{% endif %}
+
+{% if can_manage_data_flows %}
+<aside id="drawerDataFlows" class="offering-drawer" style="position:fixed; top:0; right:-460px; width:460px; max-width:calc(100vw - 20px); height:100vh; background:#fff; box-shadow:-8px 0 24px rgba(0,0,0,0.15); z-index:1600; transition:right .25s ease; display:flex; flex-direction:column;">
+  <div style="padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:start; gap:12px;">
+    <h3 style="margin:0;">Add Data Flow</h3>
+    <button type="button" onclick="closeOfferingDrawer()" style="border:1px solid var(--border); background:#fff; border-radius:6px; padding:6px 10px; cursor:pointer;">✕</button>
+  </div>
+  <form method="post" action="/offerings/{{ offering.offering_id }}/data-flows/new" style="padding:16px 20px; overflow-y:auto; flex:1;">
+    {% csrf_token %}
+    <div class="form-group"><label>Name</label><input type="text" name="flow_name" required></div>
+    <div class="form-group"><label>Source</label><input type="text" name="source_system" required></div>
+    <div class="form-group"><label>Target</label><input type="text" name="target_system" required></div>
+    <div class="form-group">
+      <label>Direction</label>
+      <select name="direction">
+        <option value="bidirectional">Bidirectional</option>
+        <option value="inbound">Inbound</option>
+        <option value="outbound">Outbound</option>
+      </select>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <button type="submit" class="btn btn-primary">Save</button>
+      <button type="button" class="btn btn-secondary" onclick="closeOfferingDrawer()">Cancel</button>
+    </div>
+  </form>
+</aside>
+{% endif %}
+
+{% if can_manage_service_tickets %}
+<aside id="drawerServiceTickets" class="offering-drawer" style="position:fixed; top:0; right:-460px; width:460px; max-width:calc(100vw - 20px); height:100vh; background:#fff; box-shadow:-8px 0 24px rgba(0,0,0,0.15); z-index:1600; transition:right .25s ease; display:flex; flex-direction:column;">
+  <div style="padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:start; gap:12px;">
+    <h3 style="margin:0;">Add Service Ticket</h3>
+    <button type="button" onclick="closeOfferingDrawer()" style="border:1px solid var(--border); background:#fff; border-radius:6px; padding:6px 10px; cursor:pointer;">✕</button>
+  </div>
+  <form method="post" action="/offerings/{{ offering.offering_id }}/service-tickets/new" style="padding:16px 20px; overflow-y:auto; flex:1;">
+    {% csrf_token %}
+    <div class="form-group"><label>Title</label><input type="text" name="title" required></div>
+    <div class="form-group">
+      <label>Status</label>
+      <select name="status">
+        <option value="open">Open</option>
+        <option value="in_progress">In Progress</option>
+        <option value="closed">Closed</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Priority</label>
+      <select name="priority">
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+        <option value="high">High</option>
+        <option value="critical">Critical</option>
+      </select>
+    </div>
+    <div class="form-group"><label>System</label><input type="text" name="ticket_system"></div>
+    <div class="form-group"><label>External ID</label><input type="text" name="external_ticket_id"></div>
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <button type="submit" class="btn btn-primary">Save</button>
+      <button type="button" class="btn btn-secondary" onclick="closeOfferingDrawer()">Cancel</button>
+    </div>
+  </form>
+</aside>
+{% endif %}
+
+{% if can_manage_documents %}
+<aside id="drawerDocuments" class="offering-drawer" style="position:fixed; top:0; right:-460px; width:460px; max-width:calc(100vw - 20px); height:100vh; background:#fff; box-shadow:-8px 0 24px rgba(0,0,0,0.15); z-index:1600; transition:right .25s ease; display:flex; flex-direction:column;">
+  <div style="padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:start; gap:12px;">
+    <h3 style="margin:0;">Add Document</h3>
+    <button type="button" onclick="closeOfferingDrawer()" style="border:1px solid var(--border); background:#fff; border-radius:6px; padding:6px 10px; cursor:pointer;">✕</button>
+  </div>
+  <form method="post" action="/offerings/{{ offering.offering_id }}/documents/new" style="padding:16px 20px; overflow-y:auto; flex:1;">
+    {% csrf_token %}
+    <div class="form-group"><label>Title</label><input type="text" name="doc_title" required></div>
+    <div class="form-group"><label>URL</label><input type="text" name="doc_url" required></div>
+    <div class="form-group"><label>Type</label><input type="text" name="doc_type"></div>
+    <div class="form-group"><label>Owner</label><input type="text" name="owner_principal"></div>
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <button type="submit" class="btn btn-primary">Save</button>
+      <button type="button" class="btn btn-secondary" onclick="closeOfferingDrawer()">Cancel</button>
+    </div>
+  </form>
+</aside>
+{% endif %}
+
+<script>
+  function selectOfferingTab(tabKey) {
+    const tabButtons = document.querySelectorAll('.offering-tab-button');
+    const tabPanels = document.querySelectorAll('.offering-tab-panel');
+
+    tabButtons.forEach((button) => {
+      if (button.dataset.tab === tabKey) {
+        button.classList.add('active');
+      } else {
+        button.classList.remove('active');
+      }
+    });
+
+    tabPanels.forEach((panel) => {
+      if (panel.dataset.tab === tabKey) {
+        panel.classList.add('active');
+      } else {
+        panel.classList.remove('active');
+      }
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const defaultTab = 'overview';
+    selectOfferingTab(defaultTab);
+
+    const sourceSelect = document.getElementById('offering_contact_source');
+    const internalSection = document.getElementById('offering_contact_internal_section');
+    const externalSection = document.getElementById('offering_contact_external_section');
+    const internalLookup = document.getElementById('offering_internal_user_lookup');
+    const internalPrincipalInput = document.getElementById('offering_internal_user_principal');
+    const internalResults = document.getElementById('offering_internal_user_results');
+    const externalLookup = document.getElementById('offering_external_contact_lookup');
+    const externalIdInput = document.getElementById('offering_external_contact_id');
+    const externalResults = document.getElementById('offering_external_contact_results');
+
+    function renderContactTypeahead(container, items, onSelect) {
+      if (!container) {
+        return;
+      }
+      container.innerHTML = '';
+      if (!items.length) {
+        container.classList.add('hidden');
+        return;
+      }
+      items.forEach((item) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.style.display = 'block';
+        button.style.width = '100%';
+        button.style.textAlign = 'left';
+        button.style.padding = '8px 10px';
+        button.style.border = 'none';
+        button.style.background = 'transparent';
+        button.style.cursor = 'pointer';
+        button.innerHTML = `<strong>${item.label || item.id}</strong><br><small class="text-muted">${item.subtitle || ''}</small>`;
+        button.addEventListener('click', () => {
+          onSelect(item);
+          container.classList.add('hidden');
+          container.innerHTML = '';
+        });
+        container.appendChild(button);
+      });
+      container.classList.remove('hidden');
+    }
+
+    function syncContactSourceState() {
+      const source = (sourceSelect && sourceSelect.value) || 'internal';
+      if (internalSection && externalSection) {
+        internalSection.style.display = source === 'internal' ? 'block' : 'none';
+        externalSection.style.display = source === 'external' ? 'block' : 'none';
+      }
+      if (source === 'internal' && externalIdInput) {
+        externalIdInput.value = '';
+      }
+      if (source === 'external' && internalPrincipalInput) {
+        internalPrincipalInput.value = '';
+      }
+    }
+
+    if (sourceSelect) {
+      sourceSelect.addEventListener('change', syncContactSourceState);
+      syncContactSourceState();
+    }
+
+    if (internalLookup) {
+      internalLookup.addEventListener('input', function() {
+        const query = this.value.trim();
+        if (!query || query.length < 2) {
+          if (internalResults) {
+            internalResults.classList.add('hidden');
+            internalResults.innerHTML = '';
+          }
+          return;
+        }
+        fetch(`/api/v1/search/users?q=${encodeURIComponent(query)}&limit=8`)
+          .then((response) => response.json())
+          .then((payload) => {
+            const items = Array.isArray(payload.items) ? payload.items : [];
+            renderContactTypeahead(internalResults, items, (item) => {
+              internalLookup.value = item.label || item.id;
+              if (internalPrincipalInput) {
+                internalPrincipalInput.value = item.id || '';
+              }
+              const nameInput = document.getElementById('offering_contact_full_name');
+              const emailInput = document.getElementById('offering_contact_email');
+              if (nameInput && !nameInput.value) {
+                nameInput.value = item.label || '';
+              }
+              if (emailInput && !emailInput.value) {
+                emailInput.value = item.subtitle || item.id || '';
+              }
+            });
+          })
+          .catch(() => {
+            if (internalResults) {
+              internalResults.classList.add('hidden');
+              internalResults.innerHTML = '';
+            }
+          });
+      });
+    }
+
+    if (externalLookup) {
+      externalLookup.addEventListener('input', function() {
+        const query = this.value.trim();
+        if (!query || query.length < 2) {
+          if (externalResults) {
+            externalResults.classList.add('hidden');
+            externalResults.innerHTML = '';
+          }
+          return;
+        }
+        fetch(`/api/v1/search/contacts?q=${encodeURIComponent(query)}&limit=8`)
+          .then((response) => response.json())
+          .then((payload) => {
+            const items = Array.isArray(payload.items) ? payload.items : [];
+            renderContactTypeahead(externalResults, items, (item) => {
+              externalLookup.value = item.label || item.id;
+              if (externalIdInput) {
+                externalIdInput.value = item.id || '';
+              }
+              const nameInput = document.getElementById('offering_contact_full_name');
+              const emailInput = document.getElementById('offering_contact_email');
+              if (nameInput && !nameInput.value) {
+                nameInput.value = item.label || '';
+              }
+              if (emailInput && !emailInput.value) {
+                emailInput.value = item.email || '';
+              }
+            });
+          })
+          .catch(() => {
+            if (externalResults) {
+              externalResults.classList.add('hidden');
+              externalResults.innerHTML = '';
+            }
+          });
+      });
+    }
+  });
+
+  function openOfferingDrawer(drawerId) {
+    const backdrop = document.getElementById('offeringDrawerBackdrop');
+    const drawers = document.querySelectorAll('.offering-drawer');
+    drawers.forEach((drawer) => {
+      drawer.style.right = '-460px';
+    });
+    const activeDrawer = document.getElementById(drawerId);
+    if (!activeDrawer || !backdrop) {
+      return;
+    }
+    backdrop.style.display = 'block';
+    activeDrawer.style.right = '0';
+  }
+
+  function closeOfferingDrawer() {
+    const backdrop = document.getElementById('offeringDrawerBackdrop');
+    const drawers = document.querySelectorAll('.offering-drawer');
+    drawers.forEach((drawer) => {
+      drawer.style.right = '-460px';
+    });
+    if (backdrop) {
+      backdrop.style.display = 'none';
+    }
+  }
+</script>
+
+<p style="margin-top: 16px;"><a href="/offerings">Back to offerings</a></p>
+{% endblock %}

@@ -1,4 +1,0 @@
--- Deprecated compatibility stub.
--- Canonical local DB SQL now lives under setup/local_db/sql/.
--- Schema: setup/local_db/sql/schema/001_schema.sql
--- Seed: setup/local_db/sql/seed/001_seed_reference_data.sql

@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block title %}{% if vendor %}Edit Vendor{% else %}Add Vendor{% endif %} - VendorCatalog{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>{% if vendor %}Edit Vendor{% else %}Add New Vendor{% endif %}</h1>
+      <p class="text-muted">{% if vendor %}Update vendor information{% else %}Create a new vendor record{% endif %}</p>
+    </div>
+    <a href="{% if vendor %}/vendor-360/{{ vendor.vendor_id }}{% else %}/vendor-360{% endif %}" class="btn btn-secondary">
+      ← Back
+    </a>
+  </div>
+
+  <div class="card">
+    {% if messages %}
+      {% for message in messages %}
+        <div class="alert alert-{% if message.tags %}{{ message.tags }}{% else %}info{% endif %}">
+          {{ message }}
+        </div>
+      {% endfor %}
+    {% endif %}
+
+    {% if form_errors %}
+      <div class="alert alert-danger">
+        <strong>Please fix the following errors:</strong>
+        <ul style="margin: 8px 0 0 20px;">
+          {% for field, errors in form_errors.items %}
+            {% for error in errors %}
+              <li>{{ field }}: {{ error }}</li>
+            {% endfor %}
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    <form method="post">
+      {% csrf_token %}
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="vendor_id">Vendor ID *</label>
+          <input 
+            type="text" 
+            id="vendor_id" 
+            name="vendor_id" 
+            value="{{ vendor.vendor_id|default:'' }}"
+            {% if vendor %}disabled{% endif %}
+            placeholder="e.g., ACME-001"
+            required>
+          <small class="text-muted">{% if vendor %}Cannot be changed{% else %}Unique identifier for this vendor{% endif %}</small>
+        </div>
+
+        <div class="form-group">
+          <label for="owner_org_id">Owner Organization ID *</label>
+          <input 
+            type="text" 
+            id="owner_org_id" 
+            name="owner_org_id" 
+            value="{{ vendor.owner_org_id|default:'' }}" 
+            placeholder="Internal org identifier"
+            required>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="legal_name">Legal Name *</label>
+          <input 
+            type="text" 
+            id="legal_name" 
+            name="legal_name" 
+            value="{{ vendor.legal_name|default:'' }}" 
+            placeholder="Official company name"
+            required>
+        </div>
+
+        <div class="form-group">
+          <label for="display_name">Display Name *</label>
+          <input 
+            type="text" 
+            id="display_name" 
+            name="display_name" 
+            value="{{ vendor.display_name|default:'' }}" 
+            placeholder="Short name for UI display"
+            required>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="lifecycle_state">Status *</label>
+          <select id="lifecycle_state" name="lifecycle_state" required>
+            <option value="">-- Select Status --</option>
+            <option value="prospect" {% if vendor.lifecycle_state == 'prospect' %}selected{% endif %}>Prospect</option>
+            <option value="active" {% if vendor.lifecycle_state == 'active' %}selected{% endif %}>Active</option>
+            <option value="inactive" {% if vendor.lifecycle_state == 'inactive' %}selected{% endif %}>Inactive</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="risk_tier">Risk Tier *</label>
+          <select id="risk_tier" name="risk_tier" required>
+            <option value="">-- Select Risk Tier --</option>
+            <option value="low" {% if vendor.risk_tier == 'low' %}selected{% endif %}>Low</option>
+            <option value="medium" {% if vendor.risk_tier == 'medium' %}selected{% endif %}>Medium</option>
+            <option value="high" {% if vendor.risk_tier == 'high' %}selected{% endif %}>High</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">
+          {% if vendor %}✓ Update Vendor{% else %}+ Create Vendor{% endif %}
+        </button>
+        <a href="{% if vendor %}/vendor-360/{{ vendor.vendor_id }}{% else %}/vendor-360{% endif %}" class="btn btn-secondary">
+          Cancel
+        </a>
+      </div>
+    </form>
+  </div>
+{% endblock %}

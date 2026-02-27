@@ -82,6 +82,10 @@ REQUIRED_TABLES = {
     "app_offering_data_flow",
     "app_offering_ticket",
     "app_offering_invoice",
+    "app_import_mapping_profile",
+    "app_import_mapping_profile_request",
+    "app_import_review_area_state",
+    "app_import_stage_vendor_identifier",
     "app_document_link",
 }
 
@@ -142,6 +146,9 @@ REQUIRED_FOREIGN_KEYS: dict[str, set[str]] = {
     "app_offering_data_flow": {"core_vendor", "core_vendor_offering"},
     "app_offering_ticket": {"core_vendor", "core_vendor_offering"},
     "app_offering_invoice": {"core_vendor", "core_vendor_offering"},
+    "app_import_stage_vendor_identifier": {"app_import_job"},
+    "app_import_mapping_profile_request": {"app_import_job", "app_import_mapping_profile"},
+    "app_import_review_area_state": {"app_import_job"},
 }
 
 REQUIRED_UNIQUE_GROUPS: dict[str, set[tuple[str, ...]]] = {
@@ -167,6 +174,7 @@ REQUIRED_UNIQUE_GROUPS: dict[str, set[tuple[str, ...]]] = {
     "app_project_offering_map": {("project_id", "offering_id", "active_flag")},
     "app_offering_data_flow": {("offering_id", "flow_name", "direction", "active_flag")},
     "app_document_link": {("entity_type", "entity_id", "doc_url", "active_flag")},
+    "app_import_review_area_state": {("import_job_id", "area_key")},
 }
 
 REQUIRED_VIEWS = {

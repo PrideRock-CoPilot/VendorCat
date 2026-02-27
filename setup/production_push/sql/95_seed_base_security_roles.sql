@@ -110,6 +110,8 @@ action_seed AS (
   UNION ALL SELECT 'record_contract_cancellation', 9
   UNION ALL SELECT 'grant_role', 9
   UNION ALL SELECT 'grant_scope', 9
+  UNION ALL SELECT 'manage_import_mapping_profile', 9
+  UNION ALL SELECT 'merge_vendor_records', 9
 )
 SELECT
   r.role_code,

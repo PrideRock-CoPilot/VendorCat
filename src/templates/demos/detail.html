@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ demo.demo_name }} - Demo{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-lg-8">
+            <h1>{{ demo.demo_name }}</h1>
+            <p class="text-muted">Demo ID: <code>{{ demo.demo_id }}</code></p>
+        </div>
+        <div class="col-lg-4 text-end">
+            <a href="{% url 'demos-index' %}" class="btn btn-secondary">Back to Demos</a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">Details</h5>
+                    <table class="table table-bordered">
+                        <tr>
+                            <td class="fw-bold">Demo ID</td>
+                            <td>{{ demo.demo_id }}</td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold">Demo Name</td>
+                            <td>{{ demo.demo_name }}</td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold">Type</td>
+                            <td>
+                                <span class="badge bg-info">{{ demo.demo_type }}</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold">Outcome</td>
+                            <td>
+                                {% if demo.demo_outcome == "selected" %}
+                                    <span class="badge bg-success">{{ demo.demo_outcome }}</span>
+                                {% elif demo.demo_outcome == "not_selected" %}
+                                    <span class="badge bg-danger">{{ demo.demo_outcome }}</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ demo.demo_outcome }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold">Status</td>
+                            <td>
+                                {% if demo.lifecycle_state == "active" %}
+                                    <span class="badge bg-success">{{ demo.lifecycle_state }}</span>
+                                {% elif demo.lifecycle_state == "draft" %}
+                                    <span class="badge bg-warning">{{ demo.lifecycle_state }}</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ demo.lifecycle_state }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold">Project ID</td>
+                            <td>
+                                {% if demo.project_id %}
+                                    <a href="/projects">{{ demo.project_id }}</a>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

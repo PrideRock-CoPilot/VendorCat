@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Vendor Identifiers - {{ vendor.vendor_id }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <!-- Header Section -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h1>Vendor Identifiers</h1>
+            <p class="text-muted">Managing business identifiers for <strong>{{ vendor.vendor_id }}</strong> - {{ vendor.display_name }}</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{% url 'vendor_identifier_create' vendor.vendor_id %}" class="btn btn-primary">
+                <i class="bi bi-plus-circle"></i> Add New Identifier
+            </a>
+            <a href="{% url 'vendors-detail' vendor.vendor_id %}" class="btn btn-secondary">
+                Back to Vendor
+            </a>
+        </div>
+    </div>
+
+    <!-- Alert Messages -->
+    {% if messages %}
+    <div class="row">
+        <div class="col-12">
+            {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Identifiers List -->
+    <div class="row">
+        <div class="col-12">
+            {% if identifiers %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Type</th>
+                            <th>Value</th>
+                            <th>Country</th>
+                            <th>Verified</th>
+                            <th>Verified By</th>
+                            <th>Primary</th>
+                            <th>Notes</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for identifier in identifiers %}
+                        <tr>
+                            <td>
+                                <span class="badge bg-info">{{ identifier.get_identifier_type_display }}</span>
+                                {% if identifier.is_primary %}
+                                <span class="badge bg-success ms-2">Primary</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <code class="bg-light p-2 rounded">{{ identifier.identifier_value }}</code>
+                            </td>
+                            <td>
+                                {% if identifier.country_code %}
+                                <span class="badge bg-secondary">{{ identifier.country_code }}</span>
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if identifier.is_verified %}
+                                <span class="badge bg-success">
+                                    <i class="bi bi-check-circle"></i> Verified
+                                </span>
+                                {% else %}
+                                <span class="badge bg-secondary">Unverified</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if identifier.verified_by %}
+                                <small class="text-muted">{{ identifier.verified_by }}</small>
+                                {% if identifier.verified_at %}
+                                <br><small class="text-muted">{{ identifier.verified_at|date:"M d, Y" }}</small>
+                                {% endif %}
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <input type="checkbox" class="form-check-input" {% if identifier.is_primary %}checked{% endif %} disabled>
+                            </td>
+                            <td>
+                                {% if identifier.notes %}
+                                <small class="text-muted" title="{{ identifier.notes }}">{{ identifier.notes|truncatewords:5 }}</small>
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <a href="{% url 'vendor_identifier_edit' vendor.vendor_id identifier.id %}" class="btn btn-outline-primary" title="Edit">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    <a href="{% url 'vendor_identifier_delete' vendor.vendor_id identifier.id %}" class="btn btn-outline-danger" title="Delete" onclick="return confirm('Are you sure?')">
+                                        <i class="bi bi-trash"></i>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="alert alert-info" role="alert">
+                <i class="bi bi-info-circle"></i> No identifiers found for this vendor.
+                <a href="{% url 'vendor_identifier_create' vendor.vendor_id %}" class="alert-link">Add one now</a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Summary Card -->
+    {% if identifiers %}
+    <div class="row mt-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Total Identifiers</h5>
+                    <p class="card-text display-6">{{ identifiers|length }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Verified</h5>
+                    <p class="card-text display-6">{{ verified_count }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Primary ID</h5>
+                    <p class="card-text small">
+                        {% if primary_identifier %}
+                        {{ primary_identifier.identifier_type }}<br>
+                        <code>{{ primary_identifier.identifier_value }}</code>
+                        {% else %}
+                        <span class="text-muted">Not set</span>
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Unverified</h5>
+                    <p class="card-text display-6">{{ unverified_count }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.badge {
+    font-weight: 500;
+    padding: 0.4rem 0.6rem;
+}
+
+code {
+    font-size: 0.875rem;
+    color: #d63384;
+}
+</style>
+{% endblock %}

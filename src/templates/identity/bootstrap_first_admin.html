@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card">
+  <h1>Bootstrap First Admin</h1>
+  <p class="muted">Current user: {{ user_principal }}</p>
+  <form method="post">
+    {% csrf_token %}
+    <button type="submit">Grant vendor_admin to current user</button>
+  </form>
+  {% if message %}
+    <p class="muted">{{ message }}</p>
+  {% endif %}
+</section>
+{% endblock %}

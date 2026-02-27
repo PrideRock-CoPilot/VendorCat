@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Help Center</h1>
+<p class="text-muted">Find answers and articles to help you get started</p>
+
+<div class="card" style="margin-bottom: 16px;">
+  <form method="get" action="/help" style="display: flex; gap: 12px; align-items: flex-end;">
+    <div style="flex: 1;">
+      <label style="margin-bottom: 4px;">Search</label>
+      <input type="text" name="q" value="{{ query|default:'' }}" placeholder="Search help articles...">
+    </div>
+    <button type="submit" class="btn btn-primary">Search</button>
+  </form>
+</div>
+
+<div class="card">
+  {% if items %}
+  <div style="display: grid; gap: 16px;">
+    {% for item in items %}
+    <div style="padding: 12px 0; border-bottom: 1px solid var(--border);">
+      <a href="/help/{{ item.slug }}" style="text-decoration: none; color: var(--dark);">
+        <h3 style="margin-bottom: 4px;">{{ item.title }}</h3>
+      </a>
+      <p class="text-muted text-small">{{ item.slug }}</p>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-icon">❓</div>
+    <h4 class="empty-title">No help articles found</h4>
+    <p class="empty-text">Try searching for different topics</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

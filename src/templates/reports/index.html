@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}Reports - VendorCatalog{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Reports</h1>
+      <p class="text-muted">View and manage system reports</p>
+    </div>
+    {% if can_run_report %}
+      <a href="/reports/new" class="btn btn-primary">
+        ➕ Run Report
+      </a>
+    {% endif %}
+  </div>
+
+  <!-- Filters & Search -->
+  <div class="card" style="margin-bottom: 16px;">
+    <form method="get" style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 12px; align-items: end;">
+      <div>
+        <label style="margin-bottom: 4px;">Search</label>
+        <input type="text" name="q" placeholder="Report ID or name..." value="{{ search_query|default:'' }}">
+      </div>
+      <div>
+        <label style="margin-bottom: 4px;">Status</label>
+        <select name="status">
+          <option value="">All Status</option>
+          <option value="queued" {% if request.GET.status == 'queued' %}selected{% endif %}>Queued</option>
+          <option value="running" {% if request.GET.status == 'running' %}selected{% endif %}>Running</option>
+          <option value="completed" {% if request.GET.status == 'completed' %}selected{% endif %}>Completed</option>
+          <option value="failed" {% if request.GET.status == 'failed' %}selected{% endif %}>Failed</option>
+        </select>
+      </div>
+      <div></div>
+      <div style="display: flex; gap: 8px;">
+        <button type="submit" class="btn btn-primary">Filter</button>
+        <a href="/reports" class="btn btn-secondary">Reset</a>
+      </div>
+    </form>
+  </div>
+
+  <!-- Results -->
+  <div class="card">
+    {% if not can_read_reports %}
+      <div class="empty-state">
+        <div class="empty-icon">🔒</div>
+        <h4 class="empty-title">Reports restricted</h4>
+        <p class="empty-text">You do not currently have report read permission.</p>
+      </div>
+    {% elif items %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Report ID</th>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Triggered By</th>
+            <th>Row Count</th>
+            <th style="text-align: right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in items %}
+            <tr>
+              <td><strong>{{ item.report_run_id|truncatechars:20 }}</strong></td>
+              <td>{{ item.report_name }}</td>
+              <td>{{ item.report_type }}</td>
+              <td>
+                <span class="table-badge badge-{% if item.status == 'completed' %}success{% elif item.status == 'failed' %}danger{% elif item.status == 'running' %}info{% else %}warning{% endif %}">
+                  {{ item.status }}
+                </span>
+              </td>
+              <td>{{ item.triggered_by }}</td>
+              <td>{{ item.row_count }}</td>
+              <td style="text-align: right;">
+                <div class="table-actions">
+                  <a href="/reports/{{ item.report_run_id }}" class="btn btn-secondary btn-small">View</a>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty-state">
+        <div class="empty-icon">📭</div>
+        <h4 class="empty-title">No reports found</h4>
+        <p class="empty-text">{% if search_query %}Try adjusting your search filters{% else %}Run your first report to see results here{% endif %}</p>
+        {% if not search_query and can_run_report %}
+          <a href="/reports/new" class="btn btn-primary">Run Report</a>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+{% endblock %}

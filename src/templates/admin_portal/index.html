@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Portal{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h1>Admin Portal</h1>
+  <p class="text-muted">Current user: {{ user_principal }}</p>
+
+  {% if not can_manage_admin %}
+  <div class="card" style="margin-top: 16px;">
+    <p class="text-muted" style="margin: 0;">Admin assignments are restricted for your current role.</p>
+  </div>
+  {% else %}
+
+  <h2>User Role Assignments</h2>
+  <div class="table-responsive mb-4">
+    <table class="table table-sm table-striped">
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Role</th>
+          <th>Granted By</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in role_assignments %}
+        <tr>
+          <td>{{ row.user_principal }}</td>
+          <td>{{ row.role }}</td>
+          <td>{{ row.granted_by_principal|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="3">No user role assignments.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Group Role Assignments</h2>
+  <div class="table-responsive mb-4">
+    <table class="table table-sm table-striped">
+      <thead>
+        <tr>
+          <th>Group</th>
+          <th>Role</th>
+          <th>Granted By</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in group_role_assignments %}
+        <tr>
+          <td>{{ row.group_principal }}</td>
+          <td>{{ row.role }}</td>
+          <td>{{ row.granted_by_principal|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="3">No group role assignments.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Scope Grants</h2>
+  <div class="table-responsive">
+    <table class="table table-sm table-striped">
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Org ID</th>
+          <th>Scope</th>
+          <th>Granted By</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in scope_grants %}
+        <tr>
+          <td>{{ row.user_principal }}</td>
+          <td>{{ row.org_id }}</td>
+          <td>{{ row.scope_level }}</td>
+          <td>{{ row.granted_by_principal|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="4">No scope grants.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

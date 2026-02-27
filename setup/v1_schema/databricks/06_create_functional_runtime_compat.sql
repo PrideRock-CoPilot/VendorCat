@@ -53,6 +53,10 @@ CREATE TABLE IF NOT EXISTS core_vendor (
   source_record_id STRING,
   source_batch_id STRING,
   source_extract_ts STRING,
+  merged_into_vendor_id STRING,
+  merged_at STRING,
+  merged_by STRING,
+  merge_reason STRING,
   updated_at STRING NOT NULL,
   updated_by STRING NOT NULL
 ) USING DELTA;
@@ -490,6 +494,24 @@ CREATE TABLE IF NOT EXISTS app_offering_invoice (
   updated_by STRING NOT NULL
 ) USING DELTA;
 
+CREATE TABLE IF NOT EXISTS app_offering_payment (
+  payment_id STRING,
+  invoice_id STRING NOT NULL,
+  offering_id STRING NOT NULL,
+  vendor_id STRING NOT NULL,
+  payment_reference STRING,
+  payment_date STRING NOT NULL,
+  amount DOUBLE NOT NULL,
+  currency_code STRING NOT NULL,
+  payment_status STRING NOT NULL,
+  notes STRING,
+  active_flag INT NOT NULL DEFAULT 1,
+  created_at STRING NOT NULL,
+  created_by STRING NOT NULL,
+  updated_at STRING NOT NULL,
+  updated_by STRING NOT NULL
+) USING DELTA;
+
 CREATE TABLE IF NOT EXISTS app_document_link (
   doc_id STRING,
   entity_type STRING NOT NULL,
@@ -515,6 +537,9 @@ CREATE TABLE IF NOT EXISTS app_import_job (
   file_type STRING,
   detected_format STRING,
   parser_config_json STRING,
+  mapping_profile_id STRING,
+  mapping_request_id STRING,
+  context_json STRING,
   row_count INT NOT NULL,
   status STRING NOT NULL,
   created_count INT NOT NULL,
@@ -533,13 +558,41 @@ CREATE TABLE IF NOT EXISTS app_import_stage_row (
   import_job_id STRING NOT NULL,
   row_index INT NOT NULL,
   line_number STRING,
+  area_key STRING,
+  source_group_key STRING,
   row_payload_json STRING NOT NULL,
   suggested_action STRING,
   suggested_target_id STRING,
+  decision_action STRING,
+  decision_target_id STRING,
+  decision_payload_json STRING,
+  decision_updated_at STRING,
+  decision_updated_by STRING,
   created_at STRING NOT NULL
 ) USING DELTA;
 
+CREATE TABLE IF NOT EXISTS app_import_review_area_state (
+  import_review_area_state_id STRING,
+  import_job_id STRING NOT NULL,
+  area_key STRING NOT NULL,
+  area_order INT NOT NULL,
+  status STRING NOT NULL,
+  confirmed_at STRING,
+  confirmed_by STRING,
+  updated_at STRING NOT NULL,
+  updated_by STRING NOT NULL
+) USING DELTA;
+
 CREATE TABLE IF NOT EXISTS app_import_stage_vendor (
+  import_stage_area_row_id STRING,
+  import_job_id STRING NOT NULL,
+  row_index INT NOT NULL,
+  line_number STRING,
+  area_payload_json STRING NOT NULL,
+  created_at STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS app_import_stage_vendor_identifier (
   import_stage_area_row_id STRING,
   import_job_id STRING NOT NULL,
   row_index INT NOT NULL,
@@ -609,4 +662,62 @@ CREATE TABLE IF NOT EXISTS app_import_stage_project (
   line_number STRING,
   area_payload_json STRING NOT NULL,
   created_at STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS app_import_stage_invoice (
+  import_stage_area_row_id STRING,
+  import_job_id STRING NOT NULL,
+  row_index INT NOT NULL,
+  line_number STRING,
+  area_payload_json STRING NOT NULL,
+  created_at STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS app_import_stage_payment (
+  import_stage_area_row_id STRING,
+  import_job_id STRING NOT NULL,
+  row_index INT NOT NULL,
+  line_number STRING,
+  area_payload_json STRING NOT NULL,
+  created_at STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS app_import_mapping_profile (
+  profile_id STRING,
+  layout_key STRING NOT NULL,
+  profile_name STRING NOT NULL,
+  file_format STRING,
+  source_signature STRING,
+  source_fields_json STRING,
+  source_target_mapping_json STRING,
+  field_mapping_json STRING,
+  parser_options_json STRING,
+  active_flag BOOLEAN,
+  created_at STRING NOT NULL,
+  created_by STRING NOT NULL,
+  updated_at STRING NOT NULL,
+  updated_by STRING NOT NULL
+) USING DELTA;
+
+CREATE TABLE IF NOT EXISTS app_import_mapping_profile_request (
+  profile_request_id STRING,
+  import_job_id STRING,
+  submitted_by STRING NOT NULL,
+  layout_key STRING NOT NULL,
+  proposed_profile_name STRING,
+  file_format STRING,
+  source_system STRING,
+  source_object STRING,
+  source_signature STRING,
+  source_fields_json STRING,
+  source_target_mapping_json STRING,
+  parser_options_json STRING,
+  sample_rows_json STRING,
+  status STRING NOT NULL,
+  review_note STRING,
+  reviewed_by STRING,
+  reviewed_at STRING,
+  approved_profile_id STRING,
+  created_at STRING NOT NULL,
+  updated_at STRING NOT NULL
 ) USING DELTA;

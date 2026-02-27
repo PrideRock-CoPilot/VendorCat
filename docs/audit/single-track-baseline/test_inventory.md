@@ -1,0 +1,48 @@
+﻿# Test Inventory
+
+- Canonical test files: 39
+- Canonical collect command: `python -m pytest --collect-only -q tests_rebuild`
+- Canonical collect result: EXIT_CODE=0
+- Legacy collect command: `python -m pytest --collect-only -q tests`
+- Legacy collect result: EXIT_CODE=4
+
+## Canonical test files
+- "D:\VendorCatalog\tests_rebuild\guards\test_architecture_guards.py"
+- "D:\VendorCatalog\tests_rebuild\guards\test_rbac_contract.py"
+- "D:\VendorCatalog\tests_rebuild\test_access_review_api_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_access_ui_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_access_workflows_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_admin_rbac_phase5_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_contact_source_parity_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_contract_phase4_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_demo_phase4_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_domain_mutation_enforcement_offerings_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_domain_mutation_enforcement_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_help_center_phase6_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_identity_contract.py"
+- "D:\VendorCatalog\tests_rebuild\test_import_contracts.py"
+- "D:\VendorCatalog\tests_rebuild\test_imports_phase5_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_lob_scope_enforcement_phase5_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_merge_center_phase5_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_migration_runner.py"
+- "D:\VendorCatalog\tests_rebuild\test_observability_phase6_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_offering_detail_sections_phase5_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_offering_expansion_phase5_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_offering_operational_inline_actions_phase5_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_offering_phase4_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_offering_program_inline_actions_phase5_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_offering_program_modules_phase5_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_onboarding_workflow.py"
+- "D:\VendorCatalog\tests_rebuild\test_pending_approvals_phase5_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_perf_baseline_phase6_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_phase7_phase8_artifacts.py"
+- "D:\VendorCatalog\tests_rebuild\test_policy_and_permissions.py"
+- "D:\VendorCatalog\tests_rebuild\test_project_workflow_sections_phase5_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_rbac_enforcement.py"
+- "D:\VendorCatalog\tests_rebuild\test_reports_phase6_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_schema_validation.py"
+- "D:\VendorCatalog\tests_rebuild\test_search_typeahead_phase5_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_urls_and_pages.py"
+- "D:\VendorCatalog\tests_rebuild\test_vendor_contacts_identifiers.py"
+- "D:\VendorCatalog\tests_rebuild\test_vendor_project_phase4_rebuild.py"
+- "D:\VendorCatalog\tests_rebuild\test_workflows_phase5_rebuild.py"

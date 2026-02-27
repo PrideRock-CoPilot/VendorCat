@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card">
+  <h1>Review Access Requests</h1>
+  <p class="muted">Current user: {{ user_principal }}</p>
+
+  {% if not can_review %}
+    <p class="muted">You do not have permission to review access requests.</p>
+  {% else %}
+    <form method="post">
+      {% csrf_token %}
+      <label for="request_id">Pending request</label>
+      <select id="request_id" name="request_id">
+        {% for item in items %}
+          <option value="{{ item.access_request_id }}">#{{ item.access_request_id }} · {{ item.requested_by_principal }} · {{ item.requested_role }}</option>
+        {% endfor %}
+      </select>
+      <label for="decision">Decision</label>
+      <select id="decision" name="decision">
+        <option value="approved">approved</option>
+        <option value="rejected">rejected</option>
+      </select>
+      <label for="note">Note</label>
+      <textarea id="note" name="note"></textarea>
+      <button type="submit">Submit Review</button>
+    </form>
+  {% endif %}
+
+  {% if message %}
+    <p class="muted">{{ message }}</p>
+  {% endif %}
+</section>
+{% endblock %}

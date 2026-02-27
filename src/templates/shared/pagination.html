@@ -1,0 +1,122 @@
+{# Reusable pagination component #}
+{# Usage: {% include "shared/pagination.html" with page_obj=page_obj query_params=query_params %} #}
+<nav class="pagination-container" aria-label="Pagination">
+  <ul class="pagination">
+    {% if page_obj.has_previous %}
+      <li class="page-item">
+        <a class="page-link" href="?page=1{% for key,value in query_params.items %}&{{ key }}={{ value }}{% endfor %}" aria-label="First page">
+          &laquo; First
+        </a>
+      </li>
+      <li class="page-item">
+        <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% for key,value in query_params.items %}&{{ key }}={{ value }}{% endfor %}" aria-label="Previous page">
+          &#8249; Previous
+        </a>
+      </li>
+    {% else %}
+      <li class="page-item disabled">
+        <span class="page-link">&laquo; First</span>
+      </li>
+      <li class="page-item disabled">
+        <span class="page-link">&#8249; Previous</span>
+      </li>
+    {% endif %}
+
+    <li class="page-item page-info">
+      <span class="page-link">
+        Page <strong>{{ page_obj.number }}</strong> of <strong>{{ page_obj.paginator.num_pages }}</strong>
+        ({{ page_obj.paginator.count }} total)
+      </span>
+    </li>
+
+    {% if page_obj.has_next %}
+      <li class="page-item">
+        <a class="page-link" href="?page={{ page_obj.next_page_number }}{% for key,value in query_params.items %}&{{ key }}={{ value }}{% endfor %}" aria-label="Next page">
+          Next &#8250;
+        </a>
+      </li>
+      <li class="page-item">
+        <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% for key,value in query_params.items %}&{{ key }}={{ value }}{% endfor %}" aria-label="Last page">
+          Last &raquo;
+        </a>
+      </li>
+    {% else %}
+      <li class="page-item disabled">
+        <span class="page-link">Next &#8250;</span>
+      </li>
+      <li class="page-item disabled">
+        <span class="page-link">Last &raquo;</span>
+      </li>
+    {% endif %}
+  </ul>
+</nav>
+
+<style>
+  .pagination-container {
+    display: flex;
+    justify-content: center;
+    margin: 2rem 0;
+  }
+
+  .pagination {
+    list-style: none;
+    display: flex;
+    gap: 0.25rem;
+    padding: 0;
+    margin: 0;
+    align-items: center;
+  }
+
+  .page-item {
+    display: inline-flex;
+  }
+
+  .page-link {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    border: 1px solid var(--line, #d3dde9);
+    border-radius: 4px;
+    color: var(--brand, #0f766e);
+    text-decoration: none;
+    transition: all 0.2s ease;
+  }
+
+  .page-link:hover:not(.disabled .page-link) {
+    background: var(--card-alt, #f8fbff);
+    border-color: var(--brand-bright, #1d4ed8);
+    color: var(--brand-deep, #0b5a7f);
+  }
+
+  .page-item.disabled .page-link {
+    color: var(--muted, #475467);
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .page-info .page-link {
+    cursor: default;
+    border: none;
+    color: var(--ink, #0b1f3a);
+    padding: 0.5rem 1rem;
+  }
+
+  .page-info .page-link:hover {
+    background: transparent;
+    border: none;
+  }
+
+  body.dark-mode .page-link {
+    color: #60a5fa;
+  }
+
+  body.dark-mode .page-link:hover:not(.disabled .page-link) {
+    background: rgba(96, 165, 250, 0.1);
+    border-color: #60a5fa;
+  }
+
+  body.dark-mode .page-item.disabled .page-link {
+    color: #6b7280;
+  }
+</style>

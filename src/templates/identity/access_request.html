@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card">
+  <h1>Request Access</h1>
+  <p class="muted">Current user: {{ user_principal }}</p>
+  <form method="post">
+    {% csrf_token %}
+    <label for="requested_role">Requested role</label>
+    <input id="requested_role" name="requested_role" value="vendor_editor" />
+    <label for="justification">Justification</label>
+    <textarea id="justification" name="justification"></textarea>
+    <button type="submit">Submit Request</button>
+  </form>
+  {% if message %}
+    <p class="muted">{{ message }}</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -445,6 +445,8 @@ INSERT INTO sec_role_permission (role_code, object_name, action_code, active_fla
 ('vendor_admin', 'change_action', 'record_contract_cancellation', 1, '2026-01-01 00:00:00'),
 ('vendor_admin', 'change_action', 'grant_role', 1, '2026-01-01 00:00:00'),
 ('vendor_admin', 'change_action', 'grant_scope', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'manage_import_mapping_profile', 1, '2026-01-01 00:00:00'),
+('vendor_admin', 'change_action', 'merge_vendor_records', 1, '2026-01-01 00:00:00'),
 ('vendor_steward', 'change_action', 'update_vendor_profile', 1, '2026-01-01 00:00:00'),
 ('vendor_steward', 'change_action', 'update_offering', 1, '2026-01-01 00:00:00'),
 ('vendor_steward', 'change_action', 'create_offering', 1, '2026-01-01 00:00:00'),

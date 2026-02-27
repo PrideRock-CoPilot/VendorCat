@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block title %}Offerings - VendorCatalog{% endblock %}
+
+{% block content %}
+  <div class="page-header">
+    <div>
+      <h1>Offerings</h1>
+      <p class="text-muted">Manage vendor product and service offerings</p>
+    </div>
+    {% if can_create_offering %}
+      <a href="/offerings/new" class="btn btn-primary">
+        ➕ New Offering
+      </a>
+    {% endif %}
+  </div>
+
+  <div class="card" style="margin-bottom: 16px;">
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px;">
+      <div>
+        <div class="text-muted" style="font-size: 12px;">Total Offerings</div>
+        <div style="font-size: 22px; font-weight: 700;">{{ summary.total|default:0 }}</div>
+      </div>
+      <div>
+        <div class="text-muted" style="font-size: 12px;">Active</div>
+        <div style="font-size: 22px; font-weight: 700;">{{ summary.active|default:0 }}</div>
+      </div>
+      <div>
+        <div class="text-muted" style="font-size: 12px;">High Criticality</div>
+        <div style="font-size: 22px; font-weight: 700;">{{ summary.high_criticality|default:0 }}</div>
+      </div>
+      <div>
+        <div class="text-muted" style="font-size: 12px;">Needs Attention</div>
+        <div style="font-size: 22px; font-weight: 700;">{{ summary.needs_attention|default:0 }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filters & Search -->
+  <div class="card" style="margin-bottom: 16px;">
+    <form method="get" style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap: 12px; align-items: end;">
+      <div>
+        <label style="margin-bottom: 4px;">Search</label>
+        <input type="text" name="q" placeholder="Offering ID or name..." value="{{ search_query|default:'' }}">
+      </div>
+      <div>
+        <label style="margin-bottom: 4px;">Status</label>
+        <select name="status">
+          <option value="">All Status</option>
+          <option value="draft" {% if current_status == 'draft' %}selected{% endif %}>Draft</option>
+          <option value="active" {% if current_status == 'active' %}selected{% endif %}>Active</option>
+          <option value="suspended" {% if current_status == 'suspended' %}selected{% endif %}>Suspended</option>
+          <option value="retired" {% if current_status == 'retired' %}selected{% endif %}>Retired</option>
+        </select>
+      </div>
+      <div>
+        <label style="margin-bottom: 4px;">Criticality</label>
+        <select name="criticality">
+          <option value="">All Tiers</option>
+          <option value="tier_1" {% if current_criticality == 'tier_1' %}selected{% endif %}>Tier 1</option>
+          <option value="tier_2" {% if current_criticality == 'tier_2' %}selected{% endif %}>Tier 2</option>
+          <option value="tier_3" {% if current_criticality == 'tier_3' %}selected{% endif %}>Tier 3</option>
+          <option value="tier_4" {% if current_criticality == 'tier_4' %}selected{% endif %}>Tier 4</option>
+        </select>
+      </div>
+      <div>
+        <label style="margin-bottom: 4px;">Health</label>
+        <select name="health">
+          <option value="">All</option>
+          <option value="needs_attention" {% if current_health == 'needs_attention' %}selected{% endif %}>Needs Attention</option>
+        </select>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button type="submit" class="btn btn-primary">Filter</button>
+        <a href="/offerings" class="btn btn-secondary">Reset</a>
+      </div>
+    </form>
+  </div>
+
+  <!-- Results -->
+  <div class="card">
+    {% if items %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Offering ID</th>
+            <th>Name</th>
+            <th>Vendor</th>
+            <th>Status</th>
+            <th>Type</th>
+            <th>Active Contracts</th>
+            <th>Open Tickets</th>
+            <th>Signals</th>
+            <th style="text-align: right;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in items %}
+            <tr>
+              <td><strong>{{ item.offering_id }}</strong></td>
+              <td>{{ item.offering_name }}</td>
+              <td>
+                <a href="/vendor-360/{{ item.vendor_id }}" style="color: var(--primary); text-decoration: none;">
+                  {{ item.vendor_display_name|default:item.vendor_id }}
+                </a>
+              </td>
+              <td>
+                <span class="table-badge badge-{% if item.lifecycle_state == 'active' %}success{% else %}warning{% endif %}">
+                  {{ item.lifecycle_state }}
+                </span>
+              </td>
+              <td>{{ item.offering_type }}</td>
+              <td>{{ item.active_contract_count|default:0 }}</td>
+              <td>{{ item.open_ticket_count|default:0 }}</td>
+              <td>
+                {% if item.needs_attention %}
+                  <span class="table-badge badge-warning">Needs attention</span>
+                {% else %}
+                  <span class="table-badge badge-success">Healthy</span>
+                {% endif %}
+                {% if item.is_tmp %}
+                  <span class="table-badge badge-danger" style="margin-left: 4px;">tmp-id</span>
+                {% endif %}
+              </td>
+              <td style="text-align: right;">
+                <div class="table-actions">
+                  <a href="/offerings/{{ item.offering_id }}" class="btn btn-secondary btn-small">View</a>
+                  {% if item.can_edit %}
+                    <a href="/offerings/{{ item.offering_id }}/edit" class="btn btn-secondary btn-small">Edit</a>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="empty-state">
+        <div class="empty-icon">📭</div>
+        <h4 class="empty-title">No offerings found</h4>
+        <p class="empty-text">{% if search_query %}Try adjusting your search filters{% else %}Start by adding your first offering{% endif %}</p>
+        {% if not search_query and can_create_offering %}
+          <a href="/offerings/new" class="btn btn-primary">New Offering</a>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+{% endblock %}

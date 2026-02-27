@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block title %}{{ project.name }} - VendorCatalog{% endblock %}
+
+{% block content %}
+  <style>
+    .project-tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .project-tab-button {
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--dark);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .project-tab-button.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+
+    .project-tab-panel {
+      display: none;
+    }
+
+    .project-tab-panel.active {
+      display: block;
+    }
+  </style>
+
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+    <div>
+      <h1>{{ project.project_name }}</h1>
+      <p class="text-muted">Project ID: {{ project.project_id }}</p>
+    </div>
+    {% if can_edit_project %}
+      <a href="/projects/{{ project.project_id }}/edit" class="btn btn-primary">
+        ✏️ Edit Project
+      </a>
+    {% endif %}
+  </div>
+
+  <div class="project-tabs" role="tablist" aria-label="Project detail sections">
+    <button type="button" class="project-tab-button active" data-tab="overview" onclick="selectProjectTab('overview')">Overview</button>
+    <button type="button" class="project-tab-button" data-tab="details" onclick="selectProjectTab('details')">Details</button>
+  </div>
+
+  <!-- Key Info Cards -->
+  <div class="project-tab-panel active" data-tab="overview">
+  <div class="grid grid-3" style="margin-bottom: 30px;">
+    <div class="card">
+      <p class="text-muted" style="margin: 0 0 8px 0;">Owner</p>
+      <p style="font-size: 18px; font-weight: 600; margin: 0;">{{ project.owner_principal }}</p>
+    </div>
+    <div class="card">
+      <p class="text-muted" style="margin: 0 0 8px 0;">Status</p>
+      <span class="table-badge badge-{% if project.lifecycle_state == 'active' %}success{% elif project.lifecycle_state == 'completed' %}info{% else %}warning{% endif %}" style="display: inline-block;">
+        {{ project.lifecycle_state }}
+      </span>
+    </div>
+    <div class="card">
+      <p class="text-muted" style="margin: 0 0 8px 0;">Created</p>
+      <p style="font-size: 16px; margin: 0;">{{ project.created_at|date:"M d, Y" }}</p>
+    </div>
+  </div>
+  </div>
+
+  <!-- Details -->
+  <div class="project-tab-panel" data-tab="details">
+  <div class="card">
+    <h3>Project Information</h3>
+    <div class="form-row">
+      <div>
+        <p class="text-muted">Project ID</p>
+        <p style="font-size: 16px;">{{ project.project_id }}</p>
+      </div>
+      <div>
+        <p class="text-muted">Name</p>
+        <p style="font-size: 16px;">{{ project.project_name }}</p>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div>
+        <p class="text-muted">Owner</p>
+        <p style="font-size: 16px;">{{ project.owner_principal }}</p>
+      </div>
+      <div>
+        <p class="text-muted">Status</p>
+        <p style="font-size: 16px;">{{ project.lifecycle_state }}</p>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div>
+        <p class="text-muted">Last Updated</p>
+        <p style="font-size: 16px;">{{ project.updated_at|date:"M d, Y" }}</p>
+      </div>
+    </div>
+  </div>
+  </div>
+
+  <!-- Actions -->
+  <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid var(--border);">
+    <a href="/projects" class="btn btn-secondary">← Back to Projects</a>
+  </div>
+
+  <script>
+    function selectProjectTab(tabKey) {
+      const tabButtons = document.querySelectorAll('.project-tab-button');
+      const tabPanels = document.querySelectorAll('.project-tab-panel');
+
+      tabButtons.forEach((button) => {
+        if (button.dataset.tab === tabKey) {
+          button.classList.add('active');
+        } else {
+          button.classList.remove('active');
+        }
+      });
+
+      tabPanels.forEach((panel) => {
+        if (panel.dataset.tab === tabKey) {
+          panel.classList.add('active');
+        } else {
+          panel.classList.remove('active');
+        }
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      selectProjectTab('overview');
+    });
+  </script>
+{% endblock %}

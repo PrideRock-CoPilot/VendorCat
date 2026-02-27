@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Import Jobs{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-lg-8">
+            <h1>Import Jobs</h1>
+            <p class="text-muted">Manage vendor data import jobs</p>
+        </div>
+        <div class="col-lg-4 text-end">
+            {% if can_create_import_job %}
+            <a href="#" class="btn btn-primary">New Import Job</a>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if import_jobs %}
+    <div class="table-responsive">
+        <table class="table table-hover">
+            <thead class="table-light">
+                <tr>
+                    <th>Job ID</th>
+                    <th>Source System</th>
+                    <th>File Name</th>
+                    <th>Format</th>
+                    <th>Status</th>
+                    <th>Rows</th>
+                    <th>Submitted By</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in import_jobs %}
+                <tr>
+                    <td><a href="{% url 'import-job-detail' job.import_job_id %}">{{ job.import_job_id }}</a></td>
+                    <td>{{ job.source_system }}</td>
+                    <td>{{ job.file_name }}</td>
+                    <td><span class="badge bg-info">{{ job.file_format|default:"auto" }}</span></td>
+                    <td>
+                        {% if job.status == "completed" %}
+                            <span class="badge bg-success">{{ job.status }}</span>
+                        {% elif job.status == "processing" %}
+                            <span class="badge bg-warning">{{ job.status }}</span>
+                        {% elif job.status == "failed" %}
+                            <span class="badge bg-danger">{{ job.status }}</span>
+                        {% else %}
+                            <span class="badge bg-secondary">{{ job.status }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ job.row_count }}</td>
+                    <td>{{ job.submitted_by }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="alert alert-info" role="alert">
+        <strong>No import jobs yet.</strong> Create your first import job to get started.
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

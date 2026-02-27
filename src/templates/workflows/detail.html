@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ decision.workflow_name }} - Workflow Decision{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row mb-4">
+        <div class="col-lg-8">
+            <h1>{{ decision.workflow_name }}</h1>
+            <p class="text-muted">Decision ID: <code>{{ decision.decision_id }}</code></p>
+        </div>
+        <div class="col-lg-4 text-end">
+            <a href="{% url 'workflows-index' %}" class="btn btn-secondary">Back to Decisions</a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5 class="card-title">Details</h5>
+                    <table class="table table-bordered">
+                        <tr>
+                            <td class="fw-bold">Decision ID</td>
+                            <td>{{ decision.decision_id }}</td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold">Workflow Name</td>
+                            <td>{{ decision.workflow_name }}</td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold">Action</td>
+                            <td>{{ decision.action }}</td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold">Status</td>
+                            <td>
+                                {% if decision.status == "approved" %}
+                                    <span class="badge bg-success">{{ decision.status }}</span>
+                                {% elif decision.status == "rejected" %}
+                                    <span class="badge bg-danger">{{ decision.status }}</span>
+                                {% elif decision.status == "pending" %}
+                                    <span class="badge bg-warning">{{ decision.status }}</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ decision.status }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold">Submitted By</td>
+                            <td>{{ decision.submitted_by }}</td>
+                        </tr>
+                        <tr>
+                            <td class="fw-bold">Reviewed By</td>
+                            <td>{{ decision.reviewed_by|default:"Not yet reviewed" }}</td>
+                        </tr>
+                        {% if decision.review_note %}
+                        <tr>
+                            <td class="fw-bold">Review Note</td>
+                            <td>{{ decision.review_note }}</td>
+                        </tr>
+                        {% endif %}
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
