@@ -1,4 +1,4 @@
-# Rebuild Implementation Status
+﻿# Rebuild Implementation Status
 
 ## As Of 2026-02-20
 
@@ -18,9 +18,9 @@
   - Canonical `vc_*` schema bundle under `src/schema/canonical/`
   - Rendered DuckDB + Databricks schema bundles under `src/schema/rendered/`
   - SQL adapter layer with DuckDB implementation + Databricks connector baseline
-  - Clean rebuild runner (`scripts/rebuild/run_clean_rebuild.ps1`)
-  - Schema quality validator (`scripts/rebuild/validate_schema.py`)
-  - SQL coverage validator (`scripts/rebuild/validate_sql_coverage.py`)
+  - Clean rebuild runner (`scripts/runtime/run_clean_rebuild.ps1`)
+  - Schema quality validator (`scripts/runtime/validate_schema.py`)
+  - SQL coverage validator (`scripts/runtime/validate_sql_coverage.py`)
 
 ## Quality Gate Status (Rebuild Scope)
 - `ruff check src tests_rebuild`: passing
@@ -68,3 +68,4 @@
   - Expand strict gates from rebuild scope to full branch parity suites
 - Phase 8:
   - Cutover/decommission playbooks and smoke certification
+

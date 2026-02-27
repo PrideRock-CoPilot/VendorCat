@@ -22,7 +22,7 @@ def test_perf_baseline_script_generates_markdown_report(tmp_path: Path) -> None:
     result = subprocess.run(
         [
             sys.executable,
-            "scripts/rebuild/perf_baseline.py",
+            "scripts/runtime/perf_baseline.py",
             "--iterations",
             "3",
             "--output",

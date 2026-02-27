@@ -1,0 +1,14 @@
+Django>=5.0,<5.3
+djangorestframework>=3.15,<3.17
+django-filter>=24.2,<25.0
+django-fsm>=2.8,<3.0
+duckdb>=1.1,<2.0
+databricks-sql-connector>=3.5,<4.0
+bleach>=6.1,<7.0
+Markdown>=3.6,<4.0
+playwright>=1.50,<2.0
+pytest>=8.3,<9.0
+pytest-django>=4.8,<5.0
+pytest-cov>=5.0,<6.0
+ruff>=0.8,<1.0
+mypy>=1.13,<2.0

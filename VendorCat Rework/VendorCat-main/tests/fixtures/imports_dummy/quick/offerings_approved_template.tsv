@@ -1,5 +1,0 @@
-﻿offering_id	vendor_id	vendor_name	vendor_contact_email	vendor_support_phone	offering_name	offering_type	business_unit	service_type	lifecycle_state	criticality_tier
-	vnd-70231	Blue Ridge Procurement	care@blueridgeproc.example	1-800-555-1102	Spend Intelligence Hub	software	finance	saas	draft	tier2
-off-90088	vnd-70231	Blue Ridge Procurement	integrations@blueridgeproc.example	1-800-555-2102	Invoice Match API	platform	finance	api	active	tier1
-	vnd-88917	Canyon Analytics	escalations@canyoninfra.example	1-800-555-1103	Asset Risk Scoring	software	engineering	saas	draft	tier2
-
